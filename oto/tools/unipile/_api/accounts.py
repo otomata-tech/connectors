@@ -8,6 +8,7 @@ composé dans `UnipileClient`, qui fournit le transport (`_request`,
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import quote
@@ -17,15 +18,88 @@ import requests
 from ..const import _REQUEST_TIMEOUT
 from ..errors import UnipileError
 
+logger = logging.getLogger(__name__)
+
+# Garde-fou de `list_accounts` : au-delà, on s'arrête et on le DIT (log). À la
+# taille de page par défaut d'Unipile (20), c'est 10 000 comptes — trois ordres
+# de grandeur au-dessus de la clé plateforme d'aujourd'hui. Il n'est là que pour
+# qu'un amont qui répondrait `has_more: true` à l'infini ne fige pas l'appelant.
+_ACCOUNTS_MAX_PAGES = 500
+
 
 class _AccountsMixin:
     """Comptes Unipile & lien d'auth hébergée."""
 
     def list_accounts(self) -> list[dict]:
-        data = self._request("GET", "/accounts")
-        if isinstance(data, dict):
-            return data.get("data") or data.get("items") or []
-        return data or []
+        """TOUS les comptes de la clé, toutes pages confondues.
+
+        ⚠️ `GET /v2/accounts` est PAGINÉ par `offset` (`limit` défaut 20, `has_more`)
+        et TRIÉ PAR `name` (OpenAPI v2 « List all Accounts »). Ce client ne lisait
+        que la première page : passé 20 comptes sur une clé, tout compte dont le
+        nom se range après le 20e devenait INVISIBLE — sans erreur, puisque la page
+        rendue est parfaitement valide. Vécu le 2026-09-14 : la clé plateforme
+        portait plus de 20 comptes, et la réconciliation poll-and-bind d'oto-backend
+        (qui cherche le compte fraîchement connecté DANS cette liste) ne pouvait
+        plus lier personne dont le nom tombe après le 20e ; l'inventaire admin
+        des sièges mentait par omission (des sièges vivants et utilisés n'y
+        figuraient pas). Les noms en tête d'alphabet passaient : non reproductible
+        pour qui s'appelle Alessandro.
+
+        On avance de la taille de la page RENDUE (`limit` n'est pas envoyé : on
+        garde la taille par défaut de l'amont plutôt que de deviner un maximum que
+        la doc ne donne pas) jusqu'à `has_more` faux ou une page vide. Dédupliqué
+        par `id` : un compte créé pendant le parcours décale l'ordre alphabétique
+        et peut resservir un compte déjà vu.
+
+        ⚠️ ARRÊT MÉCANIQUE, même raison que `list_invitations` : si l'amont ignorait
+        `offset` et resservait la même page, la boucle ne finirait jamais. Page
+        identique à la précédente ⟹ on s'arrête avec ce qu'on a, et on le
+        journalise — rendre la première page reste le comportement d'avant, pas une
+        régression. Une réponse sans `has_more` (ou une liste nue) est lue comme
+        une page unique."""
+        out: list[dict] = []
+        seen_ids: set[str] = set()
+        offset = 0
+        previous: Optional[list] = None
+        for _ in range(_ACCOUNTS_MAX_PAGES):
+            data = self._request("GET", "/accounts",
+                                 params={"offset": offset} if offset else None)
+            if not isinstance(data, dict):
+                return data or []
+            page = data.get("data") or data.get("items") or []
+            if not page:
+                if offset:
+                    # L'amont annonçait une suite (`has_more`) et rend une page vide :
+                    # soit la liste a rétréci entre deux appels, soit `offset` ne veut
+                    # pas dire ce qu'on croit ici. Le second cas re-tronquerait en
+                    # silence — il se dit.
+                    logger.warning(
+                        "unipile list_accounts : `has_more` annonçait une suite, la page "
+                        "à offset=%s est vide — %d compte(s) lus.", offset, len(out))
+                break
+            ids = [a.get("id") if isinstance(a, dict) else a for a in page]
+            if ids == previous:
+                logger.warning(
+                    "unipile list_accounts : l'amont a resservi la page précédente à "
+                    "l'identique (offset=%s) — pagination arrêtée à %d compte(s).",
+                    offset, len(out))
+                break
+            previous = ids
+            for acc in page:
+                aid = acc.get("id") if isinstance(acc, dict) else None
+                if aid:
+                    if aid in seen_ids:
+                        continue
+                    seen_ids.add(aid)
+                out.append(acc)
+            if not data.get("has_more"):
+                break
+            offset += len(page)
+        else:
+            logger.warning(
+                "unipile list_accounts : plafond de %d pages atteint — liste tronquée "
+                "à %d compte(s).", _ACCOUNTS_MAX_PAGES, len(out))
+        return out
 
     def delete_account(self, account_id: str) -> None:
         """Retire un compte de l'instance Unipile — c'est ce qui LIBÈRE le siège
