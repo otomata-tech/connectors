@@ -1,6 +1,6 @@
 # oto-core
 
-**Lib de connecteurs Oto** — clients API pour agents IA, **sans CLI**. Repo **public** (`otomata-tech/oto-core`), **open source**. Split d'oto-cli le 2026-06-11 (otomata#13).
+**Lib de connecteurs Oto** — clients API pour agents IA, **sans CLI**. Repo **public** (`otomata-tech/connectors`, renommé le 2026-09-14 ; le paquet PyPI reste `oto-core`, le dossier local aussi), **open source**. Split d'oto-cli le 2026-06-11 (otomata#13).
 
 Namespace package `oto` (PEP 420, **pas d'`oto/__init__.py`**) :
 - `oto.tools.*` — les clients (serper, attio, hunter, google, linkedin via o-browser, pennylane, reddit, slack, gocardless, sirene/inpi/bodacc/boamp/dvf/culture via france-opendata…). Messagerie (WhatsApp/LinkedIn) = Unipile côté backend ; le bridge WhatsApp Baileys (Node) a été retiré le 2026-07-22 (fallback archivé, deps npm vulnérables).

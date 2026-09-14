@@ -1,5 +1,7 @@
 # oto-core
 
+> Repository: **[otomata-tech/connectors](https://github.com/otomata-tech/connectors)** — renamed on 2026-09-14. The PyPI package keeps the name `oto-core`, and so does the import namespace `oto.*`.
+
 Connector library for [Oto](https://oto.ninja) — pure Python API clients for AI agents and automation. No CLI, no server: clients return plain dicts.
 
 ```bash

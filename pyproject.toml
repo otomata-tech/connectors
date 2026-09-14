@@ -9,7 +9,7 @@ description = "Oto connector library â€” API clients for AI agents (no CLI). FaÃ
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-urls = { Homepage = "https://oto.ninja", Repository = "https://github.com/otomata-tech/oto-core" }
+urls = { Homepage = "https://oto.ninja", Repository = "https://github.com/otomata-tech/connectors" }
 dependencies = [
     # Floor >=2.33.0 : CVE-2026-25645, CVE-2024-47081 (.netrc leak), CVE-2024-35195
     # (cert verification bypass), CVE-2023-32681 (Proxy-Authorization leak).
