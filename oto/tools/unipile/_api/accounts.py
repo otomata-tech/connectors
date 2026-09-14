@@ -40,7 +40,7 @@ class _AccountsMixin:
         rendue est parfaitement valide. Vécu le 2026-09-14 : la clé plateforme
         portait plus de 20 comptes, et la réconciliation poll-and-bind d'oto-backend
         (qui cherche le compte fraîchement connecté DANS cette liste) ne pouvait
-        plus lier personne dont le nom tombe après « Julien » ; l'inventaire admin
+        plus lier personne dont le nom tombe après le 20e ; l'inventaire admin
         des sièges mentait par omission (des sièges vivants et utilisés n'y
         figuraient pas). Les noms en tête d'alphabet passaient : non reproductible
         pour qui s'appelle Alessandro.

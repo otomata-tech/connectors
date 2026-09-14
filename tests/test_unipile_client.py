@@ -129,7 +129,7 @@ def test_account_id_error_lists_connected_providers():
 #
 # `GET /v2/accounts` rend 20 comptes par page, TRIÉS PAR `name`, avec `has_more`.
 # Lire la seule première page rendait invisible tout compte rangé après le 20e —
-# la réconciliation d'oto-backend ne pouvait alors plus lier « Tristan » dès que la
+# la réconciliation d'oto-backend ne pouvait alors plus lier ce compte-là dès que la
 # clé plateforme dépassait 20 comptes (2026-09-14).
 
 def _paged_accounts_client(accounts, page_size=20, honour_offset=True):
@@ -164,11 +164,11 @@ def test_list_accounts_reads_every_page():
 
 
 def test_list_accounts_sees_the_account_past_the_first_page():
-    # Le cas vécu : 20 comptes rangés avant lui, « Tristan » est le 21e.
-    accounts = _named(20) + [{"id": "acc-t", "name": "Tristan Thommen",
+    # Le cas vécu : 20 comptes rangés avant lui, « Zoé Exemple » est le 21e.
+    accounts = _named(20) + [{"id": "acc-z", "name": "Zoé Exemple",
                               "provider": "linkedin"}]
     ids = [a["id"] for a in _paged_accounts_client(accounts).list_accounts()]
-    assert "acc-t" in ids and len(ids) == 21
+    assert "acc-z" in ids and len(ids) == 21
 
 
 def test_list_accounts_single_page_is_one_call():
