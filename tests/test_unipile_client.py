@@ -125,6 +125,98 @@ def test_account_id_error_lists_connected_providers():
     assert "whatsapp" in str(e.value) and "google" in str(e.value)
 
 
+# ---- list_accounts : pagination par offset ------------------------------
+#
+# `GET /v2/accounts` rend 20 comptes par page, TRIÉS PAR `name`, avec `has_more`.
+# Lire la seule première page rendait invisible tout compte rangé après le 20e —
+# la réconciliation d'oto-backend ne pouvait alors plus lier « Tristan » dès que la
+# clé plateforme dépassait 20 comptes (2026-09-14).
+
+def _paged_accounts_client(accounts, page_size=20, honour_offset=True):
+    """Client dont `GET /accounts` pagine `accounts` comme l'amont v2. Journalise les
+    params dans `c._calls`. `honour_offset=False` simule un amont qui ignore `offset`."""
+    c = UnipileClient(api_key="k")
+    calls: list = []
+
+    def fake(method, path, params=None, json=None, timeout=None):
+        assert (method, path) == ("GET", "/accounts")
+        calls.append(params)
+        offset = int((params or {}).get("offset") or 0) if honour_offset else 0
+        page = accounts[offset:offset + page_size]
+        return {"object": "Accounts", "data": page,
+                "has_more": offset + page_size < len(accounts)}
+
+    c._request = fake  # type: ignore[method-assign]
+    c._calls = calls
+    return c
+
+
+def _named(n):
+    return [{"id": f"acc-{i:03d}", "name": f"Name {i:03d}", "provider": "linkedin"}
+            for i in range(n)]
+
+
+def test_list_accounts_reads_every_page():
+    accounts = _named(45)
+    c = _paged_accounts_client(accounts)
+    assert c.list_accounts() == accounts
+    assert c._calls == [None, {"offset": 20}, {"offset": 40}]
+
+
+def test_list_accounts_sees_the_account_past_the_first_page():
+    # Le cas vécu : 20 comptes rangés avant lui, « Tristan » est le 21e.
+    accounts = _named(20) + [{"id": "acc-t", "name": "Tristan Thommen",
+                              "provider": "linkedin"}]
+    ids = [a["id"] for a in _paged_accounts_client(accounts).list_accounts()]
+    assert "acc-t" in ids and len(ids) == 21
+
+
+def test_list_accounts_single_page_is_one_call():
+    c = _paged_accounts_client(_named(3))
+    assert len(c.list_accounts()) == 3
+    assert c._calls == [None]
+
+
+def test_list_accounts_stops_when_upstream_ignores_offset():
+    # Amont qui ressert la page 1 à chaque offset : on s'arrête au 2e appel.
+    c = _paged_accounts_client(_named(45), honour_offset=False)
+    assert len(c.list_accounts()) == 20
+    assert len(c._calls) == 2
+
+
+def test_list_accounts_dedupes_accounts_shifted_across_pages():
+    # Un compte créé pendant le parcours décale l'ordre : l'amont ressert un compte
+    # déjà vu en tête de la page suivante.
+    pages = iter([
+        {"data": [{"id": "a"}, {"id": "b"}], "has_more": True},
+        {"data": [{"id": "b"}, {"id": "c"}], "has_more": False},
+    ])
+    c = UnipileClient(api_key="k")
+    c._request = lambda *a, **k: next(pages)  # type: ignore[method-assign]
+    assert [a["id"] for a in c.list_accounts()] == ["a", "b", "c"]
+
+
+def test_list_accounts_empty_page_after_has_more_is_logged(caplog):
+    pages = iter([{"data": [{"id": "a"}], "has_more": True}, {"data": [], "has_more": False}])
+    c = UnipileClient(api_key="k")
+    c._request = lambda *a, **k: next(pages)  # type: ignore[method-assign]
+    with caplog.at_level("WARNING"):
+        assert [a["id"] for a in c.list_accounts()] == ["a"]
+    assert "has_more" in caplog.text
+
+
+def test_list_accounts_without_has_more_is_a_single_page():
+    c = _accounts_client([{"id": "x"}])
+    assert c.list_accounts() == [{"id": "x"}]
+
+
+def test_account_id_discovers_linkedin_on_a_later_page():
+    accounts = ([{"id": f"wa-{i}", "name": f"+33 {i:02d}", "provider": "whatsapp"}
+                 for i in range(20)]
+                + [{"id": "acc-li", "name": "Zoé", "provider": "linkedin"}])
+    assert _paged_accounts_client(accounts).account_id() == "acc-li"
+
+
 # ---- profils : garde anti-mismatch (#153) -------------------------------
 
 def test_get_profile_ok_when_identity_matches():
