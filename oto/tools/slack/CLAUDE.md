@@ -1,112 +1,82 @@
 # Connecteur Slack (`oto.tools.slack`)
 
-Client Slack Web API multi-workspace. Source : `client.py` (`SlackClient`). Exposé en
-CLI (`oto slack …`) et en MCP (`slack_*`). Gestion d'erreur : les rejets logiques de
-Slack (`{"ok": false, "error": "<code>"}` en HTTP 200) sont traduits en erreur typée
-portant `.status` (4xx amont = input rejeté, 5xx = incident Slack) — cf. `_SLACK_ERROR_STATUS`.
-Sur un `missing_scope`, `SlackError` porte aussi **`needed`/`provided`** : Slack NOMME
-lui-même le droit qui manque, l'aval le relaie au lieu de le deviner (v1.100.0).
+Client Slack Web API multi-workspace. Source : `client.py` (`SlackClient`), texte prétraité dans
+`text.py` (module frère, pur, sans I/O). Exposé en CLI (`oto slack …`) et en MCP (`slack_*`).
 
-## 1. Modèle multi-workspace + résolution de tokens
+Gestion d'erreur : les rejets logiques de Slack (`{"ok": false, "error": "<code>"}` en HTTP 200) sont
+traduits en erreur typée portant `.status` (4xx amont = input rejeté, 5xx = incident Slack) — cf.
+`_SLACK_ERROR_STATUS`. Sur un `missing_scope`, `SlackError` porte aussi **`needed`/`provided`** :
+Slack NOMME lui-même le droit qui manque, l'aval le relaie au lieu de le deviner.
 
-Un `SlackClient` cible **un workspace** (`workspace="<slug>"`, défaut `otomata`). Le client
-résout ses tokens depuis les secrets par **convention de nommage** :
+## 1. Modèle multi-workspace & résolution de tokens
+
+Un `SlackClient` cible **un workspace** (`workspace="<slug>"`, défaut `otomata`). Il résout ses tokens
+depuis les secrets par **convention de nommage**, `<SLUG>` = `workspace.upper()` :
 
 | | clé secret | usage |
 |---|---|---|
 | bot token (`xoxb-`) | `SLACK_<SLUG>_BOT_TOKEN` | lecture + post « au nom de l'app » |
 | user token (`xoxp-`) | `SLACK_<SLUG>_USER_TOKEN` | post « au nom de l'utilisateur » (`as_user=True`) |
 
-`<SLUG>` = `workspace.upper()`. Pour le workspace par défaut (`otomata`), les clés **plates
-legacy** `SLACK_BOT_TOKEN` / `SLACK_USER_TOKEN` sont acceptées en fallback.
+Pour le workspace par défaut (`otomata`), les clés **plates legacy** `SLACK_BOT_TOKEN` /
+`SLACK_USER_TOKEN` sont acceptées en repli. Aucun token résolu ⇒
+`No Slack token for workspace '<slug>'…` → poser la clé.
 
-**Choix du token par appel** : `post_message`/`update_message`/`open_dm`/`add_reaction`
-acceptent `as_user=True|False`. Si omis → `default_as_user` du client (défaut `False` = bot).
-- **Lecture** (channels, history, **replies**, `channel_info`, find-user) → bot token suffit.
-- **Post** → bot (`xoxb-`, l'app poste sous son identité) **ou** user (`xoxp-`, poste « comme toi »).
-- **`join_channel`** → bot (rejoindre est un acte de l'app).
+`post_message`/`update_message`/`open_dm`/`add_reaction` acceptent `as_user=True|False` ; si omis →
+`default_as_user` du client (défaut `False` = bot). **Lecture** (channels, history, replies,
+`channel_info`, find-user) et **`join_channel`** → le bot suffit.
+
+**Ajouter un 2ᵉ workspace** = poser `SLACK_<NOUVEAU_SLUG>_BOT_TOKEN` (+ `_USER_TOKEN` si post-as-user
+voulu), puis `SlackClient(workspace="<nouveau_slug>")`. Aucune autre config.
+
+## 2. Les gotchas de l'API Slack
 
 ⚠️ **`history()` ne rend que le PREMIER NIVEAU.** Sur un message parent il annonce
-`reply_count`/`reply_users`/`latest_reply` mais **jamais un corps de réponse** : les
-réponses d'un fil s'obtiennent par **`replies()`** (`conversations.replies`). Le contrat
-sondé — le paramètre s'appelle `ts`, le parent revient en `messages[0]` et se répète à
-chaque page, `limit` borne les réponses sans compter le parent, `oldest`/`latest` sont
-exclusives — est écrit dans la docstring de la méthode et vérifié par
-`tests/test_slack_thread_replies.py`. ⚠️ Appelé avec le `ts` d'une **réponse**, Slack rend
+`reply_count`/`reply_users`/`latest_reply` mais **jamais un corps de réponse** : les réponses d'un fil
+s'obtiennent par **`replies()`** (`conversations.replies`). Le contrat sondé — le paramètre s'appelle
+`ts`, le parent revient en `messages[0]` et se répète à chaque page, `limit` borne les réponses sans
+compter le parent, `oldest`/`latest` sont exclusives — est écrit dans la docstring de la méthode et
+vérifié par `tests/test_slack_thread_replies.py`. ⚠️ Appelé avec le `ts` d'une **réponse**, Slack rend
 ce seul message en `ok:true` : un « fil vide » qui n'en est pas un, à détecter en aval
 (`messages[0].thread_ts != .ts`).
 
-⚠️ **`join_channel()` ne vaut que pour les canaux PUBLICS.** Un canal privé ne se rejoint
-par **aucune** API Slack — il faut qu'un humain déjà membre y invite l'app. `channel_info()`
-existe pour trancher public/privé **avant** de tenter quoi que ce soit ; il répond sur un
-canal public non rejoint, mais rend `channel_not_found` sur un canal privé où l'app n'est
-pas — indiscernable d'un ID faux, donc l'aval doit dire les deux.
+⚠️ **`join_channel()` ne vaut que pour les canaux PUBLICS.** Un canal privé ne se rejoint par **aucune**
+API Slack — il faut qu'un humain déjà membre y invite l'app. `channel_info()` existe pour trancher
+public/privé **avant** de tenter quoi que ce soit ; il répond sur un canal public non rejoint, mais rend
+`channel_not_found` sur un canal privé où l'app n'est pas — indiscernable d'un ID faux, donc l'aval doit
+dire les deux.
 
-Erreur si aucun token résolu : `No Slack token for workspace '<slug>'…` → poser la clé.
+⚠️ **`find_user_by_email` dépend de l'email RÉEL du compte Slack.** `users.lookupByEmail` veut l'adresse
+avec laquelle la personne s'est inscrite sur Slack, pas forcément son email pro : une adresse pro
+parfaitement valide rend `users_not_found`. Lookup KO ⇒ vérifier l'email d'inscription de la cible.
 
-### Ajouter un 2ᵉ workspace
-Poser `SLACK_<NOUVEAU_SLUG>_BOT_TOKEN` (et `_USER_TOKEN` si post-as-user voulu) dans le
-vault, puis instancier `SlackClient(workspace="<nouveau_slug>")`. Aucune autre config.
+⚠️ **Pas de méthode `whoami`.** Pour savoir sur quel workspace et sous quelle identité on agit, il faut
+taper l'API `auth.test` directement.
 
-### `post_message` — texte prétraité par `text.py` (oto-backend#711)
+## 3. `post_message` — deux gardes sur le texte
 
-Le texte de `post_message` passe par deux gardes AVANT de partir, dans
-`oto/tools/slack/text.py` (module frère, pur, sans I/O — `client.py` dépasse
-déjà 500 lignes) :
+Le texte passe par `text.py` AVANT de partir :
 
-- **échappement des faux emoji** : Slack lit tout `:jeton:` purement
-  numérique comme un shortcode, même inconnu (signal #575 : une heure
-  `"20:51:"` suivie d'un `:` de ponctuation se lit `:51:`, avalant les
-  chiffres). `escape_false_emoji_shortcodes` casse ces jetons avec une
-  espace de largeur nulle (invisible), sauf les deux exceptions réelles du
-  jeu par défaut (`:100:`, `:1234:`) ;
-- **split au-delà de 4 000 caractères** (limite RECOMMANDÉE par Slack —
-  au-delà, Slack ne refuse rien, il TRONQUE en silence à 40 000). Signal
-  #613 : un digest de ~4 058 caractères posté en un seul appel a produit
-  deux messages Slack et le tool n'exposait qu'un seul `ts`. `post_message`
-  découpe désormais lui-même (`chunk_text`, coupe sur un mot/retour à la
-  ligne), poste chaque partie, et rend `ts_all` (tous les `ts`, dans l'ordre)
-  en plus de `ts` (toujours le PREMIER — l'ancre à réutiliser pour répondre
-  dans le même fil). Sans `thread_ts` fourni, les parties suivantes
-  threadent sous la première ; avec un `thread_ts` fourni, toutes les
-  parties y restent rattachées.
-
-## 2. Gotcha — `find_user_by_email` dépend de l'email **réel** du compte Slack
-
-`slack_find_user_by_email` / `oto slack find-user` appelle `users.lookupByEmail` : l'email
-passé doit être **celui du compte Slack de la personne**, pas forcément son email pro. Ex.
-vécu : l'adresse pro (`prenom@societe.tld`) échoue (`users_not_found`), seule l'adresse
-personnelle avec laquelle la personne s'est inscrite sur Slack marche. Si lookup KO,
-vérifier l'email d'inscription Slack de la cible.
-
-> Pour savoir sur **quel workspace** et sous **quelle identité** on agit, il faut aujourd'hui
-> taper l'API `auth.test` directement (pas de méthode exposée). Enhancement optionnel #25 :
-> un `slack_whoami` / `oto slack whoami` (wrap `auth.test`). Non implémenté.
+- **Échappement des faux emoji** : Slack lit tout `:jeton:` purement numérique comme un shortcode, même
+  inconnu — une heure `"20:51:"` suivie d'un `:` de ponctuation se lit `:51:` et avale les chiffres.
+  `escape_false_emoji_shortcodes` casse ces jetons avec une espace de largeur nulle (invisible), sauf
+  les deux exceptions réelles du jeu par défaut (`:100:`, `:1234:`).
+- **Split au-delà de 4 000 caractères** — limite **recommandée** par Slack : au-delà, Slack ne refuse
+  rien, il **TRONQUE en silence** à 40 000, et un envoi unique ressort en plusieurs messages.
+  `post_message` découpe lui-même (`chunk_text`, coupe sur un mot ou un retour à la ligne), poste chaque
+  partie et rend **`ts_all`** (tous les `ts`, dans l'ordre) en plus de `ts` — toujours le PREMIER, l'ancre
+  à réutiliser pour répondre dans le même fil. Sans `thread_ts` fourni, les parties suivantes threadent
+  sous la première ; avec un `thread_ts` fourni, toutes y restent rattachées.
 
 ## 4. Onboarding d'un nouveau user
 
-1. **App Slack** : créer une app sur https://api.slack.com/apps (ou installer une app
-   partagée) sur le workspace cible.
-2. **Scopes** (OAuth & Permissions) selon l'usage :
-   - lecture / post bot : `chat:write`, `channels:read`, `users:read.email`, `im:write`
-   - **lire l'historique ET les fils** : un scope `<surface>:history` par surface —
-     `channels:history` (public), `groups:history` (privé), `im:history` (DM),
-     `mpim:history` (DM de groupe). `conversations.replies` exige le même que
-     `conversations.history` (constaté : `needed=groups:history` sur un canal privé)
-   - **rejoindre un canal public** : `channels:join` (bot) — `channels:write` en user token
-   - recherche : `search:read` (⚠️ scope **user token** uniquement)
-   - post « as user » : installer aussi un **user token** (`xoxp-`) avec les scopes user voulus.
-3. **Installer** l'app sur le workspace → récupérer `Bot User OAuth Token` (`xoxb-`) et, si
-   besoin, le `User OAuth Token` (`xoxp-`).
-4. **Poser les tokens** dans le vault per-user (`~/.otomata/secrets/`, lu par `oto.config`)
-   sous `SLACK_<SLUG>_BOT_TOKEN` / `SLACK_<SLUG>_USER_TOKEN` (mapping slug → workspace).
-
-## 3. Décision ouverte (NON tranchée — #25)
-
-Le seul workspace configuré aujourd'hui est **« Otomata Community »** (`zen-otomata.slack.com`),
-un espace **communautaire** (membres/audience) où Alexis figure sous son email perso — donc
-**inapproprié** pour router de la donnée privée (compta, business). À trancher :
-- **(a)** créer un workspace Slack **interne** dédié (admin/notifs) avec son slug + tokens, ou
-- **(b)** assumer que les notifs perso passent par WhatsApp et garder Slack = communauté.
-
-(Pour la routine Pennylane → notif, on est partis sur WhatsApp.)
+1. Créer une app sur https://api.slack.com/apps (ou installer une app partagée) sur le workspace cible.
+2. **Scopes** (OAuth & Permissions) : lecture / post bot = `chat:write`, `channels:read`,
+   `users:read.email`, `im:write` ; **rejoindre un canal public** = `channels:join` ; recherche =
+   `search:read` (⚠️ scope **user token** uniquement) ; post « as user » = un user token `xoxp-` en plus.
+   ⚠️ **Lire l'historique ET les fils exige un scope `<surface>:history` PAR surface** —
+   `channels:history` (public), `groups:history` (privé), `im:history` (DM), `mpim:history` (DM de
+   groupe) ; `conversations.replies` exige le même que `conversations.history`.
+3. **Installer** l'app → récupérer le `Bot User OAuth Token` (`xoxb-`) et, si besoin, le `User OAuth
+   Token` (`xoxp-`), puis les **poser dans le vault** per-user (`~/.otomata/secrets/`, lu par
+   `oto.config`) sous `SLACK_<SLUG>_BOT_TOKEN` / `SLACK_<SLUG>_USER_TOKEN`.
