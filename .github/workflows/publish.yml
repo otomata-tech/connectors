@@ -121,9 +121,22 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # La suite d'oto-core, rejouée sur le tag lui-même. Pas une copie des steps de
+  # `ci.yml` : le même workflow, appelé — sinon les deux dérivent et c'est la
+  # version de la CI qui ne teste rien qui garde la publication.
+  test:
+    name: Tests (CI rejouée sur le tag)
+    uses: ./.github/workflows/ci.yml
+    # Ce workflow refuse tout au niveau global (`permissions: {}`) et chaque job
+    # déclare son seul besoin. Un workflow appelé hérite des permissions de son
+    # appelant : sans cette ligne, le `checkout` de `ci.yml` partirait sans même
+    # le droit de lire le dépôt.
+    permissions:
+      contents: read
+
   publish:
     name: Publier sur PyPI (trusted publishing)
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # requis pour le trusted publishing OIDC — et rien d'autre

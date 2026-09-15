@@ -8,6 +8,11 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Appelable par `publish.yml` : le tag publié sur PyPI est celui que le backend
+  # ÉPINGLE, et jusqu'au 15/09/2026 il pouvait partir suite rouge — ce workflow ne
+  # se déclenchait que sur PR et push `main`, jamais sur un tag. Une casse voyageait
+  # donc chez son consommateur sans que rien ne l'arrête.
+  workflow_call: {}
 
 jobs:
   test:
