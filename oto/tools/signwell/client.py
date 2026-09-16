@@ -7,31 +7,22 @@ small enough that no passthrough or consolidation trick is needed.
 
 Derived from the OpenAPI definitions embedded in SignWell's reference pages
 (`developers.signwell.com/reference/<operation>.md`, read 2026-09-16): required
-fields, body shapes and enums come from the spec, not from doc prose. What was
-ALSO exercised live on 2026-09-16 (Business account) is said below, by name;
-everything else is spec-only.
+fields, body shapes and enums come from the spec, not from doc prose.
 
-## Relevé en live (2026-09-16)
+## Protocol facts that shape a caller
 
 - `get_me` answers with `{user, account}` — the cheap probe for a key.
-- `create_document` with `text_tags=True` on a `.docx` in `file_base64`: every
-  `{{…}}` tag became a field, assigned to the right recipient. Fields are
-  detected asynchronously — the create response can carry `fields: []` while a
-  `get_document` a few seconds later lists them all.
-- Lifecycle `Created → Sending → Sent`. One document stayed in **`Sending`**
-  for minutes and never delivered its invitation; a document created right
-  after, identical, reached `Sent`. `Sending` is not a guarantee of delivery.
-- **Test mode never emails the recipients.** Every invitation of a
-  `test_mode=True` document goes to the ACCOUNT OWNER instead, subject prefixed
-  `[TEST]`, body naming the intended recipient.
-- `embedded_signing=True` returns each recipient's `embedded_signing_url`
-  (`signing_url` stays null); that URL opens as an ordinary browser page, not
-  only inside an iframe. With `send_email=False` on every recipient, the account
-  owner still received a "couldn't send this document" notice for an
-  undeliverable recipient address — cause not established.
-- `delete_document` answers 204 with an empty body.
+- With `text_tags=True`, `{{…}}` tags in the uploaded file become fields.
+  Detection is asynchronous: the create response can carry `fields: []` while
+  a later `get_document` lists them.
+- Document status moves `Created → Sending → Sent`; only `Sent` means the
+  signature request went out.
+- A `test_mode=True` document never emails its recipients: invitations go to
+  the account owner, subject prefixed `[TEST]`.
+- `embedded_signing=True` gives each recipient an `embedded_signing_url`
+  (`signing_url` stays null); recipients are not emailed unless `send_email`.
 
-## Pièges du spec
+## Spec details that bite
 
 - **`create_document` sends immediately by default** (`draft` defaults to
   `false`): a real contract reaches real people in the same call. The client
