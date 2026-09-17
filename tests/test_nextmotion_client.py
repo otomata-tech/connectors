@@ -67,6 +67,7 @@ METHODS = {
     "list_treatment_types", "get_treatment_type",
     "list_treatment_pricings", "get_treatment_pricing",
     "list_quotes", "get_quote", "list_invoices", "get_invoice",
+    "list_products", "get_product",
 }
 
 _MEDICAL_MARKERS = ("patient", "medical", "prescription", "consent", "media",
@@ -125,6 +126,14 @@ def test_api_key_goes_in_bearer_header_never_in_params(calls, client):
     ("list_invoices", (A,), {}, "GET", f"/v4/clinics/{A}/invoices",
      {"limit": 50, "offset": 0}),
     ("get_invoice", (A,), {}, "GET", f"/v4/invoices/{A}", {}),
+    ("list_products", (A,), {"search": "zzz", "stock_state": "low",
+                             "expiring_within_days": 30, "order": "-stock_level"},
+     "GET", f"/v4/clinics/{A}/products",
+     {"limit": 50, "offset": 0, "search": "zzz", "stock_state": "low",
+      "expiring_within_days": 30, "order": "-stock_level"}),
+    ("list_products", (A,), {}, "GET", f"/v4/clinics/{A}/products",
+     {"limit": 50, "offset": 0}),
+    ("get_product", (A,), {}, "GET", f"/v4/products/{A}", {}),
 ])
 def test_read_paths_and_params(calls, client, fn, args, kwargs, method, path, params):
     getattr(client, fn)(*args, **kwargs)

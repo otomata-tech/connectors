@@ -14,7 +14,8 @@ and never expires until rerolled or deleted.
 The administrative side of a clinic only: the authenticated user, clinics,
 practitioners, the calendar (appointments, free time slots, rescheduling,
 deletion), the service catalogue (visit types, categories, sub-types,
-treatment types, pricings), quotes and invoices.
+treatment types, pricings), quotes and invoices, and — read only — the
+clinic's product stock (lots, expiry dates, stock levels).
 
 The API also serves medical content — patient records, medical history,
 photos and media, prescriptions, consent forms, clinical treatments and
@@ -32,6 +33,11 @@ them is the caller's decision.
   answers `{count, next, previous, data: [...]}`. Detail endpoints answer
   `{data: {...}}`. Errors answer `{errors: [{code, message}]}`.
 - Almost every resource hangs under a clinic: `list_clinics` gives the ids.
+- `list_invoices` accepts no filter at all (no date, no patient), and the
+  order of the list is not documented.
+- The product stock is not linked to invoices nor to treatments: no endpoint
+  says which lot an invoice consumed. A product row embeds its catalogue
+  entry (`global_product`: name, brand), so naming a lot needs no second call.
 - A 403 `non_employee_access_denied` means the key's user is not an employee
   of that clinic.
 - `reschedule_appointment` needs a `visit_type_opening_hour` id and its
@@ -310,3 +316,29 @@ class NextmotionClient:
     def get_invoice(self, invoice_id: str) -> Any:
         """GET /v4/invoices/{invoice_id}."""
         return self._get(f"/v4/invoices/{_id(invoice_id, 'invoice_id')}")
+
+    # ================================================================
+    # Product stock (read only)
+    # ================================================================
+
+    def list_products(self, clinic_id: str, *, search: Optional[str] = None,
+                      stock_state: Optional[str] = None,
+                      expiring_within_days: Optional[int] = None,
+                      order: Optional[str] = None,
+                      limit: int = 50, offset: int = 0) -> Any:
+        """GET /v4/clinics/{clinic_id}/products — the clinic's stock, one row per lot.
+
+        Args:
+            search: free-text search.
+            stock_state: `low` | `out` | `ok`.
+            expiring_within_days: >= 1 — lots expiring within that many days.
+            order: `name`, `brand_name` (API default), `stock_level` or
+                `warning_level`, each optionally prefixed by `-`.
+        """
+        return self._list(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/products",
+                          limit, offset, search=search, stock_state=stock_state,
+                          expiring_within_days=expiring_within_days, order=order)
+
+    def get_product(self, product_id: str) -> Any:
+        """GET /v4/products/{product_id}."""
+        return self._get(f"/v4/products/{_id(product_id, 'product_id')}")
