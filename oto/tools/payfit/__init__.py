@@ -1,4 +1,4 @@
-"""PayFit API client (payroll and HR, read-only scope)."""
+"""PayFit API client (payroll and HR — the whole documented Partner API)."""
 
 from .client import PayfitClient
 
