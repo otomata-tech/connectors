@@ -8,11 +8,21 @@ Authentication:
 """
 
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
 from ...config import require_secret
+from ..common.errors import raise_for_upstream
+from .transcription import (
+    DEFAULT_TRANSCRIPTION_MODEL,
+    context_bias_terms,
+    normalize_transcription,
+)
+
+# (connexion, lecture) d'une transcription : l'amont rend ~30 min d'audio en moins de
+# 30 s, et accepte jusqu'à 3 h par requête. Surchargeable par appel.
+TRANSCRIPTION_TIMEOUT = (10, 300)
 
 
 class MistralClient:
@@ -23,6 +33,7 @@ class MistralClient:
     - Chat completions
     - JSON mode
     - Multiple model support
+    - Audio transcription (Voxtral) — `transcribe`
     """
 
     BASE_URL = "https://api.mistral.ai/v1"
@@ -147,3 +158,63 @@ class MistralClient:
             raise Exception(f"Mistral API error: {resp.status_code} {resp.text}")
 
         return resp.json()
+
+    def list_models(self) -> Dict[str, Any]:
+        """Modèles accessibles à la clé (`GET /v1/models`) — non facturé, sert de
+        sonde d'authentification."""
+        resp = requests.get(
+            f"{self.BASE_URL}/models",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            timeout=(10, 30),
+        )
+        raise_for_upstream(resp, service="Mistral")
+        return resp.json()
+
+    def transcribe(
+        self,
+        audio: bytes,
+        filename: str,
+        *,
+        mime: Optional[str] = None,
+        language: Optional[str] = None,
+        timestamps: bool = False,
+        diarize: bool = False,
+        context_bias: Iterable[str] | str | None = None,
+        model: Optional[str] = None,
+        timeout: tuple = TRANSCRIPTION_TIMEOUT,
+    ) -> Dict[str, Any]:
+        """Transcrit un audio en un appel (`POST /v1/audio/transcriptions`, multipart).
+
+        `diarize=True` fait porter un identifiant de locuteur à chaque segment, et
+        envoie TOUJOURS `timestamp_granularities=segment` : l'amont refuse la
+        diarisation sans horodatage par segment (422). `timestamps=True` demande
+        l'horodatage sans diarisation. `language` (ex. `"fr"`) se combine avec les
+        deux.
+        `context_bias` = vocabulaire à privilégier, normalisé par
+        `context_bias_terms` (termes sans espace, joints par des virgules).
+
+        Rend `normalize_transcription(...)` plus `context_bias` (termes envoyés) et
+        `context_bias_dropped` (fragments écartés). Lève `UpstreamHTTPError` sur un
+        refus de l'amont."""
+        termes, ecartes = context_bias_terms(context_bias)
+        data: List[tuple] = [("model", model or DEFAULT_TRANSCRIPTION_MODEL)]
+        if language:
+            data.append(("language", language))
+        if timestamps or diarize:
+            data.append(("timestamp_granularities", "segment"))
+        if diarize:
+            data.append(("diarize", "true"))
+        if termes:
+            data.append(("context_bias", ",".join(termes)))
+        resp = requests.post(
+            f"{self.BASE_URL}/audio/transcriptions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            data=data,
+            files={"file": (filename, audio, mime or "application/octet-stream")},
+            timeout=timeout,
+        )
+        raise_for_upstream(resp, service="Mistral")
+        out = normalize_transcription(resp.json())
+        out["context_bias"] = termes
+        out["context_bias_dropped"] = ecartes
+        return out
