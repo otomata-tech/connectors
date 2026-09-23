@@ -2,7 +2,7 @@
 
 Secret resolution order:
 1. Environment variable (always)
-2. Configured provider (sops, file, or scaleway)
+2. Configured provider (sops, file, scaleway, or onepassword)
 3. Default value
 """
 
@@ -19,6 +19,7 @@ from oto.secrets import (
     FileProvider,
     make_provider,
 )
+from oto.secrets import _REGISTRY as _PROVIDER_REGISTRY
 
 # Re-exported for backwards compatibility: `from oto.config import AmbiguousSecretError`
 # keeps working now that the exception lives in oto.secrets.base.
@@ -45,11 +46,12 @@ def _warn_once_if_store_absent(provider_name: str, provider) -> None:
         return
     _warned_store_absent.add(provider_name)
     if not provider.store_exists():
+        noms = "|".join(sorted(_PROVIDER_REGISTRY))
         warnings.warn(
             f"le magasin du fournisseur de secrets '{provider_name}' est "
             f"introuvable ; aucun secret ne sera résolu par ce fournisseur "
             f"tant qu'il n'est pas en place (voir "
-            f"`oto config provider secrets <file|sops|scaleway>`).",
+            f"`oto config provider secrets <{noms}>`).",
             RuntimeWarning,
             stacklevel=3,
         )
@@ -219,8 +221,11 @@ def require_secret(name: str) -> str:
             f"  - Environment variable: export {name}='...'  (always wins, simplest)\n"
             f"  - Local file provider: `oto config provider secrets file`, then add\n"
             f"    {name}=... to ~/.otomata/secrets.env\n"
-            f"  - SOPS provider (otomata infra): keep `secret_provider: sops` and add the\n"
-            f"    key to your SOPS store\n"
+            f"  - 1Password provider (otomata infra, current target): keep\n"
+            f"    `secret_provider: onepassword` and add a reference in\n"
+            f"    ~/.otomata/secrets.1password.yaml\n"
+            f"  - SOPS provider (otomata infra, deprecated): keep `secret_provider: sops`\n"
+            f"    and add the key to your SOPS store\n"
             f"  (current provider: {provider})"
         )
     return value

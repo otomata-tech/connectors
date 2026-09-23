@@ -5,9 +5,14 @@ default); this package holds the pluggable backing stores behind a uniform
 :class:`~oto.secrets.base.SecretProvider` interface, selected by
 :func:`make_provider`.
 
-    file      → project/user `.otomata/secrets.env`
-    sops      → SOPS+age encrypted YAML store (default)
-    scaleway  → Scaleway Secret Manager
+    file         → project/user `.otomata/secrets.env`
+    sops         → SOPS+age encrypted YAML store (deprecated, read-only —
+                    superseded by `onepassword`; kept until infra confirms
+                    every `oto` install has switched)
+    scaleway     → Scaleway Secret Manager
+    onepassword  → 1Password vault, via `op read` on `op://` references only
+                    (oto-core#63's target: the enterprise vault, no secret
+                    ever written to disk by this provider)
 
 Adding a store = a new module exposing `lookup(name)` + `store_exists()` and
 one line in the registry below — no branching in `oto.config`.
@@ -18,6 +23,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .base import MISSING, STORE_ABSENT, AmbiguousSecretError, SecretProvider
 from .file import FileProvider
+from .onepassword import OnePasswordProvider
 from .scaleway import ScalewayProvider
 from .sops import SopsProvider
 
@@ -28,6 +34,7 @@ _REGISTRY: Dict[str, Callable[[Dict[str, Any]], SecretProvider]] = {
     "file": lambda cfg: FileProvider(),
     "sops": lambda cfg: SopsProvider(cfg),
     "scaleway": lambda cfg: ScalewayProvider(),
+    "onepassword": lambda cfg: OnePasswordProvider(cfg),
 }
 
 
@@ -61,5 +68,6 @@ __all__ = [
     "FileProvider",
     "SopsProvider",
     "ScalewayProvider",
+    "OnePasswordProvider",
     "make_provider",
 ]
