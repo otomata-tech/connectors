@@ -11,6 +11,7 @@ Requires: requests
 """
 
 import math
+import threading
 import time
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
@@ -76,13 +77,20 @@ class SerperClient:
         })
         self._last_request = 0.0
         self._min_interval = 0.5
+        self._rate_lock = threading.Lock()
 
     def _rate_limit(self):
-        """Ensure minimum time between requests."""
-        elapsed = time.time() - self._last_request
-        if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
-        self._last_request = time.time()
+        """Ensure minimum time between requests — y compris entre THREADS.
+
+        Une instance partagée entre appels concurrents (le backend en garde une par
+        clé, oto#115) : sans verrou, deux threads lisent le même `_last_request`,
+        dorment le même temps et partent ensemble — la limite ne tient plus. Le
+        verrou est tenu pendant l'attente : c'est ce qui ESPACE les départs."""
+        with self._rate_lock:
+            elapsed = time.time() - self._last_request
+            if elapsed < self._min_interval:
+                time.sleep(self._min_interval - elapsed)
+            self._last_request = time.time()
 
     def _post(self, url: str, json_data: Dict, label: str,
               timeout: Optional[tuple] = None) -> Dict:
