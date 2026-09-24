@@ -31,6 +31,7 @@ from ..common import FieldFilter
 from ..common.errors import raise_for_upstream
 from .ledger import LedgerMixin
 from .quotes import QuotesMixin
+from .supplier_invoices import SupplierInvoicesMixin
 
 
 def _is_outstanding(transaction) -> bool:
@@ -48,12 +49,13 @@ def _is_outstanding(transaction) -> bool:
         return True
 
 
-class PennylaneClient(LedgerMixin, QuotesMixin):
+class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
     """Client for Pennylane API v2.
 
     Le grand livre (écritures, journaux, lettrage de lignes) vit dans
     `LedgerMixin` — même découpage que `brevo`, cf. `ledger.py` ; les devis dans
-    `QuotesMixin` (`quotes.py`).
+    `QuotesMixin` (`quotes.py`) ; l'import, la correction et la validation des
+    factures d'achat dans `SupplierInvoicesMixin` (`supplier_invoices.py`).
     """
 
     BASE_URL = "https://app.pennylane.com/api/external/v2"
@@ -323,43 +325,6 @@ class PennylaneClient(LedgerMixin, QuotesMixin):
         # refus est une exception, jamais une valeur.
         raise_for_upstream(response, service="pennylane")
         return response.json()
-
-    def import_supplier_invoice(
-        self, file_attachment_id: int, supplier_id: int, date: str, deadline: str,
-        currency_amount_before_tax: str, currency_amount: str, currency_tax: str,
-        invoice_lines: list[dict], currency: str = "EUR",
-        external_reference: Optional[str] = None, import_as_incomplete: bool = False,
-        invoice_number: Optional[str] = None, label: Optional[str] = None,
-    ) -> dict:
-        """Crée une facture FOURNISSEUR à partir d'une pièce déjà uploadée.
-
-        `POST /supplier_invoices/import` : lie le `file_attachment_id` (cf.
-        `upload_file_bytes`) à une facture fournisseur en brouillon. Pas d'OCR côté
-        Pennylane — l'appelant FOURNIT les champs (lus depuis le PDF) : `supplier_id`,
-        `date`/`deadline` (ISO), montants **en string** (`currency_amount_before_tax`,
-        `currency_amount`=TTC, `currency_tax`), et `invoice_lines` (≥1). Pennylane
-        déduplique par PDF (422 si le même file_attachment est ré-importé) ;
-        `external_reference` trace la source et garde l'appelant idempotent.
-        """
-        body = {
-            "file_attachment_id": file_attachment_id,
-            "supplier_id": supplier_id,
-            "date": date,
-            "deadline": deadline,
-            "currency": currency,
-            "currency_amount_before_tax": currency_amount_before_tax,
-            "currency_amount": currency_amount,
-            "currency_tax": currency_tax,
-            "invoice_lines": invoice_lines,
-            "import_as_incomplete": import_as_incomplete,
-        }
-        if external_reference:
-            body["external_reference"] = external_reference
-        if invoice_number:
-            body["invoice_number"] = invoice_number
-        if label:
-            body["label"] = label
-        return self.post("supplier_invoices/import", body)
 
     # --- Customers ---
 
