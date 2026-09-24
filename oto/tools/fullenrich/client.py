@@ -26,6 +26,23 @@ MAX_CONTACTS_PER_JOB = 100
 
 DEFAULT_ENRICH_FIELDS = ["contact.work_emails", "contact.phones"]
 
+# Statut NOMMÉ par ce client (pas un statut de l'amont) : le job n'existe pas ou plus
+# chez FullEnrich (`404 error.enrichment.not_found`).
+STATUS_NOT_FOUND = "NOT_FOUND"
+
+# Réponses d'ERREUR HTTP documentées du `GET /contact/enrich/bulk/{id}` qui disent en
+# réalité un STATUT du job (doc API v2). `400 error.enrichment.in_progress` est la
+# réponse NORMALE d'un job pas encore prêt : levée en erreur, elle faisait échouer
+# chaque relevé jusqu'à la fin du job (signaux #1027-#1029). Classées sur le code
+# HTTP ET le `code` du corps, jamais sur le texte du message.
+_GET_ERREUR_VERS_STATUT = {
+    (400, "error.enrichment.in_progress"): "IN_PROGRESS",
+    (404, "error.enrichment.not_found"): STATUS_NOT_FOUND,
+    (429, "error.rate.limit"): "RATE_LIMIT",
+}
+
+_CREDITS_INSUFFISANTS = "FullEnrich : crédits insuffisants. Recharger sur app.fullenrich.com."
+
 
 def _cost_credits(body) -> int | None:
     """`cost.credits` d'un résultat de job, s'il s'agit d'un entier `>= 0` — sinon `None`.
@@ -170,7 +187,10 @@ class FullenrichClient:
     def fetch(self, enrichment_id: str) -> dict:
         """Un GET de statut, sans attente. Retourne
         `{"status": <str>, "profiles": [FullenrichProfile] | None, "cost_credits": int | None}` —
-        `profiles` n'est peuplé que si status == FINISHED.
+        `profiles` n'est peuplé que si status == FINISHED. `status` vaut aussi
+        `IN_PROGRESS` sur un `400 error.enrichment.in_progress`, `RATE_LIMIT` sur un
+        `429`, et `NOT_FOUND` (`STATUS_NOT_FOUND`) sur un `404` : ce sont des réponses
+        d'erreur HTTP de l'amont qui disent un statut du job, pas une panne.
 
         `cost_credits` = les crédits que FULLENRICH a déduits pour ce job, tels que
         l'amont les déclare (`cost.credits` du résultat, agrégé sur tout le job — pas de
@@ -184,6 +204,16 @@ class FullenrichClient:
             timeout=30,
         )
         if resp.status_code != 200:
+            try:
+                err = resp.json()
+            except ValueError:
+                err = None
+            code = err.get("code") if isinstance(err, dict) else None
+            statut = _GET_ERREUR_VERS_STATUT.get((resp.status_code, code))
+            if statut is not None:
+                return {"status": statut, "profiles": None, "cost_credits": None}
+            if resp.status_code == 402:
+                raise RuntimeError(_CREDITS_INSUFFISANTS)
             raise RuntimeError(f"FullEnrich GET {resp.status_code}: {resp.text[:200]}")
 
         body = resp.json()
@@ -191,7 +221,7 @@ class FullenrichClient:
         cost_credits = _cost_credits(body)
 
         if status == "CREDITS_INSUFFICIENT":
-            raise RuntimeError("FullEnrich : crédits insuffisants. Recharger sur app.fullenrich.com.")
+            raise RuntimeError(_CREDITS_INSUFFISANTS)
 
         if status != "FINISHED":
             return {"status": status, "profiles": None, "cost_credits": cost_credits}

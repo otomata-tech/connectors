@@ -138,3 +138,57 @@ def test_fetch_credits_insufficient(monkeypatch):
 
 def FullenrichClientFixture() -> fe.FullenrichClient:
     return fe.FullenrichClient(api_key="k")
+
+
+# --- Réponses d'erreur HTTP documentées du GET (signaux #990, #1027-#1029) ------------
+# L'API répond `400 {"code": "error.enrichment.in_progress", …}` quand un job n'est pas
+# prêt (doc v2 de `GET /contact/enrich/bulk/{id}`). Levée en RuntimeError générique,
+# cette réponse NORMALE devenait « Erreur interne du serveur » côté agent, à chaque
+# relevé, jusqu'à la fin du job — qu'il ne voyait donc jamais.
+
+def _get(status_code, body):
+    return lambda url, headers=None, timeout=None: _Resp(status_code, body)
+
+
+def test_fetch_400_in_progress_est_un_job_en_cours_pas_une_erreur(monkeypatch):
+    monkeypatch.setattr(fe.requests, "get", _get(400, {
+        "code": "error.enrichment.in_progress",
+        "message": "Enrichment not ready, try again in 30 seconds"}))
+    out = FullenrichClientFixture().fetch("abc123")
+    assert out == {"status": "IN_PROGRESS", "profiles": None, "cost_credits": None}
+
+
+def test_fetch_404_not_found_est_un_statut_nomme(monkeypatch):
+    monkeypatch.setattr(fe.requests, "get", _get(404, {
+        "code": "error.enrichment.not_found", "message": "Enrichment ID not found"}))
+    out = FullenrichClientFixture().fetch("abc123")
+    assert out == {"status": fe.STATUS_NOT_FOUND, "profiles": None, "cost_credits": None}
+
+
+def test_fetch_429_rate_limit_est_un_statut_nomme(monkeypatch):
+    monkeypatch.setattr(fe.requests, "get", _get(429, {
+        "code": "error.rate.limit", "message": "Too many requests. Try again in 1m"}))
+    out = FullenrichClientFixture().fetch("abc123")
+    assert out == {"status": "RATE_LIMIT", "profiles": None, "cost_credits": None}
+
+
+def test_fetch_402_credits_insuffisants_comme_le_statut(monkeypatch):
+    monkeypatch.setattr(fe.requests, "get", _get(402, {"status": "CREDITS_INSUFFICIENT"}))
+    with pytest.raises(RuntimeError, match="crédits insuffisants"):
+        FullenrichClientFixture().fetch("abc123")
+
+
+def test_fetch_un_autre_400_reste_une_erreur(monkeypatch):
+    monkeypatch.setattr(fe.requests, "get", _get(400, {"code": "error.other", "message": "x"}))
+    with pytest.raises(RuntimeError, match="FullEnrich GET 400"):
+        FullenrichClientFixture().fetch("abc123")
+
+
+def test_fetch_un_corps_non_json_ne_masque_pas_le_code(monkeypatch):
+    class _Brut(_Resp):
+        def json(self):
+            raise ValueError("pas du json")
+    monkeypatch.setattr(fe.requests, "get",
+                        lambda url, headers=None, timeout=None: _Brut(500, {}))
+    with pytest.raises(RuntimeError, match="FullEnrich GET 500"):
+        FullenrichClientFixture().fetch("abc123")
