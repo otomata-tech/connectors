@@ -176,9 +176,17 @@ class NotionClient:
     # API Methods
 
     def search(self, query: str, filter_type: Optional[str] = None,
-               sort: str = "relevance") -> Dict:
-        """Search Notion workspace."""
+               sort: str = "relevance", start_cursor: Optional[str] = None) -> Dict:
+        """Search Notion workspace — ONE page of results (at most 100).
+
+        Notion paginates `POST /search`: the answer carries `has_more` and
+        `next_cursor`. Pass that cursor back as `start_cursor` to read the next
+        page (otomata-tech/oto#249) — without it a caller only ever sees the
+        first 100 objects of the workspace.
+        """
         data = {"query": query}
+        if start_cursor:
+            data["start_cursor"] = start_cursor
 
         # Only add sort if not relevance (Notion API default)
         if sort != "relevance":

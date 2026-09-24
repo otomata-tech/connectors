@@ -234,7 +234,7 @@ rm tools/.cache/notion/{hash}.json
 
 Python client library with methods:
 
-- `search(query, filter_type, sort)` - Search workspace
+- `search(query, filter_type, sort, start_cursor)` - Search workspace, one page (≤ 100) ; repass `next_cursor` as `start_cursor`
 - `get_page(page_id)` - Get page metadata
 - `get_page_blocks(page_id)` - Get page content
 - `query_database(database_id, filter_obj, sorts, page_size)` - Query DB
