@@ -30,6 +30,7 @@ from ...config import require_secret
 from ..common import FieldFilter
 from ..common.errors import raise_for_upstream
 from .ledger import LedgerMixin
+from .quotes import QuotesMixin
 
 
 def _is_outstanding(transaction) -> bool:
@@ -47,11 +48,12 @@ def _is_outstanding(transaction) -> bool:
         return True
 
 
-class PennylaneClient(LedgerMixin):
+class PennylaneClient(LedgerMixin, QuotesMixin):
     """Client for Pennylane API v2.
 
     Le grand livre (écritures, journaux, lettrage de lignes) vit dans
-    `LedgerMixin` — même découpage que `brevo`, cf. `ledger.py`.
+    `LedgerMixin` — même découpage que `brevo`, cf. `ledger.py` ; les devis dans
+    `QuotesMixin` (`quotes.py`).
     """
 
     BASE_URL = "https://app.pennylane.com/api/external/v2"
@@ -602,24 +604,6 @@ class PennylaneClient(LedgerMixin):
         """Get the lines of a customer invoice."""
         data = self.fetch(f"customer_invoices/{invoice_id}/invoice_lines")
         return data.get("items", []) if isinstance(data, dict) else []
-
-    # --- Quotes ---
-
-    def create_quote(self, customer_id: int, date: str, deadline: str,
-                     lines: list[dict], external_reference: str = None,
-                     currency: str = "EUR", language: str = "fr_FR") -> dict:
-        """Create a quote."""
-        body = {
-            "customer_id": customer_id,
-            "date": date,
-            "deadline": deadline,
-            "currency": currency,
-            "language": language,
-            "invoice_lines": lines,
-        }
-        if external_reference:
-            body["external_reference"] = external_reference
-        return self.post("quotes", body)
 
     # --- Aggregates ---
 
