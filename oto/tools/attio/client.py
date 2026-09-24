@@ -674,6 +674,33 @@ class AttioAttributes:
         """List statuses for a status attribute."""
         return self.client._request("GET", f"{target}/{identifier}/attributes/{attribute}/statuses")
 
+    # --- Écritures de SCHÉMA -------------------------------------------------
+    # L'API n'a aucun DELETE sur un attribut, une option ou une étape : ce qui est
+    # créé ici ne s'efface pas par l'API.
+
+    def create(self, target: str, identifier: str, definition: Dict[str, Any]) -> Dict[str, Any]:
+        """Create an attribute on an object or list (POST /{target}/{identifier}/attributes).
+
+        `definition` is Attio's attribute object, sent verbatim as `data`: `title`,
+        `description`, `api_slug`, `type`, `is_required`, `is_unique`,
+        `is_multiselect`, `config`. Scope `object_configuration:read-write`
+        (`list_configuration:read-write` for a list).
+        """
+        return self.client._request("POST", f"{target}/{identifier}/attributes",
+                                    json={"data": definition})
+
+    def create_option(self, target: str, identifier: str, attribute: str,
+                      title: str) -> Dict[str, Any]:
+        """Add a select option to a select attribute (POST …/attributes/{attribute}/options)."""
+        return self.client._request("POST", f"{target}/{identifier}/attributes/{attribute}/options",
+                                    json={"data": {"title": title}})
+
+    def create_status(self, target: str, identifier: str, attribute: str,
+                      title: str) -> Dict[str, Any]:
+        """Add a status (e.g. a deal stage) to a status attribute (POST …/attributes/{attribute}/statuses)."""
+        return self.client._request("POST", f"{target}/{identifier}/attributes/{attribute}/statuses",
+                                    json={"data": {"title": title}})
+
 
 class AttioClient:
     """
