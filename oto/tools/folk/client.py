@@ -45,12 +45,24 @@ def filter_params(filters: Dict[str, Any]) -> Dict[str, Any]:
     - valeur `{opérateur: valeur}` → l'opérateur demandé, tel quel
       (`eq`, `not_eq`, `not_like`, `empty`, `not_empty`, `gt`, `in`, `not_in`)
       — un appelant qui veut l'égalité stricte n'a plus à contourner le client.
+
+    Sur une relation, la valeur de `in`/`not_in` est l'id NU (ou une liste d'ids) :
+    le `[id]` du paramètre est posé ICI. Une valeur objet (`{"in": {"id": [...]}}`)
+    est refusée — transmise, `requests` en sérialiserait les CLÉS et Folk recevrait
+    la chaîne littérale `id` (422 opaque, oto#146).
     """
     params: Dict[str, Any] = {}
     for key, val in (filters or {}).items():
         if isinstance(val, dict):
             for op, v in val.items():
                 if key in RELATION_FIELDS and op in RELATION_OPS:
+                    if isinstance(v, dict):
+                        raise ValueError(
+                            f"filtre {key!r} : la valeur de {op!r} est l'id nu ou une "
+                            f"liste d'ids, pas un objet — écrire "
+                            f'{{"{key}": {{"{op}": ["<id>", ...]}}}} ou '
+                            f'{{"{key}": "<id>"}} (le [id] du paramètre Folk est '
+                            f"ajouté par le connecteur), pas {{{op!r}: {v!r}}}.")
                     params[f"filter[{key}][{op}][id]"] = v
                 else:
                     params[f"filter[{key}][{op}]"] = v

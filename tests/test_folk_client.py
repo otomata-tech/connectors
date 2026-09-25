@@ -176,6 +176,26 @@ def test_explicit_relation_operator_still_nests_the_id():
         "filter[groups][not_in][id]": "grp_42"}
 
 
+def _wire_query(filters):
+    """La query telle qu'elle PART (sérialisation `requests`), pas le dict de params :
+    c'est à cette étape que l'objet imbriqué devenait la chaîne `id` (oto#146)."""
+    import requests
+    from urllib.parse import unquote
+    url = requests.Request("GET", f"{BASE}/people",
+                           params=folk_client.filter_params(filters)).prepare().url
+    return unquote(url.split("?", 1)[1])
+
+
+def test_relation_filter_wire_forms_146():
+    assert _wire_query({"groups": "grp_A"}) == "filter[groups][in][id]=grp_A"
+    assert _wire_query({"groups": {"in": ["grp_A", "grp_B"]}}) == (
+        "filter[groups][in][id]=grp_A&filter[groups][in][id]=grp_B")
+    with pytest.raises(ValueError, match=r'\{"groups": \{"in": \["<id>"'):
+        folk_client.filter_params({"groups": {"in": {"id": ["grp_A"]}}})
+    with pytest.raises(ValueError, match="pas un objet"):
+        folk_client.filter_params({"companies": {"not_in": {"id": "cpy_7"}}})
+
+
 def test_no_filters_no_params():
     assert folk_client.filter_params({}) == {} and folk_client.filter_params(None) == {}
 
