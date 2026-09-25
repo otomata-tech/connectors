@@ -324,6 +324,7 @@ class ClayTableWebhook:
     """Écrit des lignes dans UNE table Clay via son webhook entrant.
 
     Un `push` = un POST = une ligne. Pas de lot côté Clay : l'appelant boucle.
+    Jeton absent ou faux sur un webhook protégé → 401.
     Plafond Clay : 50 000 envois par webhook (hors Enterprise « auto-delete »),
     compteur non remis à zéro par la suppression de lignes — au-delà, il faut
     recréer un webhook dans l'UI."""
@@ -340,7 +341,9 @@ class ClayTableWebhook:
             self.session.headers[WEBHOOK_AUTH_HEADER] = auth_token
 
     def push(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        """POST une ligne (objet JSON plat : clés = noms de colonnes)."""
+        """POST une ligne. L'objet entier arrive dans la colonne Webhook de la table
+        (ses clés se relient aux colonnes côté Clay) ; un tableau JSON n'est pas
+        découpé et ne fait qu'une ligne."""
         resp = self.session.post(self.webhook_url, json=row, timeout=self.timeout)
         _raise(resp)
         if not resp.content:
