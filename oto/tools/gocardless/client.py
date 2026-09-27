@@ -13,6 +13,9 @@ passée explicitement. ⚠️ Un token `live_` frappe les données réelles.
 
 Chaîne de données : payment → links.mandate → mandate.links.customer.
 Le motif d'un échec vit dans l'Events API (action=failed).
+Un versement en banque (payout, PO…) regroupe des lignes (payout_items) : une
+par paiement reversé, échec, rétrofacturation, remboursement ou frais, chacune
+liée à son paiement (links.payment).
 
 Usage :
     client = GoCardlessClient(api_key="live_...")
@@ -27,6 +30,7 @@ from typing import Optional
 import requests
 
 from ...config import require_secret
+from ..common.errors import UpstreamHTTPError
 
 
 def _to_rfc3339(value: Optional[str]) -> Optional[str]:
@@ -84,23 +88,35 @@ class GoCardlessClient:
                 return {"error": str(e)}
         return {"error": "Max retries exceeded"}
 
+    def _read(self, endpoint: str, params: Optional[dict] = None) -> dict:
+        """GET qui LÈVE sur refus amont, là où `fetch` rend un dict d'erreur.
+
+        `fetch` garde son contrat (la sonde de connexion lit son dict) ; toute
+        lecture neuve passe par ici, pour qu'un refus ne se lise jamais comme
+        « rien à lire ».
+        """
+        data = self.fetch(endpoint, params)
+        if "error" not in data:
+            return data
+        code = data.get("status_code")
+        if code is None:
+            raise RuntimeError(f"gocardless: GET {endpoint} — {data['error']}")
+        raise UpstreamHTTPError(code, data.get("details"), service="gocardless")
+
     def fetch_all(self, resource: str, params: Optional[dict] = None,
                   max_pages: Optional[int] = None) -> list:
         """Pagination cursor GoCardless (`meta.cursors.after`).
 
         `resource` est la clé de collection (ex. 'payments', 'events') qui sert
-        à la fois d'endpoint et de clé dans la réponse.
+        à la fois d'endpoint et de clé dans la réponse. Un refus sur n'importe
+        quelle page lève : une collecte tronquée ne se rend jamais comme complète.
         """
         params = dict(params or {})
         out, pages, after = [], 0, None
         while True:
             if after:
                 params["after"] = after
-            data = self.fetch(resource, params)
-            if "error" in data:
-                if not out:
-                    return data  # remonte l'erreur si rien collecté
-                break
+            data = self._read(resource, params)
             out.extend(data.get(resource, []))
             after = data.get("meta", {}).get("cursors", {}).get("after")
             pages += 1
@@ -161,6 +177,58 @@ class GoCardlessClient:
         if resource_type:
             params["resource_type"] = resource_type
         return self.fetch("events", params).get("events", [])
+
+    # --- Versements (payouts) ---
+
+    def list_payouts(self, status: Optional[str] = None, limit: int = 50,
+                     currency: Optional[str] = None, reference: Optional[str] = None,
+                     created_gt: Optional[str] = None,
+                     created_lt: Optional[str] = None) -> list:
+        """Versements en banque (1 page). Montants en centimes.
+
+        Args:
+            status: pending, paid, bounced.
+            limit: taille de page (max 500 côté API).
+            currency: code ISO 4217 (EUR, GBP…).
+            reference: libellé exact porté sur le relevé bancaire.
+            created_gt / created_lt: ISO8601, bornes sur la création du
+                versement (exclues). Une date nue vaut minuit UTC.
+        """
+        params = {"limit": limit}
+        if status:
+            params["status"] = status
+        if currency:
+            params["currency"] = currency
+        if reference:
+            params["reference"] = reference
+        if created_gt:
+            params["created_at[gt]"] = _to_rfc3339(created_gt)
+        if created_lt:
+            params["created_at[lt]"] = _to_rfc3339(created_lt)
+        return self._read("payouts", params)["payouts"]
+
+    def get_payout(self, payout_id: str) -> dict:
+        return self._read(f"payouts/{payout_id}")["payouts"]
+
+    def list_payout_items(self, payout_id: str) -> list:
+        """Toutes les lignes d'un versement, toutes pages lues.
+
+        Une ligne = `type` (payment_paid_out, payment_failed,
+        payment_charged_back, payment_refunded, refund, refund_funds_returned,
+        gocardless_fee, app_fee, revenue_share, surcharge_fee), `amount` signé
+        en centimes, `links` (payment, mandate, refund) et `taxes`.
+        ⚠️ GoCardless ne sert les lignes que des versements créés il y a moins
+        de 6 mois : au-delà, HTTP 410.
+        """
+        return self.fetch_all("payout_items", {"payout": payout_id, "limit": 500})
+
+    def payout_detail(self, payout_id: str) -> dict:
+        """Un versement et toutes ses lignes, pour le rapprocher paiement par
+        paiement. Montants bruts de l'API, en centimes."""
+        return {
+            "payout": self.get_payout(payout_id),
+            "items": self.list_payout_items(payout_id),
+        }
 
     # --- Agrégats métier ---
 
