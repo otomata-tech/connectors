@@ -6,6 +6,9 @@ concentrent sur peu de débiteurs, donc mandat/client se mémoïsent ; le motif,
 est par paiement. On verrouille les deux moitiés du contrat : moins d'appels, et
 exactement les mêmes lignes qu'avant.
 """
+import pytest
+
+from oto.tools.common.errors import UpstreamHTTPError
 from oto.tools.gocardless.client import GoCardlessClient
 
 
@@ -80,9 +83,18 @@ def test_a_payment_without_mandate_still_yields_a_row():
     assert c.calls["mandate"] == [] and c.calls["customer"] == []
 
 
-def test_upstream_error_is_passed_through_untouched():
-    c = _client({"error": "401"}, {}, {}, {})
-    assert c.failed_payments() == {"error": "401"}
+def test_upstream_error_on_the_initial_list_propagates():
+    """`list_payments` LÈVE sur un refus amont (via `_read`) : `failed_payments`
+    ne l'attrape pas et ne le lit jamais comme une liste vide — un refus ne se
+    lit pas comme « rien à enrichir »."""
+    c = _client(PAYMENTS, {}, {}, {})
+
+    def _raises(status=None, limit=None, created_gt=None):
+        raise UpstreamHTTPError(401, "Invalid token", service="gocardless")
+
+    c.list_payments = _raises
+    with pytest.raises(UpstreamHTTPError):
+        c.failed_payments()
 
 
 def test_name_falls_back_to_given_and_family_name():

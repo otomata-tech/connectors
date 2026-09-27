@@ -91,9 +91,9 @@ class GoCardlessClient:
     def _read(self, endpoint: str, params: Optional[dict] = None) -> dict:
         """GET qui LÈVE sur refus amont, là où `fetch` rend un dict d'erreur.
 
-        `fetch` garde son contrat (la sonde de connexion lit son dict) ; toute
-        lecture neuve passe par ici, pour qu'un refus ne se lise jamais comme
-        « rien à lire ».
+        `fetch` garde son contrat propre (seule la sonde de connexion l'appelle
+        directement, pour lire son dict) ; toute lecture passe par ici, pour
+        qu'un refus ne se lise jamais comme « rien à lire ».
         """
         data = self.fetch(endpoint, params)
         if "error" not in data:
@@ -129,7 +129,7 @@ class GoCardlessClient:
 
     def list_creditors(self) -> list:
         """Comptes marchands GoCardless (le compte encaisseur)."""
-        return self.fetch("creditors").get("creditors", [])
+        return self._read("creditors")["creditors"]
 
     def list_payments(self, status: Optional[str] = None, limit: int = 50,
                       mandate: Optional[str] = None, customer: Optional[str] = None,
@@ -152,16 +152,16 @@ class GoCardlessClient:
             params["customer"] = customer
         if created_gt:
             params["created_at[gt]"] = _to_rfc3339(created_gt)
-        return self.fetch("payments", params).get("payments", [])
+        return self._read("payments", params)["payments"]
 
     def get_payment(self, payment_id: str) -> dict:
-        return self.fetch(f"payments/{payment_id}").get("payments", {})
+        return self._read(f"payments/{payment_id}")["payments"]
 
     def get_mandate(self, mandate_id: str) -> dict:
-        return self.fetch(f"mandates/{mandate_id}").get("mandates", {})
+        return self._read(f"mandates/{mandate_id}")["mandates"]
 
     def get_customer(self, customer_id: str) -> dict:
-        return self.fetch(f"customers/{customer_id}").get("customers", {})
+        return self._read(f"customers/{customer_id}")["customers"]
 
     def list_events(self, payment: Optional[str] = None, mandate: Optional[str] = None,
                     action: Optional[str] = None, resource_type: Optional[str] = None,
@@ -176,7 +176,7 @@ class GoCardlessClient:
             params["action"] = action
         if resource_type:
             params["resource_type"] = resource_type
-        return self.fetch("events", params).get("events", [])
+        return self._read("events", params)["events"]
 
     # --- Versements (payouts) ---
 
@@ -240,8 +240,6 @@ class GoCardlessClient:
         pas forcément d'identifiant client externe (cas observé chez un client : vide).
         """
         p = self.get_payment(payment_id)
-        if "error" in p:
-            return p
         mandate_id = p.get("links", {}).get("mandate")
         mandate = self.get_mandate(mandate_id) if mandate_id else {}
         customer_id = mandate.get("links", {}).get("customer")
@@ -283,8 +281,6 @@ class GoCardlessClient:
             limit: taille de page des `failed` à enrichir (max 500).
         """
         payments = self.list_payments(status="failed", limit=limit, created_gt=since)
-        if isinstance(payments, dict):  # erreur remontée
-            return payments
 
         # 3 requêtes SÉQUENTIELLES par ligne (mandat, client, motif) + une pause :
         # sur 200 échecs, 600 allers-retours en file indienne — 186 s mesurés en
@@ -351,8 +347,6 @@ class GoCardlessClient:
         d'avoir tant que ce n'est pas False.
         """
         events = self.list_events(payment=payment_id, action="failed", limit=10)
-        if isinstance(events, dict):  # erreur remontée
-            return events
         if not events:
             return {"failed": False}
         ev = events[0]  # le plus récent
