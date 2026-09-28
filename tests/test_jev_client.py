@@ -1,9 +1,8 @@
 """Contrat du client Jev (System One / Decisions, Bearer OpenRouter).
 
 Mocke `requests.Session.post` : vérifie l'URL, le corps envoyé, le modèle par
-défaut, le typage des erreurs amont — et la garde de grille, qui existe parce que
-l'AMONT accepte une question sans `criteria` (200, probabilité 0,42, mesuré le
-28/09/2026).
+défaut, le typage des erreurs amont — et la garde de grille, qui refuse une question
+sans `criteria` avant tout appel.
 """
 from __future__ import annotations
 
@@ -81,7 +80,7 @@ def test_erreur_amont_typee(monkeypatch):
     ({}, "au moins une question"),
     ({"q": {"type": "bool", "instructions": "?", "criteria": {"true": "x", "false": "y"}}}, "inconnu"),
     ({"q": {"type": "noul", "instructions": "", "criteria": {"true": "x", "false": "y"}}}, "instructions"),
-    # ⚠️ Le cas qui motive la garde : l'amont répond 200 à celle-ci.
+    # ⚠️ Le cas qui motive la garde : une question sans `criteria`.
     ({"q": {"type": "noul", "instructions": "?"}}, "criteria"),
     ({"q": {"type": "choice", "instructions": "?", "criteria": {"une": "seule"}}}, "criteria"),
     ({"q": {"type": "score", "instructions": "?", "criteria": {"pas": "une liste"}}}, "LISTE"),
@@ -94,22 +93,16 @@ def test_grille_mal_formee_refusee_avant_l_appel(questions, attendu):
 @pytest.mark.parametrize("model", ["anthropic/claude-opus-5.5", "openai/gpt-6-sol",
                                    "z-ai/glm-5.3-flashx", "mistral/mistral-large-2512"])
 def test_un_modele_d_un_autre_editeur_est_refuse_ici(model, capture):
-    """⚠️ Mesuré le 28/09/2026 : la route de décision refuse déjà ces modèles-là
-    (« Model … does not exist »). La garde n'ouvre donc rien ; elle rend la promesse du
-    connecteur vraie de NOTRE côté, et non par le comportement du jour de l'amont — et
-    elle économise un aller-retour facturé pour une faute de frappe."""
+    """La garde rend la promesse du connecteur vraie de NOTRE côté, et économise un
+    aller-retour facturé pour une faute de frappe."""
     with pytest.raises(ValueError, match="modèles de décision"):
         _client().decide({"a": "b"}, {"q": NOUL}, model=model)
     assert not capture
 
 
-def test_le_routeur_de_chat_de_TypeSafe_passe_la_garde_et_c_est_l_amont_qui_le_refuse(capture):
-    """⚠️ `typesafe/jev-router` est du MÊME éditeur mais n'est pas un modèle de
-    décision : c'est un routeur de chat qui tourne sur Jev. Notre garde porte sur
-    l'ÉDITEUR, pas sur le catalogue — le trier ici demanderait de tenir à jour une
-    liste de modèles, qui vieillirait en silence. La route, elle, le refuse
-    explicitement (400, « Model typesafe/jev-router does not exist », mesuré le
-    28/09/2026) : le refus existe, il vient juste de l'autre bout."""
+def test_la_garde_porte_sur_l_editeur_pas_sur_le_catalogue(capture):
+    """Un modèle du même éditeur passe la garde, quel qu'il soit : trier ici par
+    modèle demanderait de tenir à jour une liste qui vieillirait en silence."""
     _client().decide({"a": "b"}, {"q": NOUL}, model="typesafe/jev-router")
     assert capture["kwargs"]["json"]["model"] == "typesafe/jev-router"
 

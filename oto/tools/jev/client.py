@@ -5,16 +5,15 @@ avec leurs probabilités. Aucun texte, aucune trace de raisonnement, aucun appel
 d'outil : il remplace le « je demande au modèle et je parse sa réponse », pas le
 modèle qui mène le travail.
 
-Trois primitives, mesurées le 28/09/2026 sur l'API réelle :
+Trois primitives :
 - **noul**   : la condition tient-elle ? → `{"noul": 0.96}` (probabilité du oui) ;
 - **choice** : laquelle de ces options ? → option retenue, probabilité par option,
   confiance ;
 - **score**  : où sur cette échelle ordonnée ? → position pondérée, probabilité par
   échelon, légende.
 
-Facturation (relevée, pas déduite) : **l'entrée seule est facturée, la sortie est
-gratuite** ; l'état est facturé UNE FOIS par requête et chaque question de plus ne
-coûte que ~48 jetons — poser toute la grille en un appel est donc la bonne façon de
+Facturation : **l'entrée seule est facturée, la sortie est gratuite** ; l'état est
+facturé UNE FOIS par requête et chaque question de plus ne coûte que ~48 jetons — poser toute la grille en un appel est donc la bonne façon de
 s'en servir. Chaque réponse porte `usage.cost`, le coût RÉEL en dollars : c'est lui
 qui sert de base de facturation en aval, jamais un barème recopié qui vieillirait.
 
@@ -34,22 +33,16 @@ from ...config import require_secret
 from ..common import raise_for_upstream
 
 #: Les trois primitives connues. Une question d'un autre type est refusée ICI :
-#: l'amont répond 400 `invalid_union`, mais le dire avant l'appel évite de facturer
-#: un aller-retour pour une faute de frappe.
+#: le dire avant l'appel évite de facturer un aller-retour pour une faute de frappe.
 TYPES = ("noul", "choice", "score")
 
 #: Le SNAPSHOT daté, pas l'id nu. `typesafe/jev-1.13` résout vers la version courante :
-#: un seuil calibré sur une version bougerait sous nous à la prochaine. Le snapshot est
-#: accepté tel quel par l'API (vérifié le 28/09/2026).
+#: un seuil calibré sur une version bougerait sous nous à la prochaine.
 DEFAULT_MODEL = "typesafe/jev-1.13-20260917"
 
-#: Les seuls éditeurs de modèle que ce client accepte. La route de décision ne sert
-#: DÉJÀ que des modèles System One — mesuré le 28/09/2026, `anthropic/claude-opus-5.5`,
-#: `openai/gpt-6-sol`, `z-ai/glm-5.3-flashx` et même `typesafe/jev-router` y répondent
-#: tous « Model … does not exist ». Ce garde-fou ne referme donc pas une porte ouverte :
-#: il rend la promesse du connecteur VRAIE PAR CONSTRUCTION plutôt que par le
-#: comportement du jour de l'amont, et il empêche qu'un futur modèle d'un autre éditeur,
-#: servi un jour par cette route, parte sur notre clé sans que personne l'ait décidé.
+#: Les seuls éditeurs de modèle que ce client accepte. La promesse du connecteur (une
+#: décision typée, jamais un modèle de texte) est tenue ICI, par construction : aucun
+#: modèle d'un autre éditeur ne part sur la clé sans que quelqu'un l'ait décidé.
 EDITEURS_SERVIS = ("typesafe/", "~typesafe/")
 
 
@@ -130,14 +123,13 @@ class JevClient:
         """Refuse un modèle qui n'est pas un modèle de décision TypeSafe.
 
         Ce client sert UNE route (`/v1/systemone`) et UN éditeur : ce n'est pas un
-        passe-plat vers le catalogue du fournisseur. La route le refuse déjà — mais
-        « c'est refusé en face » est une propriété de l'amont, pas une promesse de
-        notre part."""
+        passe-plat vers le catalogue du fournisseur. La garde porte sur l'éditeur, pas
+        sur une liste de modèles qui vieillirait en silence."""
         if not str(model).startswith(EDITEURS_SERVIS):
             raise ValueError(
                 f"modèle {model!r} : ce connecteur ne sert que les modèles de décision "
                 f"TypeSafe ({' ou '.join(EDITEURS_SERVIS)}…). Un modèle de texte ne "
-                "répond pas à une question typée, et la route de décision le refuse.")
+                "répond pas à une question typée.")
 
     # --- garde de forme -----------------------------------------------------
 
@@ -145,10 +137,9 @@ class JevClient:
     def check_questions(questions: Dict[str, Any]) -> None:
         """Refuse une grille mal formée AVANT l'appel, en nommant la question fautive.
 
-        ⚠️ **`criteria` est exigé ici parce que l'amont ne l'exige pas** : mesuré le
-        28/09/2026, une question `noul` sans `criteria` répond **200** avec une
-        probabilité de 0,42 — une réponse qui a l'air d'en être une, sur une question
-        que personne n'a posée. Le seul endroit où ça peut se voir, c'est ici.
+        ⚠️ **`criteria` est exigé ici** : sans lui, la question n'a pas de sens défini,
+        et une probabilité rendue sur une telle question aurait l'air d'une réponse
+        sans en être une. Ce client est le seul endroit où l'exiger se voit.
         """
         if not isinstance(questions, dict) or not questions:
             raise ValueError("`questions` : au moins une question est attendue")
