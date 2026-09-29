@@ -1,8 +1,7 @@
-"""Contrat du client Jev (System One / Decisions, Bearer OpenRouter).
+"""Jev client contract (System One / Decisions, OpenRouter Bearer).
 
-Mocke `requests.Session.post` : vérifie l'URL, le corps envoyé, le modèle par
-défaut, le typage des erreurs amont — et la garde de grille, qui refuse une question
-sans `criteria` avant tout appel.
+Mocks `requests.Session.post`: URL, request body, default model, typed upstream errors,
+and the rubric guard that refuses a question without `criteria` before any call.
 """
 from __future__ import annotations
 
@@ -11,8 +10,8 @@ import pytest
 from oto.tools.common.errors import UpstreamHTTPError
 from oto.tools.jev import client as jv
 
-NOUL = {"type": "noul", "instructions": "La condition tient-elle ?",
-        "criteria": {"true": "oui", "false": "non"}}
+NOUL = {"type": "noul", "instructions": "Does the condition hold?",
+        "criteria": {"true": "yes", "false": "no"}}
 
 
 class _Resp:
@@ -49,26 +48,26 @@ def test_auth_header_is_bearer():
     assert _client().session.headers["Authorization"] == "Bearer sk-or-test"
 
 
-def test_decide_poste_sur_systemone_avec_le_snapshot_date(capture):
+def test_decide_posts_to_systemone_with_dated_snapshot(capture):
     _client().decide({"a": "b"}, {"q": NOUL})
     assert capture["url"] == "https://openrouter.ai/api/v1/systemone"
-    corps = capture["kwargs"]["json"]
-    assert corps == {"model": jv.DEFAULT_MODEL, "state": {"a": "b"}, "questions": {"q": NOUL}}
-    # Le snapshot DATÉ, pas l'id nu : un seuil calibré ne doit pas glisser de version.
+    body = capture["kwargs"]["json"]
+    assert body == {"model": jv.DEFAULT_MODEL, "state": {"a": "b"}, "questions": {"q": NOUL}}
+    # The DATED snapshot, not the bare id: a calibrated threshold must not drift.
     assert jv.DEFAULT_MODEL == "typesafe/jev-1.13-20260917"
 
 
-def test_base_url_surchargeable_pour_une_bascule_en_direct(capture):
+def test_base_url_override_for_direct_typesafe(capture):
     _client(base_url="https://api.typesafe.ai", path="/v1/systemone").decide({"a": "b"}, {"q": NOUL})
     assert capture["url"] == "https://api.typesafe.ai/v1/systemone"
 
 
-def test_modele_explicite_l_emporte(capture):
+def test_explicit_model_wins(capture):
     _client().decide({"a": "b"}, {"q": NOUL}, model="~typesafe/jev-latest")
     assert capture["kwargs"]["json"]["model"] == "~typesafe/jev-latest"
 
 
-def test_erreur_amont_typee(monkeypatch):
+def test_upstream_error_is_typed(monkeypatch):
     monkeypatch.setattr(jv.requests.Session, "post",
                         lambda self, url, **kw: _Resp(400, {"error": {"message": "nope"}}))
     with pytest.raises(UpstreamHTTPError) as e:
@@ -76,45 +75,43 @@ def test_erreur_amont_typee(monkeypatch):
     assert e.value.status_code == 400 and e.value.is_client_error
 
 
-@pytest.mark.parametrize("questions, attendu", [
-    ({}, "au moins une question"),
-    ({"q": {"type": "bool", "instructions": "?", "criteria": {"true": "x", "false": "y"}}}, "inconnu"),
+@pytest.mark.parametrize("questions, expected", [
+    ({}, "at least one question"),
+    ({"q": {"type": "bool", "instructions": "?", "criteria": {"true": "x", "false": "y"}}}, "unknown type"),
     ({"q": {"type": "noul", "instructions": "", "criteria": {"true": "x", "false": "y"}}}, "instructions"),
-    # ⚠️ Le cas qui motive la garde : une question sans `criteria`.
+    # ⚠️ The case the guard exists for: a question without `criteria`.
     ({"q": {"type": "noul", "instructions": "?"}}, "criteria"),
-    ({"q": {"type": "choice", "instructions": "?", "criteria": {"une": "seule"}}}, "criteria"),
-    ({"q": {"type": "score", "instructions": "?", "criteria": {"pas": "une liste"}}}, "LISTE"),
+    ({"q": {"type": "choice", "instructions": "?", "criteria": {"only": "one"}}}, "criteria"),
+    ({"q": {"type": "score", "instructions": "?", "criteria": {"not": "a list"}}}, "LIST"),
 ])
-def test_grille_mal_formee_refusee_avant_l_appel(questions, attendu):
-    with pytest.raises(ValueError, match=attendu):
+def test_malformed_rubric_refused_before_call(questions, expected):
+    with pytest.raises(ValueError, match=expected):
         _client().decide({"a": "b"}, questions)
 
 
 @pytest.mark.parametrize("model", ["anthropic/claude-opus-5.5", "openai/gpt-6-sol",
                                    "z-ai/glm-5.3-flashx", "mistral/mistral-large-2512"])
-def test_un_modele_d_un_autre_editeur_est_refuse_ici(model, capture):
-    """La garde rend la promesse du connecteur vraie de NOTRE côté, et économise un
-    aller-retour facturé pour une faute de frappe."""
-    with pytest.raises(ValueError, match="modèles de décision"):
+def test_other_publisher_model_refused(model, capture):
+    """Refused client-side: no billed round trip, and the key never reaches a text model."""
+    with pytest.raises(ValueError, match="decision models"):
         _client().decide({"a": "b"}, {"q": NOUL}, model=model)
     assert not capture
 
 
-def test_la_garde_porte_sur_l_editeur_pas_sur_le_catalogue(capture):
-    """Un modèle du même éditeur passe la garde, quel qu'il soit : trier ici par
-    modèle demanderait de tenir à jour une liste qui vieillirait en silence."""
+def test_guard_checks_publisher_not_catalog(capture):
+    """Any model from the same publisher passes: a per-model list would go stale."""
     _client().decide({"a": "b"}, {"q": NOUL}, model="typesafe/jev-router")
     assert capture["kwargs"]["json"]["model"] == "typesafe/jev-router"
 
 
-def test_l_alias_typesafe_passe(capture):
+def test_typesafe_alias_passes(capture):
     _client().decide({"a": "b"}, {"q": NOUL}, model="~typesafe/jev-latest")
     assert capture["kwargs"]["json"]["model"] == "~typesafe/jev-latest"
 
 
-def test_grille_valide_passe(capture):
+def test_valid_rubric_passes(capture):
     r = _client().decide({"a": "b"}, {
         "n": NOUL,
         "c": {"type": "choice", "instructions": "?", "criteria": {"a": "x", "b": "y"}},
-        "s": {"type": "score", "instructions": "?", "criteria": ["bas", "moyen", "haut"]}})
+        "s": {"type": "score", "instructions": "?", "criteria": ["low", "medium", "high"]}})
     assert r["usage"]["cost"] == 1.4322e-05
