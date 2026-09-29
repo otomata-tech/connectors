@@ -117,7 +117,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -144,12 +144,11 @@ class PromptWatchClient:
         """
         Args:
             api_key: PromptWatch API key (dashboard Settings > API Keys).
-                Defaults to env `PROMPTWATCH_API_KEY`.
             project_id: project UUID, sent as `X-Project-Id` on every request.
                 Only meaningful for an org-level key targeting >1 project —
                 a project-level key ignores it. See `list_projects()`.
         """
-        self.api_key = api_key or require_secret("PROMPTWATCH_API_KEY")
+        self.api_key = require(api_key, "PROMPTWATCH_API_KEY")
         self.project_id = project_id or None
 
     def _headers(self) -> Dict[str, str]:

@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -28,9 +28,9 @@ class ZeroBounceClient:
         Initialize ZeroBounce client.
 
         Args:
-            api_key: ZeroBounce API key (or set ZEROBOUNCE_API_KEY env var)
+            api_key: ZeroBounce API key
         """
-        self.api_key = api_key or require_secret("ZEROBOUNCE_API_KEY")
+        self.api_key = require(api_key, "ZEROBOUNCE_API_KEY")
 
     def _request(self, endpoint: str, params: Dict = None) -> Dict[str, Any]:
         """Make API request."""

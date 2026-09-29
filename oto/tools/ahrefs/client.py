@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -50,12 +50,12 @@ class AhrefsClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Ahrefs API key (or env var `AHREFS_API_KEY`). Created in
+            api_key: Ahrefs API key. Created in
                 the Ahrefs webapp under API Access — one key per Ahrefs seat,
                 billed against that account's subscription (byo-only, no
                 platform-shared key: Ahrefs seats are expensive and per-org).
         """
-        self.api_key = api_key or require_secret("AHREFS_API_KEY")
+        self.api_key = require(api_key, "AHREFS_API_KEY")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"
 

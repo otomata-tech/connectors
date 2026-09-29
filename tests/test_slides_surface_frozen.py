@@ -1,7 +1,6 @@
 """La surface de `SlidesClient` est un CONTRAT.
 
-`oto.tools.google.slides.commands` (façade CLI) et les générateurs de decks
-importent `SlidesClient` depuis `oto.tools.google.slides.lib.slides_client` :
+Les générateurs de decks importent `SlidesClient` depuis `oto.tools.google.slides.lib.slides_client` :
 le chemin, les méthodes et leurs défauts sont figés.
 
 Posé avec le découpage du client par famille d'opérations (2026-08-27,

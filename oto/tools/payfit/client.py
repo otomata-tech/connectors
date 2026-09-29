@@ -81,7 +81,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError, raise_for_upstream
 from ._api import _AbsencesMixin, _ContractsMixin, _PayrollMixin, _PeopleMixin
 from .params import clean as _clean
@@ -115,7 +115,7 @@ class PayfitClient(_PayrollMixin, _PeopleMixin, _ContractsMixin, _AbsencesMixin)
             api_key: PayFit company API key (or secret `PAYFIT_API_KEY`),
                 created by a company admin in the PayFit app.
         """
-        self.api_key = api_key or require_secret("PAYFIT_API_KEY")
+        self.api_key = require(api_key, "PAYFIT_API_KEY")
         self.session = requests.Session()
         # The key travels in a HEADER (and in the introspection BODY), never in
         # the query string.

@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class CloroClient:
@@ -33,9 +33,9 @@ class CloroClient:
         Initialize Cloro client.
 
         Args:
-            api_key: Cloro API key (or set CLORO_API_KEY env var).
+            api_key: Cloro API key.
         """
-        self.api_key = api_key or require_secret("CLORO_API_KEY")
+        self.api_key = require(api_key, "CLORO_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",

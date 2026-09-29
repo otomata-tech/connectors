@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -67,9 +67,9 @@ class SerperClient:
         Initialize Serper client.
 
         Args:
-            api_key: Serper API key (or set SERPER_API_KEY env var)
+            api_key: Serper API key
         """
-        self.api_key = api_key or require_secret("SERPER_API_KEY")
+        self.api_key = require(api_key, "SERPER_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "X-API-KEY": self.api_key,

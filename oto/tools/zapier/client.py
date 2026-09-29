@@ -10,7 +10,7 @@ Auth = **API key** (en-tête `x-api-key`). La clé se crée sur
 https://actions.zapier.com/credentials/ (chaque clé porte le jeu d'actions
 exposées par l'utilisateur).
 
-Clé passée au constructeur (ou `ZAPIER_API_KEY` en fallback).
+Clé passée au constructeur.
 
 Docs : https://actions.zapier.com/docs/
 
@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -35,9 +35,9 @@ class ZapierClient:
         """Initialise le client.
 
         Args:
-            api_key: Zapier AI Actions API key (ou env `ZAPIER_API_KEY`).
+            api_key: Zapier AI Actions API key.
         """
-        self.api_key = api_key or require_secret("ZAPIER_API_KEY")
+        self.api_key = require(api_key, "ZAPIER_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "x-api-key": self.api_key,

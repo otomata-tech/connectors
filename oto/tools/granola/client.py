@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -53,13 +53,13 @@ class GranolaClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Granola API key (or env var `GRANOLA_API_KEY`), format
+            api_key: Granola API key, format
                 `grn_...`. Created in the Granola desktop app under Settings →
                 Connectors → API keys (personal key, any Business-plan
                 member) or provisioned by a workspace admin (workspace key,
                 Enterprise). byo-only — no platform-shared key.
         """
-        self.api_key = api_key or require_secret("GRANOLA_API_KEY")
+        self.api_key = require(api_key, "GRANOLA_API_KEY")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"
 

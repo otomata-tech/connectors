@@ -84,7 +84,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -122,11 +122,11 @@ class FirefliesClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Fireflies API key (or env var `FIREFLIES_API_KEY`).
+            api_key: Fireflies API key.
                 Created at app.fireflies.ai/integrations/api — byo-only, no
                 platform-shared key.
         """
-        self.api_key = api_key or require_secret("FIREFLIES_API_KEY")
+        self.api_key = require(api_key, "FIREFLIES_API_KEY")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"
         self.session.headers["Content-Type"] = "application/json"

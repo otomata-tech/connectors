@@ -59,7 +59,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ._api import (_ChangelogsMixin, _CompaniesMixin, _ContactsMixin,
                    _DocsMixin, _MetaMixin, _RoadmapMixin, _TaxonomyMixin,
@@ -91,12 +91,12 @@ class ProductlaneClient(
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: clé d'API v2 Productlane (ou env `PRODUCTLANE_API_KEY`).
+            api_key: clé d'API v2 Productlane.
 
         La clé se génère dans Productlane (Settings → API). ⚠️ Une clé **v1** ne
         marche pas ici : v2 est une API distincte, et v1 s'arrête le 20/11/2026.
         """
-        self.api_key = api_key or require_secret("PRODUCTLANE_API_KEY")
+        self.api_key = require(api_key, "PRODUCTLANE_API_KEY")
         self.session = requests.Session()
         # Clé en HEADER uniquement (jamais en query string : elle finirait dans
         # l'URL, donc dans le message de toute exception, les logs et Sentry).

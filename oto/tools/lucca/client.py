@@ -21,7 +21,7 @@ own tenant subdomain:
 Requires: requests
 
 Usage:
-    client = LuccaClient()  # resolves LUCCA_API_KEY + LUCCA_DOMAIN
+    client = LuccaClient(api_key="…", domain="acme")
 
     # Directory
     users = client.list_users(mail="jean.dupont@exemple.fr")
@@ -54,7 +54,7 @@ from typing import Any, Optional, Union
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
 # (connexion, lecture) — un host injoignable ne doit jamais bloquer indéfiniment.
@@ -81,8 +81,8 @@ class LuccaClient:
                 response. Defaults to the `field_filters.lucca` policy in
                 ~/.otomata/config.yaml (no-op when none is configured).
         """
-        self.api_key = api_key or require_secret("LUCCA_API_KEY")
-        self.domain = domain or require_secret("LUCCA_DOMAIN")
+        self.api_key = require(api_key, "LUCCA_API_KEY")
+        self.domain = require(domain, "LUCCA_DOMAIN")
         self.base_url = f"https://{self.domain}.ilucca.net"
         self.field_filter = field_filter or FieldFilter.from_config("lucca")
         self.session = requests.Session()

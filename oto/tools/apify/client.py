@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -33,9 +33,9 @@ class ApifyClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: token Apify (ou variable d'env `APIFY_API_KEY`).
+            api_key: token Apify.
         """
-        self.api_key = api_key or require_secret("APIFY_API_KEY")
+        self.api_key = require(api_key, "APIFY_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({"Authorization": f"Bearer {self.api_key}"})
 

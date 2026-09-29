@@ -2,7 +2,7 @@
 
 Auth = **private app access token** (Bearer). Créé dans HubSpot :
 Settings → Integrations → Private Apps → scopes `crm.objects.*` (read/write).
-Passé en clair au constructeur (ou `HUBSPOT_API_KEY` en fallback CLI).
+Passé en clair au constructeur.
 
 Surface générique sur les objets CRM : `contacts`, `companies`, `deals`,
 `tickets` (et tout objet custom) partagent les mêmes verbes
@@ -46,7 +46,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # Type d'association par défaut HubSpot (note → objet). 202 = Note↔Contact,
@@ -126,9 +126,9 @@ class HubSpotClient:
         """Initialise le client.
 
         Args:
-            api_key: private app access token (ou env `HUBSPOT_API_KEY`).
+            api_key: private app access token.
         """
-        self.api_key = api_key or require_secret("HUBSPOT_API_KEY")
+        self.api_key = require(api_key, "HUBSPOT_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",

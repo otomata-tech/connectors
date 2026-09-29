@@ -2,8 +2,7 @@
 
 Auth = **API key** dans l'en-tête `Authorization: Token token=<key>`, plus un
 en-tête de version d'API obligatoire (`X-Api-Version`). Clé créée dans
-Teamtailor : Settings → API keys (Admin). Passée en clair au constructeur (ou
-`TEAMTAILOR_API_KEY` en fallback).
+Teamtailor : Settings → API keys (Admin). Passée en clair au constructeur.
 
 L'API suit la convention **JSON:API** : les ressources ont `{type, id,
 attributes, relationships}` et le filtrage passe par `filter[...]`, la
@@ -20,7 +19,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # Version d'API Teamtailor figée (en-tête obligatoire). À bumper consciemment.
@@ -37,10 +36,10 @@ class TeamtailorClient:
         """Initialise le client.
 
         Args:
-            api_key: Teamtailor API key (ou env `TEAMTAILOR_API_KEY`).
+            api_key: Teamtailor API key.
             api_version: valeur de l'en-tête `X-Api-Version` (date figée).
         """
-        self.api_key = api_key or require_secret("TEAMTAILOR_API_KEY")
+        self.api_key = require(api_key, "TEAMTAILOR_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Token token={self.api_key}",

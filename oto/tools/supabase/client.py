@@ -2,7 +2,7 @@
 Supabase Management API client.
 
 Auth : SUPABASE_ACCESS_TOKEN (Personal Access Token `sbp_...`, créé sur
-https://supabase.com/dashboard/account/tokens). Stocké dans SOPS (secrets.yaml).
+https://supabase.com/dashboard/account/tokens), fourni par le consommateur.
 Docs API : https://api.supabase.com
 
 Requires: requests
@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 BASE = "https://api.supabase.com"
 # UA explicite : l'endpoint analytics renvoie un 403 Cloudflare (1010) sur le
@@ -23,7 +23,7 @@ _UA = "oto-supabase-client/1.0"
 
 def _headers(token: Optional[str] = None) -> Dict[str, str]:
     return {
-        "Authorization": f"Bearer {token or require_secret('SUPABASE_ACCESS_TOKEN')}",
+        "Authorization": f"Bearer {require(token, 'SUPABASE_ACCESS_TOKEN')}",
         "User-Agent": _UA,
         "Accept": "application/json",
     }

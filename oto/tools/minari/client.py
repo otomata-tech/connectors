@@ -51,7 +51,7 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError, raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture)
@@ -104,13 +104,13 @@ class MinariClient:
                  base_url: Optional[str] = None):
         """
         Args:
-            api_key: clé API Minari (ou variable d'env `MINARI_API_KEY`), créée
+            api_key: clé API Minari, créée
                 dans Settings → API & webhook. Elle porte les droits de
                 l'ENTREPRISE entière, pas d'un utilisateur.
             base_url: surcharge de l'hôte, pour un test ou un environnement
                 dédié. Défaut `https://api.minari.ai/v1`.
         """
-        self.api_key = api_key or require_secret("MINARI_API_KEY")
+        self.api_key = require(api_key, "MINARI_API_KEY")
         self.base_url = (base_url or _BASE_URL).rstrip("/")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"

@@ -18,7 +18,7 @@ import json
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # Plafond batch documenté (dépassement → l'API rejette la requête entière).
@@ -32,7 +32,7 @@ class DropcontactClient:
     BASE_URL = "https://api.dropcontact.com/v1"
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or require_secret("DROPCONTACT_API_KEY")
+        self.api_key = require(api_key, "DROPCONTACT_API_KEY")
 
     def _headers(self) -> dict:
         return {

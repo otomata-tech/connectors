@@ -2,7 +2,7 @@
 
 Auth = **API key** en Basic auth (la clé est le *username*, mot de passe vide).
 Créée dans Ashby : Settings → Integrations → Ashby API. Passée en clair au
-constructeur (ou `ASHBY_API_KEY` en fallback).
+constructeur.
 
 Particularité Ashby : **tout est POST** sur des endpoints RPC (`candidate.list`,
 `candidate.info`, `job.list`, …), le corps JSON porte les paramètres. La
@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class AshbyClient:
@@ -31,9 +31,9 @@ class AshbyClient:
         """Initialise le client.
 
         Args:
-            api_key: Ashby API key (ou env `ASHBY_API_KEY`).
+            api_key: Ashby API key.
         """
-        self.api_key = api_key or require_secret("ASHBY_API_KEY")
+        self.api_key = require(api_key, "ASHBY_API_KEY")
         self.session = requests.Session()
         self.session.auth = (self.api_key, "")
         self.session.headers.update({

@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -65,11 +65,11 @@ class SignWellClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: SignWell API key (or env var `SIGNWELL_API_KEY`), created
+            api_key: SignWell API key, created
                 in SignWell under Settings → API. The key acts as the account
                 that created it: documents are sent in that person's name.
         """
-        self.api_key = api_key or require_secret("SIGNWELL_API_KEY")
+        self.api_key = require(api_key, "SIGNWELL_API_KEY")
         self.session = requests.Session()
         self.session.headers["X-Api-Key"] = self.api_key
         self.session.headers["Accept"] = "application/json"

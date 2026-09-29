@@ -12,7 +12,7 @@ from typing import Optional, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -21,7 +21,7 @@ class AudioClient:
     BASE_URL = "https://audio-recorder-transcript.tuls.me"
 
     def __init__(self, api_token: str = None):
-        self.api_token = api_token or require_secret("TULS_API_TOKEN")
+        self.api_token = require(api_token, "TULS_API_TOKEN")
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Any:
         url = f"{self.BASE_URL}{endpoint}"

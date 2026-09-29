@@ -1,6 +1,6 @@
 # oto-core
 
-**Lib de connecteurs Oto** — clients API pour agents IA, **sans CLI**. Repo **public**
+**Lib de connecteurs Oto** — clients API pour agents IA, sans surface de commande. Repo **public**
 (`otomata-tech/connectors` ; le paquet PyPI et le dossier local restent `oto-core`), **open source**.
 
 Namespace package `oto` (PEP 420, **pas d'`oto/__init__.py`**) :
@@ -8,21 +8,22 @@ Namespace package `oto` (PEP 420, **pas d'`oto/__init__.py`**) :
 - `oto.tools.*` — les clients (serper, attio, hunter, google, linkedin via o-browser, pennylane, reddit,
   slack, gocardless, planity, zoho, sirene/inpi/bodacc/boamp/dvf/culture via france-opendata…).
   Messagerie (WhatsApp/LinkedIn) = Unipile, côté backend.
-- `oto.config` — résolution de secrets 3-tier (env → provider → défaut). `config.get_secret` orchestre ;
-  les providers vivent dans `oto.secrets` (`sops`/`scaleway`/`file`), choisis par `make_provider`.
-  Ajouter un provider = un module exposant `lookup(name)` + `store_exists()` + une ligne au registre
-  `oto/secrets/__init__.py` — **zéro branche `if provider ==`** dans `oto.config`.
+- `oto.tools.common.credentials` — **le secret est toujours fourni par le consommateur.** Un constructeur
+  reçoit son secret en paramètre et l'exige par `require(valeur, "NOM")`, qui lève `MissingCredential("NOM")`.
+  La lib ne lit **aucun** secret : ni environnement, ni fichier, ni fournisseur. Garde mécanique :
+  `tests/test_no_secret_read_guard.py`.
+- `oto.tools.common.local_dirs` — répertoires locaux (caches, sessions navigateur) et blocs non secrets de
+  `~/.otomata/config.yaml` (`field_filters`).
 
-**Source unique des clients connecteurs**, consommée par **oto-cli** (façade Typer, basse priorité) et par
-**oto-backend** (serveur MCP, qui importe `oto.tools.*` directement). Un connecteur = un client ici,
-plusieurs faces.
+**Source unique des clients connecteurs**, consommée par **oto-backend** (serveur MCP, qui importe
+`oto.tools.*` directement et injecte les secrets de son coffre).
 
 ## Stack
 
 - Python ≥3.10, setuptools (namespace package). Version dans `pyproject.toml`, nulle part ailleurs.
-- Deps cœur : requests, france-opendata, python-dotenv, pyyaml, defusedxml. **Pas de typer** (c'est oto-cli).
-- Extras : `google`, `browser` (o-browser), `planity` (async), `vivatech`, `anthropic`, `stock`, `anonymize`,
-  `cli`. `all` les tire tous.
+- Deps cœur : requests, france-opendata, python-dotenv, pyyaml, defusedxml. **Pas de typer**.
+- Extras : `google`, `browser` (o-browser), `planity` (async), `vivatech`, `anthropic`, `stock`, `anonymize`.
+  `all` les tire tous.
 - **`uv.lock` est commité et ne gouverne aucune install** — il sert à rendre le dépôt observable par le graphe
   de dépendances GitHub, rien d'autre ; le régénérer par `uv lock` quand une dép bouge. ⚠️ Monter un plancher
   reste un geste séparé. **`MANIFEST.in` borne le sdist** (la `packages.find` ne gouverne que la roue) : toute
@@ -32,8 +33,10 @@ plusieurs faces.
 
 Une règle par ligne ; l'incident qui l'a produite et ses cas limites vivent dans **`docs/conventions.md`**.
 
-- **Clients purs, sans typer ni I/O CLI** — `print`/Typer vivent dans oto-cli ; un client rend des objets/dicts.
+- **Clients purs, sans typer ni `print`** — un client rend des objets/dicts.
   Imports **lazy** des deps optionnelles pour ne pas casser si l'extra manque.
+- ⚠️ **Le secret est un paramètre, jamais une lecture** : `require(x, "NOM")`, pas d'`os.environ`, pas de
+  fichier, pas de défaut qui masque l'absence.
 - ⚠️ **Pas d'`oto/__init__.py`** (namespace) → jamais `from oto import __version__` ; utiliser
   `importlib.metadata.version("oto-core")`.
 - **Connecteur client-sensible → jamais ici** (repo public) : package privé + bridge (ADR 0003). ⚠️ Ça veut dire
@@ -63,9 +66,6 @@ Une règle par ligne ; l'incident qui l'a produite et ses cas limites vivent dan
 
 ## Gotchas
 
-- **Namespace cross-package** : oto-core fournit `oto.tools`/`oto.config`, oto-cli fournit `oto.cli`/`oto.commands`.
-  Les deux installés editable cohabitent dans le même `oto` — changer le pyproject de l'un → **réinstaller
-  editable** (le finder setuptools suit le pyproject).
 - ⚠️ **La CI doit installer tout extra dont un TEST importe la dépendance** : sinon `ModuleNotFoundError` **à la
   collecte**, pytest s'arrête avant le premier test et le job échoue sans rien avoir vérifié. Un extra ajouté ici
   se répercute dans `.github/workflows/ci.yml`.

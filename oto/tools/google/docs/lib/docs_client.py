@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-from oto.tools.google.credentials import get_credentials, get_user_credentials, list_accounts
+from oto.tools.common.credentials import MissingCredential
 
 
 @dataclass
@@ -25,9 +25,10 @@ class DocsClient:
 
     SCOPES = ['https://www.googleapis.com/auth/documents']
 
-    def __init__(self, credentials_json: str = None, account: str = None, credentials=None):
+    def __init__(self, credentials_json: str = None, credentials=None):
+        """`credentials` (Google credentials object) or `credentials_json` (path to a
+        service account JSON file), provided by the consumer: one is required."""
         if credentials is not None:
-            # Injected OAuth user credentials (backend per-user)
             self.credentials = credentials
         elif credentials_json and Path(credentials_json).exists():
             import json
@@ -36,15 +37,13 @@ class DocsClient:
             self.credentials = Credentials.from_service_account_info(
                 creds_dict, scopes=self.SCOPES
             )
-        elif account or list_accounts():
-            self.credentials = get_user_credentials(self.SCOPES, account=account)
         else:
-            self.credentials = get_credentials(self.SCOPES)
+            raise MissingCredential('GOOGLE_CREDENTIALS')
 
         self.service = build('docs', 'v1', credentials=self.credentials)
         self._doc_cache = {}
 
-    def create(self, title: str, content: str = '', markdown: bool = False, account: str = None) -> dict:
+    def create(self, title: str, content: str = '', markdown: bool = False) -> dict:
         """Create a new Google Doc with optional content.
 
         With markdown=True, the markdown is rendered to HTML and uploaded via
@@ -53,7 +52,7 @@ class DocsClient:
         plain text.
         """
         if markdown and content:
-            return self._create_from_markdown(title, content, account=account)
+            return self._create_from_markdown(title, content)
 
         doc = self.service.documents().create(
             body={'title': title}
@@ -77,7 +76,7 @@ class DocsClient:
             'url': f'https://docs.google.com/document/d/{doc_id}/edit',
         }
 
-    def _create_from_markdown(self, title: str, md_content: str, account: str = None) -> dict:
+    def _create_from_markdown(self, title: str, md_content: str) -> dict:
         """Render markdown to HTML and upload via Drive for native conversion."""
         import os
         import tempfile
@@ -96,7 +95,7 @@ class DocsClient:
             tmp_path = fh.name
 
         try:
-            drive = DriveClient(account=account, credentials=self.credentials)
+            drive = DriveClient(credentials=self.credentials)
             media = MediaFileUpload(tmp_path, mimetype='text/html', resumable=True)
             request = drive.service.files().create(
                 body={
@@ -140,7 +139,7 @@ class DocsClient:
             body={'requests': requests}
         ).execute()
 
-    def replace_content(self, doc_id: str, content: str, markdown: bool = False, account: str = None) -> dict:
+    def replace_content(self, doc_id: str, content: str, markdown: bool = False) -> dict:
         """Replace entire document content with new text.
 
         With markdown=True, the markdown is rendered to HTML and the doc content
@@ -149,7 +148,7 @@ class DocsClient:
         content is replaced via Docs API plain text insertion.
         """
         if markdown and content:
-            return self._replace_from_markdown(doc_id, content, account=account)
+            return self._replace_from_markdown(doc_id, content)
 
         doc = self.service.documents().get(documentId=doc_id).execute()
         body = doc['body']['content']
@@ -179,7 +178,7 @@ class DocsClient:
         self.clear_cache(doc_id)
         return {'id': doc_id, 'status': 'replaced', 'length': len(content), 'mode': 'plain'}
 
-    def _replace_from_markdown(self, doc_id: str, md_content: str, account: str = None) -> dict:
+    def _replace_from_markdown(self, doc_id: str, md_content: str) -> dict:
         """Render markdown to HTML and overwrite the doc via Drive update.
 
         Drive's HTML importer reconverts the HTML body into native Google Docs
@@ -203,7 +202,7 @@ class DocsClient:
             tmp_path = fh.name
 
         try:
-            drive = DriveClient(account=account, credentials=self.credentials)
+            drive = DriveClient(credentials=self.credentials)
             media = MediaFileUpload(tmp_path, mimetype='text/html', resumable=True)
             request = drive.service.files().update(
                 fileId=doc_id,

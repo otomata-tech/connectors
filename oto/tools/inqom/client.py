@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from . import auth
 
@@ -83,10 +83,10 @@ class InqomClient:
             username / password: the Inqom account the token acts as
                 (or `INQOM_USERNAME` / `INQOM_PASSWORD`).
         """
-        self.client_id = client_id or require_secret("INQOM_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("INQOM_CLIENT_SECRET")
-        self.username = username or require_secret("INQOM_USERNAME")
-        self._password = password or require_secret("INQOM_PASSWORD")
+        self.client_id = require(client_id, "INQOM_CLIENT_ID")
+        self.client_secret = require(client_secret, "INQOM_CLIENT_SECRET")
+        self.username = require(username, "INQOM_USERNAME")
+        self._password = require(password, "INQOM_PASSWORD")
         self._key = auth.cred_key(self.TOKEN_URL, self.client_id, self.username,
                                   self.client_secret + "|" + self._password)
         self.session = requests.Session()

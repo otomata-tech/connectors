@@ -8,8 +8,7 @@ Couvre la **publication** (image / reel / carousel / story) et les **insights**
 Auth = **access token** (long-lived user/page token, scopes `instagram_basic`,
 `instagram_content_publish`, `instagram_manage_insights`) + l'**IG user id** du
 compte business (le « IG User ID » numérique, ≠ l'identifiant Page Facebook).
-Les deux passés au constructeur (ou `IG_BUSINESS_ACCESS_TOKEN` /
-`IG_BUSINESS_USER_ID` en fallback).
+Les deux passés au constructeur.
 
 Publication = flux en 2 temps de la Graph API : on crée d'abord un **conteneur**
 média (`POST /{ig-user-id}/media`) puis on le **publie** (`POST /{ig-user-id}/
@@ -27,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -45,12 +44,12 @@ class InstagramBusinessClient:
         """Initialise le client.
 
         Args:
-            access_token: token Graph API (ou env `IG_BUSINESS_ACCESS_TOKEN`).
-            ig_user_id: IG User ID du compte business (ou env `IG_BUSINESS_USER_ID`).
+            access_token: token Graph API.
+            ig_user_id: IG User ID du compte business.
             api_version: version de la Graph API (défaut `v21.0`).
         """
-        self.access_token = access_token or require_secret("IG_BUSINESS_ACCESS_TOKEN")
-        self.ig_user_id = str(ig_user_id or require_secret("IG_BUSINESS_USER_ID"))
+        self.access_token = require(access_token, "IG_BUSINESS_ACCESS_TOKEN")
+        self.ig_user_id = str(require(ig_user_id, "IG_BUSINESS_USER_ID"))
         self.api_version = api_version or self.DEFAULT_API_VERSION
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.session = requests.Session()

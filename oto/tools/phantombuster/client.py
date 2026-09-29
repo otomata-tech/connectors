@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -29,9 +29,9 @@ class PhantombusterClient:
         Initialize Phantombuster client.
 
         Args:
-            api_key: Phantombuster API key (or set PHANTOMBUSTER_API_KEY env var)
+            api_key: Phantombuster API key
         """
-        self.api_key = api_key or require_secret("PHANTOMBUSTER_API_KEY")
+        self.api_key = require(api_key, "PHANTOMBUSTER_API_KEY")
         self._last_request = 0.0
 
     def _rate_limit(self):

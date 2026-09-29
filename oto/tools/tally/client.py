@@ -119,7 +119,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -146,7 +146,7 @@ class TallyClient:
                  api_version: Optional[str] = DEFAULT_API_VERSION):
         """
         Args:
-            api_key: Tally API key (or env var `TALLY_API_KEY`), format
+            api_key: Tally API key, format
                 `tly-...`. Created at https://tally.so/settings/api-keys.
                 The key is tied to ONE user and inherits that user's
                 permissions — there are no fine-grained scopes, and the key
@@ -156,7 +156,7 @@ class TallyClient:
                 `DEFAULT_API_VERSION`; pass `None` to send no header at all
                 and inherit whatever version the key is pinned to.
         """
-        self.api_key = api_key or require_secret("TALLY_API_KEY")
+        self.api_key = require(api_key, "TALLY_API_KEY")
         self.api_version = api_version
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"

@@ -6,7 +6,7 @@ Requires: resend (pip install resend)
 
 from typing import Optional, Dict, Any, List
 
-from ...config import require_secret, get_secret
+from ..common.credentials import require
 
 
 def send_email(
@@ -38,8 +38,8 @@ def send_email(
     except ImportError:
         raise ImportError("resend package required. Install with: pip install resend")
 
-    resend.api_key = api_key or require_secret("RESEND_API_KEY")
-    from_addr = from_email or get_secret("RESEND_FROM_EMAIL", "noreply@example.com")
+    resend.api_key = require(api_key, "RESEND_API_KEY")
+    from_addr = from_email or "noreply@example.com"
 
     params = {
         "from": from_addr,
@@ -76,11 +76,11 @@ class ResendClient:
         Initialize Resend client.
 
         Args:
-            api_key: Resend API key (or set RESEND_API_KEY env var)
-            from_email: Default from email (or set RESEND_FROM_EMAIL env var)
+            api_key: Resend API key (required)
+            from_email: Default from email (default: noreply@example.com)
         """
-        self.api_key = api_key or require_secret("RESEND_API_KEY")
-        self.from_email = from_email or get_secret("RESEND_FROM_EMAIL", "noreply@example.com")
+        self.api_key = require(api_key, "RESEND_API_KEY")
+        self.from_email = from_email or "noreply@example.com"
 
     def send(
         self,

@@ -43,7 +43,7 @@ from typing import Any, Iterable, Optional, Sequence, Union
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError
 from . import auth
 
@@ -240,11 +240,10 @@ class GA4Client:
         """
         Args:
             service_account_key: le contenu JSON de la clé du compte de service
-                (texte ou dict), ou la variable `GA4_SERVICE_ACCOUNT_JSON`.
+                (texte ou dict), fourni par le consommateur (requis).
             session: transport HTTP (défaut : une `requests.Session` neuve).
         """
-        raw = (service_account_key if service_account_key is not None
-               else require_secret("GA4_SERVICE_ACCOUNT_JSON"))
+        raw = require(service_account_key, "GA4_SERVICE_ACCOUNT_JSON")
         self._key = auth.parse_service_account_key(raw)
         self.client_email: str = self._key["client_email"]
         self.session = session or requests.Session()

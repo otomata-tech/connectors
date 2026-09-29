@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -40,7 +40,7 @@ class WebflowClient:
     BASE_URL = "https://api.webflow.com/v2"
 
     def __init__(self, api_key: str = None, site_id: str = None):
-        self.api_key = api_key or require_secret("WEBFLOW_API_KEY")
+        self.api_key = require(api_key, "WEBFLOW_API_KEY")
         self._site_id = site_id
 
     @property

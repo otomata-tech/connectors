@@ -2,7 +2,7 @@
 
 Auth = **Harvest API key** en Basic auth (la clé est le *username*, mot de passe
 vide). Créée dans Greenhouse : Configure → Dev Center → API Credentials →
-Harvest. Passée en clair au constructeur (ou `GREENHOUSE_API_KEY` en fallback).
+Harvest. Passée en clair au constructeur.
 
 Surface lecture (candidats, jobs, candidatures, users) + écriture ciblée
 (création de candidat, note d'activité). Les écritures Greenhouse exigent un
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class GreenhouseClient:
@@ -30,9 +30,9 @@ class GreenhouseClient:
         """Initialise le client.
 
         Args:
-            api_key: Harvest API key (ou env `GREENHOUSE_API_KEY`).
+            api_key: Harvest API key.
         """
-        self.api_key = api_key or require_secret("GREENHOUSE_API_KEY")
+        self.api_key = require(api_key, "GREENHOUSE_API_KEY")
         self.session = requests.Session()
         # Basic auth : la clé est le username, mot de passe vide.
         self.session.auth = (self.api_key, "")

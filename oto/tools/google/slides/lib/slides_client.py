@@ -15,6 +15,8 @@ import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+from oto.tools.common.credentials import require
+
 from ._api import (
     _CopyMixin,
     _ImagesMixin,
@@ -45,26 +47,25 @@ class SlidesClient(
         'https://www.googleapis.com/auth/drive'
     ]
 
-    def __init__(self, credentials_json=None, account=None):
+    def __init__(self, credentials_json=None, credentials=None):
         """
         Initialize Slides client.
 
         Resolution order (premier qui répond gagne) :
-        1. `credentials_json` (path or JSON string) — service account legacy
-        2. `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` env var — service account legacy
-        3. OAuth user credentials via `oto.tools.google.credentials.get_user_credentials`
-           (avec ou sans nom d'`account`). Préféré pour manipuler des fichiers
-           du Drive personnel d'un utilisateur.
+        1. `credentials` — objet credentials Google fourni par le consommateur
+           (OAuth utilisateur, pour manipuler le Drive personnel d'un utilisateur)
+        2. `credentials_json` (path or JSON string) — service account
+        3. `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` env var — service account
+        Aucun des trois → `MissingCredential`.
 
         Args:
-            credentials_json: Path to service account JSON or JSON string (legacy)
-            account: OAuth account name (None = auto-detect single account)
+            credentials_json: Path to service account JSON or JSON string
+            credentials: Google credentials object provided by the consumer
         """
-        # 1) Service account explicit
-        if credentials_json is None:
-            credentials_json = os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON')
-
-        if credentials_json:
+        if credentials is None:
+            if credentials_json is None:
+                credentials_json = os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON')
+            require(credentials_json, 'GOOGLE_CREDENTIALS')
             if os.path.isfile(credentials_json):
                 credentials = service_account.Credentials.from_service_account_file(
                     credentials_json, scopes=self.SCOPES)
@@ -72,10 +73,6 @@ class SlidesClient(
                 credentials_info = json.loads(credentials_json)
                 credentials = service_account.Credentials.from_service_account_info(
                     credentials_info, scopes=self.SCOPES)
-        else:
-            # 2) OAuth user credentials (preferred for personal Drive ops)
-            from oto.tools.google.credentials import get_user_credentials
-            credentials = get_user_credentials(self.SCOPES, account=account)
 
         self.slides_service = build('slides', 'v1', credentials=credentials)
         self.drive_service = build('drive', 'v3', credentials=credentials)

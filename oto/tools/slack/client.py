@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List
 
 import requests
 
-from ...config import require_secret, get_secret
+from ..common.credentials import MissingCredential
 from .text import MAX_TEXT_LEN as _MAX_TEXT_LEN
 from .text import chunk_text as _chunk_text
 from .text import escape_false_emoji_shortcodes as _escape_false_emoji_shortcodes
@@ -94,34 +94,12 @@ def verify_slack_signature(
     return hmac.compare_digest(my_signature, signature)
 
 
-DEFAULT_WORKSPACE = "otomata"
-
-
-def _resolve_workspace_token(workspace: str, kind: str) -> Optional[str]:
-    """Resolve a Slack token for a workspace + kind ('bot' or 'user').
-
-    Naming convention: `SLACK_<WORKSPACE>_BOT_TOKEN` / `SLACK_<WORKSPACE>_USER_TOKEN`.
-    For the default workspace, also accepts the legacy flat `SLACK_BOT_TOKEN` /
-    `SLACK_USER_TOKEN` keys as fallback.
-    """
-    ws = workspace.upper()
-    key = f"SLACK_{ws}_{kind.upper()}_TOKEN"
-    tok = get_secret(key)
-    if tok:
-        return tok
-    if workspace == DEFAULT_WORKSPACE:
-        return get_secret(f"SLACK_{kind.upper()}_TOKEN")
-    return None
-
-
 class SlackClient:
     """
     Slack API client. Multi-workspace.
 
-    Token resolution: pass `workspace="<slug>"` (default: "otomata"). The client
-    reads `SLACK_<SLUG>_BOT_TOKEN` and `SLACK_<SLUG>_USER_TOKEN` from secrets.
-    For the default workspace, legacy `SLACK_BOT_TOKEN` / `SLACK_USER_TOKEN`
-    keys are accepted as fallback.
+    Tokens are always provided by the consumer (`bot_token` and/or
+    `user_token`); `workspace` is only a label for the caller.
 
     Two tokens are supported per workspace:
     - **bot token** (`xoxb-`) — messages appear as the bot app. Use for
@@ -152,22 +130,17 @@ class SlackClient:
         Initialize Slack client.
 
         Args:
-            bot_token: Explicit bot token (overrides workspace lookup).
-            user_token: Explicit user token (overrides workspace lookup).
+            bot_token: Bot token (`xoxb-`).
+            user_token: User token (`xoxp-`). At least one of the two is required.
             default_as_user: Default mode when a method's `as_user` arg is None.
-            workspace: Workspace slug (default: "otomata"). Selects which
-                SLACK_<SLUG>_*_TOKEN secrets are read.
+            workspace: Workspace slug, a label only (no token lookup).
         """
-        self.workspace = workspace or DEFAULT_WORKSPACE
-        self.bot_token = bot_token or _resolve_workspace_token(self.workspace, "bot")
-        self.user_token = user_token or _resolve_workspace_token(self.workspace, "user")
+        self.workspace = workspace
+        self.bot_token = bot_token
+        self.user_token = user_token
         self.default_as_user = default_as_user
         if not self.bot_token and not self.user_token:
-            raise ValueError(
-                f"No Slack token for workspace '{self.workspace}'. "
-                f"Set SLACK_{self.workspace.upper()}_BOT_TOKEN or "
-                f"SLACK_{self.workspace.upper()}_USER_TOKEN in secrets."
-            )
+            raise MissingCredential("SLACK_BOT_TOKEN or SLACK_USER_TOKEN")
 
     def _resolve_token(self, as_user: Optional[bool]) -> str:
         mode = self.default_as_user if as_user is None else as_user

@@ -8,8 +8,8 @@ aucun POST/PUT/DELETE ici — un agent ne peut pas annuler un prélèvement par
 erreur.
 
 Auth : Bearer token. Header `GoCardless-Version` obligatoire.
-Clé résolue via `require_secret("GOCARDLESS_API_KEY")` (env ou SOPS), ou
-passée explicitement. ⚠️ Un token `live_` frappe les données réelles.
+Clé toujours fournie par le consommateur (`api_key`, requise).
+⚠️ Un token `live_` frappe les données réelles.
 
 Chaîne de données : payment → links.mandate → mandate.links.customer.
 Le motif d'un échec vit dans l'Events API (action=failed).
@@ -29,7 +29,7 @@ from typing import Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common.errors import UpstreamHTTPError
 
 
@@ -57,7 +57,7 @@ class GoCardlessClient:
             api_key: Bearer token GoCardless (ou secret GOCARDLESS_API_KEY).
             rate_limit_delay: pause entre requêtes paginées.
         """
-        self.api_key = api_key or require_secret("GOCARDLESS_API_KEY")
+        self.api_key = require(api_key, "GOCARDLESS_API_KEY")
         self.rate_limit_delay = rate_limit_delay
         self.session = requests.Session()
         self.session.headers.update({

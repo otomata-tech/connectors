@@ -7,7 +7,7 @@ from urllib.parse import urlparse, parse_qs, quote
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
 
@@ -185,7 +185,7 @@ class FolkClient:
     BASE_URL = "https://api.folk.app/v1"
 
     def __init__(self, api_key: str = None, field_filter: Optional[FieldFilter] = None):
-        self.api_key = api_key or require_secret("FOLK_API_KEY")
+        self.api_key = require(api_key, "FOLK_API_KEY")
         # Redacts sensitive fields (emails, names…) from every response.
         # Defaults to the `field_filters.folk` policy in ~/.otomata/config.yaml.
         self.field_filter = field_filter or FieldFilter.from_config("folk")

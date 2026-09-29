@@ -13,7 +13,7 @@ from typing import Optional, List, Dict, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 # Pricing per million tokens (USD) — updated 2026-02
 MODEL_PRICING = {
@@ -79,10 +79,9 @@ class AnthropicAdminClient:
         Initialize client.
 
         Args:
-            api_key: Admin API key (sk-ant-admin-...). Defaults to
-                     ANTHROPIC_ADMIN_API_KEY env var.
+            api_key: Admin API key (sk-ant-admin-...).
         """
-        self.api_key = api_key or require_secret("ANTHROPIC_ADMIN_API_KEY")
+        self.api_key = require(api_key, "ANTHROPIC_ADMIN_API_KEY")
 
     def _headers(self) -> dict:
         return {

@@ -1,33 +1,30 @@
 # Connecteur Slack (`oto.tools.slack`)
 
 Client Slack Web API multi-workspace. Source : `client.py` (`SlackClient`), texte prétraité dans
-`text.py` (module frère, pur, sans I/O). Exposé en CLI (`oto slack …`) et en MCP (`slack_*`).
+`text.py` (module frère, pur, sans I/O). Exposé en MCP (`slack_*`) par le consommateur.
 
 Gestion d'erreur : les rejets logiques de Slack (`{"ok": false, "error": "<code>"}` en HTTP 200) sont
 traduits en erreur typée portant `.status` (4xx amont = input rejeté, 5xx = incident Slack) — cf.
 `_SLACK_ERROR_STATUS`. Sur un `missing_scope`, `SlackError` porte aussi **`needed`/`provided`** :
 Slack NOMME lui-même le droit qui manque, l'aval le relaie au lieu de le deviner.
 
-## 1. Modèle multi-workspace & résolution de tokens
+## 1. Modèle multi-workspace & tokens
 
-Un `SlackClient` cible **un workspace** (`workspace="<slug>"`, défaut `otomata`). Il résout ses tokens
-depuis les secrets par **convention de nommage**, `<SLUG>` = `workspace.upper()` :
+Un `SlackClient` cible **un workspace**. Ses tokens sont **toujours fournis par le consommateur** :
+la lib ne lit aucun secret. `workspace="<slug>"` n'est qu'une étiquette.
 
-| | clé secret | usage |
+| | paramètre | usage |
 |---|---|---|
-| bot token (`xoxb-`) | `SLACK_<SLUG>_BOT_TOKEN` | lecture + post « au nom de l'app » |
-| user token (`xoxp-`) | `SLACK_<SLUG>_USER_TOKEN` | post « au nom de l'utilisateur » (`as_user=True`) |
+| bot token (`xoxb-`) | `bot_token` | lecture + post « au nom de l'app » |
+| user token (`xoxp-`) | `user_token` | post « au nom de l'utilisateur » (`as_user=True`) |
 
-Pour le workspace par défaut (`otomata`), les clés **plates legacy** `SLACK_BOT_TOKEN` /
-`SLACK_USER_TOKEN` sont acceptées en repli. Aucun token résolu ⇒
-`No Slack token for workspace '<slug>'…` → poser la clé.
+Au moins un des deux est requis ; aucun ⇒ `MissingCredential`.
 
 `post_message`/`update_message`/`open_dm`/`add_reaction` acceptent `as_user=True|False` ; si omis →
 `default_as_user` du client (défaut `False` = bot). **Lecture** (channels, history, replies,
 `channel_info`, find-user) et **`join_channel`** → le bot suffit.
 
-**Ajouter un 2ᵉ workspace** = poser `SLACK_<NOUVEAU_SLUG>_BOT_TOKEN` (+ `_USER_TOKEN` si post-as-user
-voulu), puis `SlackClient(workspace="<nouveau_slug>")`. Aucune autre config.
+**Un 2ᵉ workspace** = un autre `SlackClient` construit avec les tokens de ce workspace.
 
 ## 2. Les gotchas de l'API Slack
 
@@ -78,5 +75,4 @@ Le texte passe par `text.py` AVANT de partir :
    `channels:history` (public), `groups:history` (privé), `im:history` (DM), `mpim:history` (DM de
    groupe) ; `conversations.replies` exige le même que `conversations.history`.
 3. **Installer** l'app → récupérer le `Bot User OAuth Token` (`xoxb-`) et, si besoin, le `User OAuth
-   Token` (`xoxp-`), puis les **poser dans le vault** per-user (`~/.otomata/secrets/`, lu par
-   `oto.config`) sous `SLACK_<SLUG>_BOT_TOKEN` / `SLACK_<SLUG>_USER_TOKEN`.
+   Token` (`xoxp-`), puis les confier au consommateur, qui les passe au `SlackClient`.

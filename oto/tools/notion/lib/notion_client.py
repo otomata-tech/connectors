@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 import requests
 
-from ....config import get_cache_dir
+from ...common.credentials import require
+from ...common.local_dirs import get_cache_dir
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -31,7 +32,7 @@ class NotionClient:
                 so a cached file could leak another user's data.
         """
         self.base_url = "https://api.notion.com/v1"
-        self.token = token or self._load_token()
+        self.token = require(token, "NOTION_API_KEY")
         self.headers = {
             "Authorization": f"Bearer {self.token}",
             "Notion-Version": "2025-09-03",
@@ -44,11 +45,6 @@ class NotionClient:
         if cache_enabled:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_ttl = 86400  # 24 hours
-
-    def _load_token(self) -> str:
-        """Load Notion token from config."""
-        from oto.config import require_secret
-        return require_secret('NOTION_API_KEY')
 
     def _get_cache_key(self, method: str, endpoint: str, params: Dict = None, data: Dict = None) -> str:
         """Generate cache key from request parameters."""

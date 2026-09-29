@@ -76,7 +76,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -149,12 +149,11 @@ class LinearClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Linear personal or workspace API key (or env var
-                `LINEAR_API_KEY`). Created at linear.app/settings/api —
+            api_key: Linear personal or workspace API key. Created at linear.app/settings/api —
                 byo-only, no platform-shared key (workspace-scoped by
                 nature, no shared-credit pool to draw from).
         """
-        self.api_key = api_key or require_secret("LINEAR_API_KEY")
+        self.api_key = require(api_key, "LINEAR_API_KEY")
         self.session = requests.Session()
         # No "Bearer " prefix — see module docstring.
         self.session.headers["Authorization"] = self.api_key

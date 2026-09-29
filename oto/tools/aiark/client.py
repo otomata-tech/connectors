@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class AiArkClient:
@@ -36,9 +36,9 @@ class AiArkClient:
     def __init__(self, api_key: str | None = None):
         """
         Args:
-            api_key: clé AI Ark (`X-TOKEN`). À défaut, lue de l'env `AIARK_API_KEY`.
+            api_key: clé AI Ark (`X-TOKEN`).
         """
-        self.api_key = api_key or require_secret("AIARK_API_KEY")
+        self.api_key = require(api_key, "AIARK_API_KEY")
 
     def _headers(self) -> Dict[str, str]:
         return {

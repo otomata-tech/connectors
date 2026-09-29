@@ -58,7 +58,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 120)  # (connexion, lecture) — une requête HogQL peut être longue
@@ -81,8 +81,7 @@ class PostHogClient:
                  project_id: Optional[Any] = None):
         """
         Args:
-            api_key: clé **personnelle** PostHog `phx_…` (ou variable d'env
-                `POSTHOG_API_KEY`), créée dans Settings → Personal API keys.
+            api_key: clé **personnelle** PostHog `phx_…`, créée dans Settings → Personal API keys.
                 Une clé de projet `phc_…` ou une clé secrète de projet `phs_…`
                 sont REFUSÉES ici (cf. le docstring du module).
             host: `https://us.posthog.com` (défaut), `https://eu.posthog.com`,
@@ -92,7 +91,7 @@ class PostHogClient:
                 le découvre depuis la clé. À renseigner pour ÉPINGLER un projet
                 quand la clé en voit plusieurs.
         """
-        self.api_key = api_key or require_secret("POSTHOG_API_KEY")
+        self.api_key = require(api_key, "POSTHOG_API_KEY")
         if self.api_key.startswith("phc_"):
             raise ValueError(
                 "Clé de PROJET PostHog (`phc_…`) : c'est le jeton public d'ingestion, "

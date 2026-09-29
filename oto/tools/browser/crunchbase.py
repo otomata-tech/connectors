@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 from urllib.parse import quote
 
 from o_browser import BrowserClient
-from ...config import get_sessions_dir
+from ..common.local_dirs import get_sessions_dir
 
 
 class CrunchbaseClient(BrowserClient):

@@ -73,7 +73,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # (connexion, lecture) — aucune attente illimitée.
@@ -117,11 +117,11 @@ class LightfieldClient:
                  api_version: Optional[str] = None):
         """
         Args:
-            api_key: clé Lightfield (ou variable d'env `LIGHTFIELD_API_KEY`).
+            api_key: clé Lightfield.
             api_version: valeur de l'en-tête `Lightfield-Version`
                 (défaut `DEFAULT_API_VERSION`).
         """
-        self.api_key = api_key or require_secret("LIGHTFIELD_API_KEY")
+        self.api_key = require(api_key, "LIGHTFIELD_API_KEY")
         self.api_version = api_version or DEFAULT_API_VERSION
         self.session = requests.Session()
         # Clé en HEADER uniquement (jamais en query string : elle finirait dans l'URL,

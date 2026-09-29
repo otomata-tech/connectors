@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -47,9 +47,9 @@ class HunterClient:
         Initialize Hunter client.
 
         Args:
-            api_key: Hunter API key (or set HUNTER_API_KEY env var)
+            api_key: Hunter API key
         """
-        self.api_key = api_key or require_secret("HUNTER_API_KEY")
+        self.api_key = require(api_key, "HUNTER_API_KEY")
 
     @staticmethod
     def _upstream_message(response: requests.Response) -> str:

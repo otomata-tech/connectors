@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -34,9 +34,9 @@ class TavilyClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé Tavily (ou variable d'env `TAVILY_API_KEY`).
+            api_key: clé Tavily.
         """
-        self.api_key = api_key or require_secret("TAVILY_API_KEY")
+        self.api_key = require(api_key, "TAVILY_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",

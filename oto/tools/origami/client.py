@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # (connexion, lecture) — la création de campagne et l'upload peuvent être longs.
@@ -57,11 +57,11 @@ class OrigamiClient:
                  project_id: Optional[str] = None):
         """
         Args:
-            api_key: clé Origami (ou variable d'env `ORIGAMI_API_KEY`).
+            api_key: clé Origami.
             project_id: id de projet (org enfant) → en-tête `x-origami-project`.
                 Omis = la requête agit sur l'org parente de la clé.
         """
-        self.api_key = api_key or require_secret("ORIGAMI_API_KEY")
+        self.api_key = require(api_key, "ORIGAMI_API_KEY")
         self.project_id = project_id
         self.session = requests.Session()
         # Clé en HEADER uniquement (jamais en query string : elle finirait dans l'URL,

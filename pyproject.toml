@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "oto-core"
 version = "1.147.0"
-description = "Oto connector library — API clients for AI agents (no CLI). Façade CLI = oto-cli."
+description = "Oto connector library — API clients for AI agents. Credentials are always provided by the consumer."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -40,11 +40,7 @@ anonymize = ["faker>=20.0.0"]
 # `oto/tools/planity/__init__.py` la retraduit en « installe l'extra `planity` »,
 # à l'ORIGINE — le consommateur (oto-backend) ne fait que journaliser ce message.
 planity = ["httpx>=0.27", "websockets>=13"]
-# `cli` = the Typer command surfaces under oto.tools.*.commands, mounted by the
-# oto-cli façade. They import typer, which core clients never do — declare it so
-# `import oto.tools.google.gmail.commands` doesn't fail on a plain install.
-cli = ["typer>=0.9.0"]
-all = ["oto-core[google,browser,vivatech,anthropic,stock,anonymize,cli,planity]"]
+all = ["oto-core[google,browser,vivatech,anthropic,stock,anonymize,planity]"]
 
 [tool.setuptools.packages.find]
 where = ["."]

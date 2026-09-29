@@ -8,7 +8,6 @@ import re
 from typing import Optional, Dict, Any, List
 
 from o_browser import BrowserClient
-from ...config import get_secret
 
 
 class PappersClient(BrowserClient):
@@ -41,7 +40,7 @@ class PappersClient(BrowserClient):
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         )
 
-        self.api_key = api_key or get_secret("PAPPERS_API_KEY")
+        self.api_key = api_key
         self._cartographie_data = None
 
     async def start(self):

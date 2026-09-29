@@ -10,6 +10,7 @@ import json
 import pytest
 
 from oto.tools.common import UpstreamHTTPError
+from oto.tools.common.credentials import MissingCredential
 from oto.tools.yousign import YousignClient
 
 PROD = "https://api.yousign.app/v3"
@@ -173,8 +174,7 @@ def test_http_error_is_typed(calls, client):
     assert exc.value.service == "yousign"
 
 
-def test_api_key_from_env(monkeypatch, calls):
+def test_api_key_never_read_from_env(monkeypatch):
     monkeypatch.setenv("YOUSIGN_API_KEY", "ys-env")
-    c = YousignClient()
-    c.get_signature_request("sr1")
-    assert calls[0]["headers"]["Authorization"] == "Bearer ys-env"
+    with pytest.raises(MissingCredential):
+        YousignClient()

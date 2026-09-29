@@ -7,14 +7,14 @@ OAuth scopes required (combine with comma at token-generation time):
   Desk.settings.READ
   Desk.articles.READ          (Help Center / KB articles)
 
-Secrets expected in environment / ~/.otomata/secrets.env:
-  ZOHO_DESK_CLIENT_ID
-  ZOHO_DESK_CLIENT_SECRET
-  ZOHO_DESK_REFRESH_TOKEN
-  ZOHO_DESK_ORG_ID            (header `orgId` — OPTIONAL: a mono-portal token resolves
-                               the portal on its own; sent only when provided)
-  ZOHO_DESK_API_DOMAIN        (default https://desk.zoho.com — use .eu / .in if applicable)
-  ZOHO_DESK_ACCOUNTS_URL      (default https://accounts.zoho.com — must match the data center)
+Credentials, always provided by the consumer:
+  client_id
+  client_secret
+  refresh_token
+  org_id            (header `orgId` — OPTIONAL: a mono-portal token resolves
+                     the portal on its own; sent only when provided)
+  api_domain        (default https://desk.zoho.com — use .eu / .in if applicable)
+  accounts_url      (default https://accounts.zoho.com — must match the data center)
 """
 
 import time
@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 import requests
 
-from ...config import require_secret, get_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ..common.errors import UpstreamHTTPError
 from ..zoho.auth import ZohoAuthError, cred_key, get_access_token, invalidate
@@ -69,24 +69,22 @@ class ZohoDeskClient:
     ):
         """Initialise le client.
 
-        Credentials passés explicitement (serveur multi-user) ou résolus via
-        `require_secret` (CLI). Token d'accès caché **en mémoire** sur
+        Credentials toujours fournis par le consommateur (serveur multi-user).
+        Token d'accès caché **en mémoire** sur
         l'instance — jamais sur un fichier partagé (fuite cross-user)."""
-        self.client_id = client_id or require_secret("ZOHO_DESK_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("ZOHO_DESK_CLIENT_SECRET")
+        self.client_id = require(client_id, "ZOHO_DESK_CLIENT_ID")
+        self.client_secret = require(client_secret, "ZOHO_DESK_CLIENT_SECRET")
         # FACULTATIF à la construction : en mode server-based il est obtenu par le
         # flux de consentement, pas collé. Son absence est signalée au moment
         # du refresh (message actionnable) plutôt que par une erreur de config.
-        self.refresh_token = refresh_token or get_secret("ZOHO_DESK_REFRESH_TOKEN", None)
+        self.refresh_token = refresh_token
         # org_id (en-tête `orgId`) est OPTIONNEL : les endpoints KB articles
         # résolvent le portail depuis le token mono-org (vérifié empiriquement) →
-        # pas de require_secret qui forcerait le champ. Fourni si un endpoint le
+        # pas de `require` qui forcerait le champ. Fourni si un endpoint le
         # réclame (tickets…), omis de l'en-tête sinon.
-        self.org_id = org_id or get_secret("ZOHO_DESK_ORG_ID", None)
-        self.api_domain = api_domain or get_secret(
-            "ZOHO_DESK_API_DOMAIN", "https://desk.zoho.com")
-        self.accounts_url = accounts_url or get_secret(
-            "ZOHO_DESK_ACCOUNTS_URL", "https://accounts.zoho.com")
+        self.org_id = org_id
+        self.api_domain = api_domain or "https://desk.zoho.com"
+        self.accounts_url = accounts_url or "https://accounts.zoho.com"
         self._cred_key = cred_key(
             self.accounts_url, self.client_id, self.refresh_token)
 

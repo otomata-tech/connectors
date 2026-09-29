@@ -58,7 +58,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ._api import (_ActionsMixin, _IssuesMixin, _OrgsMixin, _PullsMixin,
                    _ReposMixin, _SearchMixin)
@@ -97,7 +97,7 @@ class GitHubClient(
                  api_version: Optional[str] = None):
         """
         Args:
-            token: jeton GitHub (ou env `GITHUB_TOKEN`). Jeton personnel
+            token: jeton GitHub. Jeton personnel
                 (classique ou « fine-grained »), jeton d'installation d'app, ou
                 le jeton éphémère d'un workflow Actions.
             base_url: racine de l'API. Défaut `https://api.github.com` ; pour un
@@ -110,7 +110,7 @@ class GitHubClient(
         manquant se manifeste souvent en **404**, pas en 403 : cf. l'en-tête de
         module.
         """
-        self.token = token or require_secret("GITHUB_TOKEN")
+        self.token = require(token, "GITHUB_TOKEN")
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.api_version = api_version or DEFAULT_API_VERSION
         #: En-tête `Link` de la dernière réponse (cf. `_request`/`iterate`).

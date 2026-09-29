@@ -57,7 +57,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 SERVICE = "hellostock"
@@ -114,10 +114,10 @@ class HelloStockAdminClient:
                  base_url: Optional[str] = None):
         """
         Args:
-            token: jeton d'API personnel (ou variable d'env `HELLOSTOCK_API_TOKEN`).
+            token: jeton d'API personnel.
             base_url: racine du site (défaut `https://hellostock.fr`).
         """
-        self.token = token or require_secret("HELLOSTOCK_API_TOKEN")
+        self.token = require(token, "HELLOSTOCK_API_TOKEN")
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.session = requests.Session()
         # Jeton en EN-TÊTE uniquement : en query string il entrerait dans l'URL,

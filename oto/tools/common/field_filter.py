@@ -32,6 +32,8 @@ import hashlib
 import re
 from typing import Any, Optional
 
+from .local_dirs import get_config_section
+
 # Default replacement for masked values.
 _MASK = "••••"
 
@@ -88,10 +90,6 @@ class FieldFilter:
                   - { fields: ["iban", "bic"], action: mask, keep_last: 4 }
                   - { fields: ["nom", "prenom"], action: anonymize }
         """
-        # Imported lazily to avoid a hard import cycle (config has no deps on
-        # tools, but keep the surface minimal).
-        from ...config import get_config_section
-
         cfg = get_config_section("field_filters", {}) or {}
         block = cfg.get(service) or {}
         return cls(rules=block.get("rules", []), salt=block.get("salt"))

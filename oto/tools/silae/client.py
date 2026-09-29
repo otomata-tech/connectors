@@ -49,7 +49,8 @@ from typing import Any, Optional
 
 import requests
 
-from ...config import require_secret, get_cache_dir
+from ..common.local_dirs import get_cache_dir
+from ..common.credentials import require
 from ..common import FieldFilter
 
 
@@ -85,11 +86,9 @@ class SilaeClient:
                 response. Defaults to the `field_filters.silae` policy in
                 ~/.otomata/config.yaml (no-op when none is configured).
         """
-        self.client_id = client_id or require_secret("SILAE_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("SILAE_CLIENT_SECRET")
-        self.subscription_key = subscription_key or require_secret(
-            "SILAE_SUBSCRIPTION_KEY"
-        )
+        self.client_id = require(client_id, "SILAE_CLIENT_ID")
+        self.client_secret = require(client_secret, "SILAE_CLIENT_SECRET")
+        self.subscription_key = require(subscription_key, "SILAE_SUBSCRIPTION_KEY")
         self.rate_limit_delay = rate_limit_delay
         self.field_filter = field_filter or FieldFilter.from_config("silae")
         self.session = requests.Session()

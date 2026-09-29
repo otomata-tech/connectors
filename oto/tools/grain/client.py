@@ -57,7 +57,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -79,11 +79,10 @@ class GrainClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Grain Personal or Workspace Access Token (or env var
-                `GRAIN_API_KEY`). Created at grain.com/app/settings/
+            api_key: Grain Personal or Workspace Access Token. Created at grain.com/app/settings/
                 integrations?tab=api. byo-only — no platform-shared key.
         """
-        self.api_key = api_key or require_secret("GRAIN_API_KEY")
+        self.api_key = require(api_key, "GRAIN_API_KEY")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"
         self.session.headers["Public-Api-Version"] = _API_VERSION

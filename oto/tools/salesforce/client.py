@@ -7,7 +7,7 @@ from typing import Any, Callable, Optional
 
 import requests
 
-from ...config import require_secret, get_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -61,9 +61,9 @@ class SalesforceClient:
     ):
         """Initialise le client.
 
-        Les credentials peuvent être passés explicitement (usage serveur
+        Les credentials sont toujours fournis par le consommateur (usage serveur
         multi-utilisateur : chaque appel construit un client avec les creds
-        résolus du user) ou résolus via `require_secret` (usage CLI). Le token
+        résolus du user). Le token
         d'accès ET l'`instance_url` (renvoyé par le refresh — pas de table de
         région fixe comme Zoho) sont mis en cache **en mémoire** sur l'instance —
         jamais sur un fichier partagé (qui fuiterait entre utilisateurs côté
@@ -83,11 +83,10 @@ class SalesforceClient:
         renvoie un neuf. Le jeter — ce que faisait cette classe — révoque la
         connexion dès le premier usage.
         """
-        self.client_id = client_id or require_secret("SALESFORCE_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("SALESFORCE_CLIENT_SECRET")
-        self.refresh_token = refresh_token or require_secret("SALESFORCE_REFRESH_TOKEN")
-        self.login_url = (login_url or get_secret(
-            "SALESFORCE_LOGIN_URL", "https://login.salesforce.com")).rstrip("/")
+        self.client_id = require(client_id, "SALESFORCE_CLIENT_ID")
+        self.client_secret = require(client_secret, "SALESFORCE_CLIENT_SECRET")
+        self.refresh_token = require(refresh_token, "SALESFORCE_REFRESH_TOKEN")
+        self.login_url = (login_url or "https://login.salesforce.com").rstrip("/")
         self._access_token: Optional[str] = None
         self._instance_url: Optional[str] = None
         self._token_expires_at: float = 0.0

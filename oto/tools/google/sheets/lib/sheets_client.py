@@ -6,7 +6,7 @@ from typing import Optional, List, Any
 
 from googleapiclient.discovery import build
 
-from oto.tools.google.credentials import get_user_credentials, get_credentials, list_accounts
+from oto.tools.common.credentials import require
 
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -19,19 +19,9 @@ class SheetsClientError(Exception):
 class SheetsClient:
     """Google Sheets API client."""
 
-    def __init__(self, account: Optional[str] = None, credentials=None):
-        try:
-            if credentials is not None:
-                # Injected OAuth user credentials (backend per-user)
-                pass
-            elif account or list_accounts():
-                credentials = get_user_credentials(SCOPES, account=account)
-            else:
-                credentials = get_credentials(SCOPES)
-        except Exception as e:
-            raise SheetsClientError(f"Failed to load credentials: {e}")
-
-        self.service = build('sheets', 'v4', credentials=credentials)
+    def __init__(self, credentials=None):
+        """`credentials`: Google credentials provided by the consumer (required)."""
+        self.service = build('sheets', 'v4', credentials=require(credentials, 'GOOGLE_CREDENTIALS'))
         self.sheets = self.service.spreadsheets()
 
     def create(self, title: str) -> dict:

@@ -8,7 +8,7 @@ Auth = **API key** (en-tête `X-N8N-API-KEY`) + **base URL** de l'instance (le
 self-hosting impose une URL propre — n8n Cloud : `https://<sub>.app.n8n.cloud`).
 La clé se crée dans n8n : Settings → n8n API → Create an API key.
 
-Les deux passés au constructeur (ou `N8N_API_KEY` / `N8N_BASE_URL` en fallback).
+Les deux passés au constructeur.
 
 Docs : https://docs.n8n.io/api/
 
@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class N8nClient:
@@ -31,12 +31,12 @@ class N8nClient:
         """Initialise le client.
 
         Args:
-            api_key: n8n API key (ou env `N8N_API_KEY`).
-            base_url: URL de l'instance, ex. `https://acme.app.n8n.cloud`
-                (ou env `N8N_BASE_URL`). Le suffixe `/api/v1` est ajouté.
+            api_key: n8n API key.
+            base_url: URL de l'instance, ex. `https://acme.app.n8n.cloud`.
+                Le suffixe `/api/v1` est ajouté.
         """
-        self.api_key = api_key or require_secret("N8N_API_KEY")
-        base = (base_url or require_secret("N8N_BASE_URL")).rstrip("/")
+        self.api_key = require(api_key, "N8N_API_KEY")
+        base = require(base_url, "N8N_BASE_URL").rstrip("/")
         # Tolère qu'on passe déjà l'URL avec /api/v1.
         if base.endswith("/api/v1"):
             base = base[: -len("/api/v1")]

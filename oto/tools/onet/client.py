@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -36,9 +36,9 @@ class ONetClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé O*NET Web Services (ou variable d'env `ONET_API_KEY`).
+            api_key: clé O*NET Web Services.
         """
-        self.api_key = api_key or require_secret("ONET_API_KEY")
+        self.api_key = require(api_key, "ONET_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({"X-API-Key": self.api_key,
                                      "Accept": "application/json"})

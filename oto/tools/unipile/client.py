@@ -7,10 +7,10 @@ n'expose ni ne déconnecte la session de l'utilisateur). Cf. oto-mcp#5.
 
 Requires: requests
 
-Secrets (résolus via oto.config) :
-- UNIPILE_API_KEY            (requis) — clé X-API-KEY du compte Unipile
-- UNIPILE_DSN                (def. api.unipile.com) — host de l'instance
-- UNIPILE_LINKEDIN_ACCOUNT_ID (optionnel) — sinon, 1er compte LINKEDIN connecté
+Paramètres, toujours fournis par le consommateur :
+- api_key    (requis) — clé X-API-KEY du compte Unipile
+- dsn        (def. api.unipile.com) — host de l'instance
+- account_id (optionnel) — sinon, 1er compte LINKEDIN connecté
 
 Spécificités API v2 (par rapport à l'ancienne API v1, retirée) :
 - **base** : `https://{dsn}/v2`.
@@ -55,7 +55,7 @@ from urllib.parse import quote
 
 import requests
 
-from ...config import get_secret, require_secret
+from ..common.credentials import require
 from ._api import (
     _AccountsMixin,
     _ContentMixin,
@@ -176,10 +176,10 @@ class UnipileClient(
         account_id: Optional[str] = None,
         provider: Optional[str] = None,
     ):
-        self.api_key = api_key or require_secret("UNIPILE_API_KEY")
-        self.dsn = dsn or get_secret("UNIPILE_DSN", DEFAULT_DSN)
+        self.api_key = require(api_key, "UNIPILE_API_KEY")
+        self.dsn = dsn or DEFAULT_DSN
         self.base_url = f"https://{self.dsn}/v2"
-        self._account_id = account_id or get_secret("UNIPILE_LINKEDIN_ACCOUNT_ID")
+        self._account_id = account_id
         # Canal du compte opéré (LINKEDIN, WHATSAPP, …). Sert la forme d'endpoint de
         # messagerie (cf. `_INBOX_PROVIDERS`) ; None = supposé LinkedIn (compat).
         self.provider = (provider or "").strip().upper() or None

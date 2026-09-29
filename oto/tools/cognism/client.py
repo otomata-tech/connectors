@@ -44,7 +44,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from .enums import validate_enum_filters
 
 
@@ -74,10 +74,9 @@ class CognismClient:
     def __init__(self, api_key: str | None = None):
         """
         Args:
-            api_key: clé Cognism (Bearer). À défaut, lue de l'env
-                `COGNISM_API_KEY`.
+            api_key: clé Cognism (Bearer).
         """
-        self.api_key = api_key or require_secret("COGNISM_API_KEY")
+        self.api_key = require(api_key, "COGNISM_API_KEY")
 
     def _headers(self) -> Dict[str, str]:
         return {

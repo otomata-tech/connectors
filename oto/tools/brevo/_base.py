@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -23,9 +23,9 @@ class _BrevoBase:
         """Initialise le client.
 
         Args:
-            api_key: clé API v3 Brevo (ou env `BREVO_API_KEY` en fallback CLI).
+            api_key: clé API v3 Brevo.
         """
-        self.api_key = api_key or require_secret("BREVO_API_KEY")
+        self.api_key = require(api_key, "BREVO_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "api-key": self.api_key,

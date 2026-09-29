@@ -17,7 +17,7 @@ from typing import Optional, Dict, Any, List
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -102,9 +102,9 @@ class LemlistClient:
         Initialize Lemlist client.
 
         Args:
-            api_key: Lemlist API key (or set LEMLIST_API_KEY env var)
+            api_key: Lemlist API key
         """
-        self.api_key = api_key or require_secret("LEMLIST_API_KEY")
+        self.api_key = require(api_key, "LEMLIST_API_KEY")
         self._last_request = 0.0
 
     @property

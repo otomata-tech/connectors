@@ -37,7 +37,7 @@ def _refus_d_extra(e: ImportError) -> "ImportError | None":
     bug d'import pendant vingt minutes.
 
     La retraduction vit ICI, à l'origine, et pas chez le consommateur : ils sont
-    plusieurs (oto-backend, oto-cli, un installateur qui essaie), et une règle
+    plusieurs (oto-backend, un installateur qui essaie), et une règle
     posée chez l'un ne protège pas les autres.
 
     ⚠️ Elle ne s'applique QU'aux deux modules de l'extra. Un `ImportError` interne

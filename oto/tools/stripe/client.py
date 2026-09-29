@@ -49,7 +49,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -102,7 +102,7 @@ class StripeClient:
                  stripe_account: Optional[str] = None):
         """
         Args:
-            api_key: Stripe API key (or env var `STRIPE_API_KEY`). A
+            api_key: Stripe API key. A
                 **restricted key** (`rk_test_…` / `rk_live_…`) is the right
                 credential for this connector — it grants per-resource read
                 permissions, so an operator can hand over reads without handing
@@ -119,7 +119,7 @@ class StripeClient:
             stripe_account: optional `Stripe-Account` header (Connect) — act on
                 a connected account rather than the key's own account.
         """
-        self.api_key = api_key or require_secret("STRIPE_API_KEY")
+        self.api_key = require(api_key, "STRIPE_API_KEY")
         if self.api_key.startswith("pk_"):
             raise ValueError(
                 "Clé Stripe PUBLIABLE (`pk_…`) : elle est destinée au navigateur et ne "

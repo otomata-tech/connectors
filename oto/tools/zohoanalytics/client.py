@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import requests
 
-from ...config import require_secret, get_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ..zoho.auth import ZohoAuthError, cred_key, get_access_token, invalidate
 
@@ -33,26 +33,24 @@ class ZohoAnalyticsClient:
     ):
         """Initialise le client.
 
-        Credentials passés explicitement (usage serveur multi-utilisateur) ou
-        résolus via `require_secret` (usage CLI). Le token d'accès est mis en cache
+        Credentials toujours fournis par le consommateur (usage serveur
+        multi-utilisateur). Le token d'accès est mis en cache
         **en mémoire de process**, keyé par credential (`_TOKEN_CACHE`) — jamais sur
         disque, jamais partagé entre credentials distincts (clé = hash du secret).
         """
-        self.client_id = client_id or require_secret("ZOHO_ANALYTICS_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("ZOHO_ANALYTICS_CLIENT_SECRET")
+        self.client_id = require(client_id, "ZOHO_ANALYTICS_CLIENT_ID")
+        self.client_secret = require(client_secret, "ZOHO_ANALYTICS_CLIENT_SECRET")
         # FACULTATIF à la construction : en mode server-based il est obtenu par le
         # flux de consentement, pas collé. Son absence est signalée au moment
         # du refresh (message actionnable) plutôt que par une erreur de config.
-        self.refresh_token = refresh_token or get_secret("ZOHO_ANALYTICS_REFRESH_TOKEN", None)
+        self.refresh_token = refresh_token
         # FACULTATIF à la construction, comme `refresh_token` et pour la même raison :
         # en mode server-based, l'organisation n'est connue qu'APRÈS le consentement —
         # c'est `list_orgs()` qui la découvre. Son absence est signalée au moment du
         # premier appel qui en a besoin (message actionnable), pas à la construction.
-        self.org_id = org_id or get_secret("ZOHO_ANALYTICS_ORG_ID", None)
-        self.api_domain = api_domain or get_secret(
-            "ZOHO_ANALYTICS_API_DOMAIN", "https://analyticsapi.zoho.com")
-        self.accounts_url = accounts_url or get_secret(
-            "ZOHO_ANALYTICS_ACCOUNTS_URL", "https://accounts.zoho.com")
+        self.org_id = org_id
+        self.api_domain = api_domain or "https://analyticsapi.zoho.com"
+        self.accounts_url = accounts_url or "https://accounts.zoho.com"
         self._cred_key = cred_key(
             self.accounts_url, self.client_id, self.refresh_token)
 

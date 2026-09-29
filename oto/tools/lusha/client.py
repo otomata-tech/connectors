@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -20,7 +20,7 @@ class LushaClient:
     MAX_CONTACTS_PER_CALL = 100
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or require_secret("LUSHA_API_KEY")
+        self.api_key = require(api_key, "LUSHA_API_KEY")
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
         headers = {"api_key": self.api_key, "Content-Type": "application/json"}

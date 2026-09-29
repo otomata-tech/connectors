@@ -11,6 +11,7 @@ import json
 import pytest
 
 from oto.tools.common import UpstreamHTTPError
+from oto.tools.common.credentials import MissingCredential
 from oto.tools.lucca import client as lucca_client
 from oto.tools.lucca.client import LuccaClient
 
@@ -61,20 +62,14 @@ def c():
 
 # --- Construction : secrets requis, URL par tenant ------------------------
 
-def test_requires_api_key(monkeypatch):
-    monkeypatch.delenv("LUCCA_API_KEY", raising=False)
-    monkeypatch.setenv("LUCCA_DOMAIN", "acme")
-    monkeypatch.setenv("OTO_CONFIG_DISABLE_SOPS", "1")
-    with pytest.raises(ValueError):
-        LuccaClient()
+def test_requires_api_key():
+    with pytest.raises(MissingCredential):
+        LuccaClient(domain="acme")
 
 
-def test_requires_domain(monkeypatch):
-    monkeypatch.setenv("LUCCA_API_KEY", "test-key")
-    monkeypatch.delenv("LUCCA_DOMAIN", raising=False)
-    monkeypatch.setenv("OTO_CONFIG_DISABLE_SOPS", "1")
-    with pytest.raises(ValueError):
-        LuccaClient()
+def test_requires_domain():
+    with pytest.raises(MissingCredential):
+        LuccaClient(api_key="test-key")
 
 
 def test_builds_tenant_base_url_from_domain_alone(c):

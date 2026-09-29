@@ -11,7 +11,8 @@ from typing import Dict
 
 from o_browser import BrowserClient
 from oto.tools.common.rate_limiter import LinkedInRateLimiter
-from oto.config import get_sessions_dir, get_secret
+from oto.tools.common.credentials import require
+from oto.tools.common.local_dirs import get_sessions_dir
 from .scrape import ProfileMixin, CompanyMixin, MessagesMixin
 from .search import SearchMixin
 from .outreach import OutreachMixin
@@ -34,13 +35,8 @@ def get_worker_cookie(
     """
     import urllib.request
 
-    url = api_url or get_secret("OTOMATA_API_URL")
-    key = api_key or get_secret("OTOMATA_API_KEY")
-
-    if not url:
-        raise RuntimeError(
-            "OTOMATA_API_URL not set. Configure it in env or ~/.otomata/secrets.env"
-        )
+    url = require(api_url, "OTOMATA_API_URL")
+    key = api_key
 
     endpoint = f"{url.rstrip('/')}/identities/available?platform=linkedin&action={action}"
     headers = {"Accept": "application/json"}
@@ -116,9 +112,9 @@ class LinkedInClient(ProfileMixin, CompanyMixin, MessagesMixin, OutreachMixin, S
         self.account_type = account_type
         self._use_profile = profile is not None or cdp_url is not None
 
-        # Get cookie from arg or secrets (not needed with profile/cdp)
-        self._li_at_cookie = cookie or get_secret("LINKEDIN_COOKIE")
-        resolved_user_agent = user_agent or get_secret("LINKEDIN_USER_AGENT")
+        # Cookie provided by the consumer (not needed with profile/cdp)
+        self._li_at_cookie = cookie
+        resolved_user_agent = user_agent
 
         # Allow disabling rate limit via env var (for automated agent jobs)
         if os.environ.get("LINKEDIN_NO_RATE_LIMIT", "").lower() in ("1", "true", "yes"):
@@ -135,9 +131,8 @@ class LinkedInClient(ProfileMixin, CompanyMixin, MessagesMixin, OutreachMixin, S
             raise ValueError(
                 "LinkedIn cookie required. Provide via:\n"
                 "  - cookie parameter\n"
-                "  - LINKEDIN_COOKIE env var\n"
-                "  - --profile <path> (Chrome profile with LinkedIn session)\n"
-                "  - --cdp-url <url> (connect to existing Chrome)\n"
+                "  - profile parameter (Chrome profile with LinkedIn session)\n"
+                "  - cdp_url parameter (connect to existing Chrome)\n"
                 "  - ~/.config/otomata/sessions/linkedin.json"
             )
 

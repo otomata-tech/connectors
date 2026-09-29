@@ -9,7 +9,7 @@ import json
 from typing import Optional, Dict, Any, List
 
 from o_browser import BrowserClient
-from ...config import get_sessions_dir
+from ..common.local_dirs import get_sessions_dir
 
 
 class G2Client(BrowserClient):

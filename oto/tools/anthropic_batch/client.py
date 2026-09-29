@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple
 
 import anthropic
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class AnthropicBatchClient:
@@ -45,9 +45,9 @@ class AnthropicBatchClient:
         Initialize Anthropic Batch client.
 
         Args:
-            api_key: Anthropic API key (or set ANTHROPIC_API_KEY env var)
+            api_key: Anthropic API key
         """
-        self.api_key = api_key or require_secret("ANTHROPIC_API_KEY")
+        self.api_key = require(api_key, "ANTHROPIC_API_KEY")
         self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def parse_prompt_file(self, prompt_path: str) -> Tuple[str, str]:

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from oto.config import require_secret
+from ..common.credentials import require
 
 _DEFAULT_BASE_URL = "https://mcp.oto.cx"
 
@@ -30,7 +30,7 @@ class AccordsClient:
         self.base_url = (
             base_url or os.environ.get("OTO_API_URL") or _DEFAULT_BASE_URL
         ).rstrip("/")
-        self.token = token or require_secret("OTO_API_KEY")
+        self.token = require(token, "OTO_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.token}",

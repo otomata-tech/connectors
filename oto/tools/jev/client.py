@@ -29,7 +29,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 #: Les trois primitives connues. Une question d'un autre type est refusée ICI :
@@ -55,12 +55,12 @@ class JevClient:
     def __init__(self, api_key: str = None, base_url: str = None, path: str = None):
         """
         Args:
-            api_key: clé OpenRouter (ou variable d'env `OPENROUTER_API_KEY`).
+            api_key: clé OpenRouter.
             base_url: racine de l'API (défaut OpenRouter ; le jour où Jev se prend en
                 direct chez TypeSafe, c'est le seul réglage à changer).
             path: chemin de la requête de décision sous cette racine.
         """
-        self.api_key = api_key or require_secret("OPENROUTER_API_KEY")
+        self.api_key = require(api_key, "OPENROUTER_API_KEY")
         self.base_url = (base_url or self.BASE_URL).rstrip("/")
         self.path = path or self.PATH
         self.session = requests.Session()

@@ -36,7 +36,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError, raise_for_upstream
 
 SOURCE_TYPES = ("people", "companies")
@@ -70,10 +70,10 @@ class ClayClient:
         """Initialise le client.
 
         Args:
-            api_key: clé Clay Public API (ou env `CLAY_API_KEY`).
+            api_key: clé Clay Public API.
             timeout: (connect, read) en secondes.
         """
-        self.api_key = api_key or require_secret("CLAY_API_KEY")
+        self.api_key = require(api_key, "CLAY_API_KEY")
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({

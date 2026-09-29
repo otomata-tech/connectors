@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
 # Entités servies par l'API v2 avec le CRUD générique (chemin = le nom lui-même).
@@ -59,12 +59,12 @@ class PipedriveClient:
         """Initialise le client.
 
         Args:
-            api_token: token API personnel (ou env `PIPEDRIVE_API_TOKEN`).
+            api_token: token API personnel.
             company_domain: sous-domaine du compte (`acme` pour acme.pipedrive.com).
                 Optionnel — route vers le bon data center.
             field_filter: redaction de champs (défaut = politique `pipedrive`).
         """
-        self.api_token = api_token or require_secret("PIPEDRIVE_API_TOKEN")
+        self.api_token = require(api_token, "PIPEDRIVE_API_TOKEN")
         self.company_domain = (company_domain or "").strip().strip(".") or None
         self.field_filter = field_filter or FieldFilter.from_config("pipedrive")
         self.session = requests.Session()

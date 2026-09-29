@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
 # Entités qui ont un pipeline de stages (`GET /pipeline/<entity>/stages`).
@@ -50,11 +50,11 @@ class SpottClient:
         """Initialise le client.
 
         Args:
-            api_key: clé API Spott (ou env `SPOTT_API_KEY`).
+            api_key: clé API Spott.
             field_filter: redaction de champs (défaut = politique `spott`) — les
                 réponses portent de la PII candidat (emails, téléphones, salaires).
         """
-        self.api_key = api_key or require_secret("SPOTT_API_KEY")
+        self.api_key = require(api_key, "SPOTT_API_KEY")
         self.field_filter = field_filter or FieldFilter.from_config("spott")
         self.session = requests.Session()
         self.session.headers.update({

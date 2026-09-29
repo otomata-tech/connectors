@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-from oto.tools.google.credentials import get_credentials, get_user_credentials, list_accounts
-from oto.config import get_cache_dir
+from oto.tools.common.credentials import MissingCredential
+from oto.tools.common.local_dirs import get_cache_dir
 
 
 class DriveClientError(Exception):
@@ -25,39 +25,33 @@ class DriveClient:
     CACHE_DIR = get_cache_dir() / 'google-drive'
     CACHE_TTL = 3600  # 1 hour default cache TTL
 
-    def __init__(self, credentials_json: str = None, cache_ttl: int = CACHE_TTL, account: str = None, credentials=None):
+    def __init__(self, credentials_json: str = None, cache_ttl: int = CACHE_TTL, credentials=None):
         """
-        Initialize Drive client. Tries OAuth user credentials first, falls back to service account.
+        Initialize Drive client with credentials provided by the consumer.
 
         Args:
-            credentials_json: Path to Google Service Account JSON file (legacy)
+            credentials_json: Path to a Google Service Account JSON file
             cache_ttl: Cache time-to-live in seconds (default: 1 hour)
-            account: OAuth account name (None = auto-detect)
-            credentials: pre-resolved OAuth credentials object (backend per-user),
-                takes precedence over account/credentials_json
+            credentials: Google credentials object, takes precedence over
+                credentials_json. One of the two is required.
         """
         self.cache_ttl = cache_ttl
         self._ensure_cache_dir()
 
+        if credentials is None and not (credentials_json and Path(credentials_json).exists()):
+            raise MissingCredential('GOOGLE_CREDENTIALS')
+
         # Load credentials
         try:
             if credentials is not None:
-                # Injected OAuth user credentials (backend per-user)
                 self.credentials = credentials
-            elif credentials_json and Path(credentials_json).exists():
-                # Legacy: load from file path
+            else:
                 with open(credentials_json, 'r') as f:
                     creds_dict = json.load(f)
                 self.credentials = Credentials.from_service_account_info(
                     creds_dict,
                     scopes=self.SCOPES
                 )
-            elif account or list_accounts():
-                # OAuth user credentials (preferred)
-                self.credentials = get_user_credentials(self.SCOPES, account=account)
-            else:
-                # Fallback: service account
-                self.credentials = get_credentials(self.SCOPES)
         except json.JSONDecodeError as e:
             raise DriveClientError(f"Invalid credentials JSON: {e}")
         except Exception as e:

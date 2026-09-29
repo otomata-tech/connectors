@@ -12,6 +12,8 @@ from typing import Optional
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
+from oto.tools.common.credentials import require
+
 # chat.spaces.readonly → list spaces + findDirectMessage
 # chat.messages        → create + read messages in accessible spaces
 SCOPES = [
@@ -28,15 +30,11 @@ class ChatClient:
     """Google Chat API client.
 
     Args:
-        credentials: OAuth2 user credentials. If None, uses get_user_credentials().
-        account: Named account to use (None = auto-detect if single account).
+        credentials: OAuth2 user credentials, provided by the consumer (required).
     """
 
-    def __init__(self, credentials: Optional[Credentials] = None, account: Optional[str] = None):
-        if credentials is None:
-            from oto.tools.google.credentials import get_user_credentials
-            credentials = get_user_credentials(SCOPES, account=account)
-        self.service = build('chat', 'v1', credentials=credentials)
+    def __init__(self, credentials: Optional[Credentials] = None):
+        self.service = build('chat', 'v1', credentials=require(credentials, 'GOOGLE_CREDENTIALS'))
 
     def list_spaces(self, filter_: Optional[str] = None, max_results: int = 100) -> list[dict]:
         """List spaces (rooms + DMs) the authenticated user belongs to.

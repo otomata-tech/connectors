@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class GeminiClient:
@@ -31,7 +31,7 @@ class GeminiClient:
     BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
     def __init__(self, api_key: str = None, model: str = "gemini-3-pro-image-preview"):
-        self.api_key = api_key or require_secret("GEMINI_API_KEY")
+        self.api_key = require(api_key, "GEMINI_API_KEY")
         self.model = model
 
     def _url(self, model: str, method: str) -> str:

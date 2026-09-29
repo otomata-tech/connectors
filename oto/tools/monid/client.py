@@ -67,7 +67,7 @@ from urllib.parse import quote
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import UpstreamHTTPError
 
 SERVICE = "monid"
@@ -234,9 +234,9 @@ class MonidClient:
     """Client de l'API Monid `/v1`, auth Bearer par clé d'API de workspace."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """`api_key` : clé d'API Monid (sinon la variable d'env `MONID_API_KEY`) ;
+        """`api_key` : clé d'API Monid ;
         `base_url` : racine de l'API (défaut `https://api.monid.ai`)."""
-        self.api_key = api_key or require_secret("MONID_API_KEY")
+        self.api_key = require(api_key, "MONID_API_KEY")
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.session = requests.Session()
         # Clé en EN-TÊTE uniquement : en query string elle entrerait dans l'URL,

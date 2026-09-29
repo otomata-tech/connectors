@@ -65,7 +65,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -75,7 +75,7 @@ class SnitcherClient:
     BASE_URL = "https://api.snitcher.com/v1"
 
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or require_secret("SNITCHER_API_KEY")
+        self.api_key = require(api_key, "SNITCHER_API_KEY")
 
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}

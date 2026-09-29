@@ -3,7 +3,7 @@
 Auth = **API token** (Bearer) + **company id** (le sous-domaine/identifiant de la
 société, présent dans l'URL de l'app Recruitee). Token créé dans Recruitee :
 Settings → Apps and plugins → Personal API tokens. Les deux passés au
-constructeur (ou `RECRUITEE_API_TOKEN` / `RECRUITEE_COMPANY_ID` en fallback).
+constructeur.
 
 Vocabulaire Recruitee : un poste = une **offer** ; un candidat = un **candidate**
 (rattaché à une ou plusieurs offers).
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class RecruiteeClient:
@@ -31,11 +31,11 @@ class RecruiteeClient:
         """Initialise le client.
 
         Args:
-            api_token: Recruitee API token (ou env `RECRUITEE_API_TOKEN`).
-            company_id: identifiant de la société (ou env `RECRUITEE_COMPANY_ID`).
+            api_token: Recruitee API token.
+            company_id: identifiant de la société.
         """
-        self.api_token = api_token or require_secret("RECRUITEE_API_TOKEN")
-        self.company_id = company_id or require_secret("RECRUITEE_COMPANY_ID")
+        self.api_token = require(api_token, "RECRUITEE_API_TOKEN")
+        self.company_id = require(company_id, "RECRUITEE_COMPANY_ID")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_token}",

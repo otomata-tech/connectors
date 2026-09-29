@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any, List, Union
 
 import requests
 
-from ...config import get_secret
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -29,9 +28,9 @@ class UnsplashClient:
         Initialize Unsplash client.
 
         Args:
-            api_key: Unsplash API access key (or set UNSPLASH_API_KEY env var)
+            api_key: Unsplash API access key (optional: without it, the source API is used)
         """
-        self.api_key = api_key or get_secret("UNSPLASH_API_KEY")
+        self.api_key = api_key
         self.use_source_api = not self.api_key
 
         self.session = requests.Session()

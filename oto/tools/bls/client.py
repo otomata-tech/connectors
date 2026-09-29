@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from ...config import get_secret
 from ..common import raise_for_upstream
 from .areas import resolve_area
 
@@ -134,10 +133,10 @@ class BLSClient:
     def __init__(self, registration_key: Optional[str] = None):
         """
         Args:
-            registration_key: clé d'enregistrement BLS, **facultative** (ou variable
-                d'env `BLS_API_KEY`). Sans elle : 25 séries/requête, 25 requêtes/jour.
+            registration_key: clé d'enregistrement BLS, **facultative**, fournie par
+                le consommateur. Sans elle : 25 séries/requête, 25 requêtes/jour.
         """
-        self.registration_key = registration_key or get_secret("BLS_API_KEY")
+        self.registration_key = registration_key
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
 

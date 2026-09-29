@@ -61,7 +61,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -83,13 +83,13 @@ class YousignClient:
     def __init__(self, api_key: Optional[str] = None, *, sandbox: bool = False):
         """
         Args:
-            api_key: Yousign API key (or env var `YOUSIGN_API_KEY`), created
+            api_key: Yousign API key, created
                 under the org's API keys page. Sandbox and production keys
                 are DIFFERENT — a production key on the sandbox host (or the
                 reverse) is refused, not silently ignored.
             sandbox: use `api-sandbox.yousign.app` instead of `api.yousign.app`.
         """
-        self.api_key = api_key or require_secret("YOUSIGN_API_KEY")
+        self.api_key = require(api_key, "YOUSIGN_API_KEY")
         self.BASE_URL = _SANDBOX_URL if sandbox else _PROD_URL
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"

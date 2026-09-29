@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class GroqClient:
@@ -32,10 +32,10 @@ class GroqClient:
         Initialize Groq client.
 
         Args:
-            api_key: Groq API key (defaults to GROQ_API_KEY env)
+            api_key: Groq API key
             model: Default model to use
         """
-        self.api_key = api_key or require_secret("GROQ_API_KEY")
+        self.api_key = require(api_key, "GROQ_API_KEY")
         self.model = model
 
     def _get_headers(self) -> dict:

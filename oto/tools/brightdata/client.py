@@ -23,7 +23,7 @@ from typing import Any, Dict
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -39,9 +39,9 @@ class BrightDataClient:
         Initialize Bright Data client.
 
         Args:
-            api_key: Bright Data API token (or set BRIGHTDATA_API_KEY env var).
+            api_key: Bright Data API token.
         """
-        self.api_key = api_key or require_secret("BRIGHTDATA_API_KEY")
+        self.api_key = require(api_key, "BRIGHTDATA_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",

@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # Jetons partagés par processus : {hash(id+secret): (token, expires_at)}. Le hash
@@ -57,12 +57,12 @@ class SellsyClient:
                  client_secret: Optional[str] = None, timeout: int = 30):
         """
         Args:
-            client_id: Client ID de l'accès API v2 (ou env `SELLSY_CLIENT_ID`).
-            client_secret: Client Secret associé (ou env `SELLSY_CLIENT_SECRET`).
+            client_id: Client ID de l'accès API v2.
+            client_secret: Client Secret associé.
             timeout: timeout HTTP par appel, en secondes.
         """
-        self.client_id = client_id or require_secret("SELLSY_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("SELLSY_CLIENT_SECRET")
+        self.client_id = require(client_id, "SELLSY_CLIENT_ID")
+        self.client_secret = require(client_secret, "SELLSY_CLIENT_SECRET")
         self.timeout = timeout
         self.session = requests.Session()
         # Quotas restants du DERNIER appel (X-Quota-Remaining-By-*), utiles pour

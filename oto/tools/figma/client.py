@@ -12,7 +12,8 @@ from typing import Optional, Dict, Any, List
 
 import requests
 
-from ...config import require_secret, get_cache_dir
+from ..common.local_dirs import get_cache_dir
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -34,13 +35,13 @@ class FigmaClient:
         Initialize Figma client.
 
         Args:
-            token: Figma API token (or set FIGMA_API_KEY env var)
+            token: Figma API token
             cache_ttl: Cache TTL in seconds (default 1 hour)
             cache_enabled: persist GET responses on disk. Disable on a shared
                 multi-user host: the cache key is the request, not the token,
                 so a cached file could leak another user's data.
         """
-        self.token = token or require_secret("FIGMA_API_KEY")
+        self.token = require(token, "FIGMA_API_KEY")
         self.headers = {
             "X-Figma-Token": self.token,
             "Content-Type": "application/json"

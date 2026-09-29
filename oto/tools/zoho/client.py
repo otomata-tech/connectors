@@ -5,7 +5,7 @@ from typing import Callable, Any, Optional
 
 import requests
 
-from ...config import require_secret, get_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from .auth import ZohoAuthError, cred_key, get_access_token, invalidate
 
@@ -28,21 +28,19 @@ class ZohoClient:
     ):
         """Initialise le client.
 
-        Les credentials peuvent être passés explicitement (usage serveur
+        Les credentials sont toujours fournis par le consommateur (usage serveur
         multi-utilisateur : chaque appel construit un client avec les creds
-        résolus du user) ou résolus via `require_secret` (usage CLI). Le token
+        résolus du user). Le token
         d'accès est mis en cache **en mémoire de process**, keyé par credential
         (`.auth`) — jamais sur disque, jamais partagé entre credentials distincts."""
-        self.client_id = client_id or require_secret("ZOHO_CLIENT_ID")
-        self.client_secret = client_secret or require_secret("ZOHO_CLIENT_SECRET")
+        self.client_id = require(client_id, "ZOHO_CLIENT_ID")
+        self.client_secret = require(client_secret, "ZOHO_CLIENT_SECRET")
         # FACULTATIF à la construction : en mode server-based il est obtenu par le
         # flux de consentement, pas collé. Son absence est signalée au moment
         # du refresh (message actionnable) plutôt que par une erreur de config.
-        self.refresh_token = refresh_token or get_secret("ZOHO_REFRESH_TOKEN", None)
-        self.api_domain = api_domain or get_secret(
-            "ZOHO_API_DOMAIN", "https://www.zohoapis.com")
-        self.accounts_url = accounts_url or get_secret(
-            "ZOHO_ACCOUNTS_URL", "https://accounts.zoho.com")
+        self.refresh_token = refresh_token
+        self.api_domain = api_domain or "https://www.zohoapis.com"
+        self.accounts_url = accounts_url or "https://accounts.zoho.com"
         self._cred_key = cred_key(
             self.accounts_url, self.client_id, self.refresh_token)
         # Appelé après chaque refresh RÉUSSI — jamais sur un succès de cache.

@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class TopographClient:
@@ -30,9 +30,9 @@ class TopographClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé API Topograph (ou variable d'env `TOPOGRAPH_API_KEY`).
+            api_key: clé API Topograph.
         """
-        self.api_key = api_key or require_secret("TOPOGRAPH_API_KEY")
+        self.api_key = require(api_key, "TOPOGRAPH_API_KEY")
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Any:
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"

@@ -6,6 +6,8 @@ from typing import Optional
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
+from oto.tools.common.credentials import require
+
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
@@ -17,15 +19,11 @@ class CalendarClient:
     """Google Calendar API client.
 
     Args:
-        credentials: OAuth2 user credentials. If None, uses get_user_credentials().
-        account: Named account to use (None = auto-detect if single account).
+        credentials: OAuth2 user credentials, provided by the consumer (required).
     """
 
-    def __init__(self, credentials: Optional[Credentials] = None, account: Optional[str] = None):
-        if credentials is None:
-            from oto.tools.google.credentials import get_user_credentials
-            credentials = get_user_credentials(SCOPES, account=account)
-        self.service = build('calendar', 'v3', credentials=credentials)
+    def __init__(self, credentials: Optional[Credentials] = None):
+        self.service = build('calendar', 'v3', credentials=require(credentials, 'GOOGLE_CREDENTIALS'))
 
     def list_calendars(self) -> list[dict]:
         """List all calendars accessible by the user."""

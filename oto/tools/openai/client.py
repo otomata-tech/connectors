@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Any
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class OpenAIImageClient:
@@ -32,7 +32,7 @@ class OpenAIImageClient:
     BASE_URL = "https://api.openai.com/v1"
 
     def __init__(self, api_key: str = None, model: str = "gpt-image-2"):
-        self.api_key = api_key or require_secret("OPENAI_API_KEY")
+        self.api_key = require(api_key, "OPENAI_API_KEY")
         self.model = model
 
     def _headers(self) -> Dict[str, str]:

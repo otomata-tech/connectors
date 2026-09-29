@@ -2,7 +2,7 @@
 
 Auth = **API key** en Basic auth (la clé est le *username*, mot de passe vide).
 Créée dans Lever : Settings → Integrations and API → API credentials. Passée en
-clair au constructeur (ou `LEVER_API_KEY` en fallback).
+clair au constructeur.
 
 Vocabulaire Lever : un candidat dans un pipeline = une **opportunity** ; un poste
 = un **posting**. Les écritures (création, note) acceptent un `perform_as` (id
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -31,9 +31,9 @@ class LeverClient:
         """Initialise le client.
 
         Args:
-            api_key: Lever API key (ou env `LEVER_API_KEY`).
+            api_key: Lever API key.
         """
-        self.api_key = api_key or require_secret("LEVER_API_KEY")
+        self.api_key = require(api_key, "LEVER_API_KEY")
         self.session = requests.Session()
         self.session.auth = (self.api_key, "")
         self.session.headers.update({"Content-Type": "application/json"})

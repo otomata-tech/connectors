@@ -71,7 +71,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ._api import (_CallsMixin, _MeetingsMixin, _NotesMixin, _TeamsMixin,
                    _UsersMixin)
@@ -111,14 +111,14 @@ class LeexiClient(
                  key_secret: Optional[str] = None):
         """
         Args:
-            key_id: identifiant de clé Leexi (ou env `LEEXI_KEY_ID`).
-            key_secret: secret de clé Leexi (ou env `LEEXI_KEY_SECRET`).
+            key_id: identifiant de clé Leexi.
+            key_secret: secret de clé Leexi.
 
         Les deux se génèrent dans Leexi → Settings → Company Settings → API Keys
         (compte admin requis).
         """
-        self.key_id = key_id or require_secret("LEEXI_KEY_ID")
-        self.key_secret = key_secret or require_secret("LEEXI_KEY_SECRET")
+        self.key_id = require(key_id, "LEEXI_KEY_ID")
+        self.key_secret = require(key_secret, "LEEXI_KEY_SECRET")
         self.session = requests.Session()
         # Signature en HEADER uniquement (jamais en query string : elle finirait
         # dans l'URL, donc dans le message de toute exception, les logs et Sentry).

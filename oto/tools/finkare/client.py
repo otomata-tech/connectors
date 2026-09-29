@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 # The prefix that marks a sandbox key. Anything else is treated as production —
@@ -32,7 +32,7 @@ class FinkareClient:
     """Thin wrapper over the Finkare v1 REST API."""
 
     def __init__(self, api_key: str = None, timeout: int = 30):
-        self.api_key = api_key or require_secret("FINKARE_API_KEY")
+        self.api_key = require(api_key, "FINKARE_API_KEY")
         self.timeout = timeout
         self.base_url = (_SANDBOX_BASE if self.api_key.startswith(_SANDBOX_PREFIX)
                          else _PROD_BASE)

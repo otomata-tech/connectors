@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ..common.errors import UpstreamHTTPError
 
@@ -60,7 +60,7 @@ class WaalaxyClient:
     BASE_URL = "https://developers.waalaxy.com"
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or require_secret("WAALAXY_API_KEY")
+        self.api_key = require(api_key, "WAALAXY_API_KEY")
 
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}

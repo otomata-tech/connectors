@@ -19,7 +19,7 @@ import time
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 # Plafond de l'endpoint bulk FullEnrich (contacts par job).
 MAX_CONTACTS_PER_JOB = 100
@@ -112,7 +112,7 @@ class FullenrichClient:
     BASE_URL = "https://app.fullenrich.com/api/v2"
 
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or require_secret("FULLENRICH_API_KEY")
+        self.api_key = require(api_key, "FULLENRICH_API_KEY")
 
     def _headers(self) -> dict:
         return {

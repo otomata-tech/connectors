@@ -62,7 +62,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 from ._api import _CalendarMixin, _CatalogMixin, _ClinicsMixin, _CrmMixin, _SalesMixin
 from ._http import _page, _query
@@ -83,7 +83,7 @@ class NextmotionClient(_ClinicsMixin, _CalendarMixin, _CatalogMixin, _SalesMixin
             api_key: Nextmotion API key (or secret `NEXTMOTION_API_KEY`),
                 generated in the web app under Settings → API Keys.
         """
-        self.api_key = api_key or require_secret("NEXTMOTION_API_KEY")
+        self.api_key = require(api_key, "NEXTMOTION_API_KEY")
         self.session = requests.Session()
         # The key travels in a HEADER, never in the query string.
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"

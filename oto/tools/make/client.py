@@ -8,7 +8,7 @@ zone du compte (Make est régionalisé : `https://eu1.make.com`, `https://us1.ma
 `https://eu2.make.com`…). Le token se crée dans Make : Profile → API/MCP access →
 Add token (scoper a minima `scenarios:read`/`scenarios:run`).
 
-Les deux passés au constructeur (ou `MAKE_API_TOKEN` / `MAKE_BASE_URL` en fallback).
+Les deux passés au constructeur.
 
 ⚠️ Lister les scénarios exige un `team_id` (les scénarios appartiennent à une équipe).
 `list_organizations` puis `list_teams(organization_id)` permettent de le découvrir.
@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 
@@ -35,12 +35,11 @@ class MakeClient:
         """Initialise le client.
 
         Args:
-            api_token: Make API token (ou env `MAKE_API_TOKEN`).
-            base_url: URL de la zone, ex. `https://eu1.make.com` (ou env
-                `MAKE_BASE_URL`). Le suffixe `/api/v2` est ajouté.
+            api_token: Make API token.
+            base_url: URL de la zone, ex. `https://eu1.make.com`. Le suffixe `/api/v2` est ajouté.
         """
-        self.api_token = api_token or require_secret("MAKE_API_TOKEN")
-        base = (base_url or require_secret("MAKE_BASE_URL")).rstrip("/")
+        self.api_token = require(api_token, "MAKE_API_TOKEN")
+        base = require(base_url, "MAKE_BASE_URL").rstrip("/")
         if base.endswith("/api/v2"):
             base = base[: -len("/api/v2")]
         self.base_url = base

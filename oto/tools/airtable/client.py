@@ -57,7 +57,7 @@ from urllib.parse import quote
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -76,9 +76,9 @@ class AirtableClient:
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: Personal Access Token (ou variable d'env `AIRTABLE_API_KEY`).
+            api_key: Personal Access Token.
         """
-        self.api_key = api_key or require_secret("AIRTABLE_API_KEY")
+        self.api_key = require(api_key, "AIRTABLE_API_KEY")
 
     # ------------------------------------------------------------------
     # Plomberie

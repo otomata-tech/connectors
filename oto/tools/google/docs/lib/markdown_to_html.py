@@ -4,7 +4,7 @@ When uploaded with mimeType=application/vnd.google-apps.document, Drive converts
 the HTML into a native Google Doc. This handles tables, links, code blocks,
 nested lists, images, blockquotes natively — no manual Docs API indexing needed.
 
-Style follows the .otomata/ convention (same as secrets.env): per-project file
+Style follows the .otomata/ convention: per-project file
 in `.otomata/google-docs-style.css` (CWD or parents) overrides the user-level
 file at `~/.otomata/google-docs-style.css`. No style is hardcoded — if neither
 file exists, the doc is uploaded without a `<style>` block and Drive renders

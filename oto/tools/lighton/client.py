@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 
 class LightOnClient:
@@ -48,11 +48,10 @@ class LightOnClient:
         """
         Args:
             api_key: clé API LightOn (Bearer, créée sur console.lighton.ai).
-                À défaut, lue de l'env `LIGHTON_API_KEY`.
             base_url: base de l'API pour une instance privée/on-prem
                 (défaut = SaaS `https://api.lighton.ai`).
         """
-        self.api_key = api_key or require_secret("LIGHTON_API_KEY")
+        self.api_key = require(api_key, "LIGHTON_API_KEY")
         self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
 
     def _headers(self) -> Dict[str, str]:

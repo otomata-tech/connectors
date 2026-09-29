@@ -19,6 +19,7 @@ import pytest
 import requests
 from requests.structures import CaseInsensitiveDict
 
+from oto.tools.common.credentials import MissingCredential
 from oto.tools.common.errors import UpstreamHTTPError
 from oto.tools.monid import client as mo
 
@@ -146,9 +147,10 @@ def test_no_workspace_or_client_header_is_sent(net):
     assert "x-workspace-id" not in sent and "x-monid-client" not in sent
 
 
-def test_the_key_is_read_from_the_environment_when_not_passed(monkeypatch):
+def test_the_key_is_never_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("MONID_API_KEY", "monid_live_from_env")
-    assert mo.MonidClient().api_key == "monid_live_from_env"
+    with pytest.raises(MissingCredential):
+        mo.MonidClient()
 
 
 def test_base_url_defaults_to_the_api_host_and_an_override_is_stripped():

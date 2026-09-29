@@ -52,7 +52,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common import raise_for_upstream
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
@@ -62,7 +62,7 @@ class ForagerClient:
     BASE_URL = "https://api-v2.forager.ai"
 
     def __init__(self, api_key: str = None, account_id: Optional[int] = None):
-        self.api_key = api_key or require_secret("FORAGER_API_KEY")
+        self.api_key = require(api_key, "FORAGER_API_KEY")
         self._account_id = int(account_id) if account_id else None
 
     def _headers(self) -> Dict[str, str]:

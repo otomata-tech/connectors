@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 from ..common.errors import raise_for_upstream
 from .transcription import (
     DEFAULT_TRANSCRIPTION_MODEL,
@@ -39,7 +39,7 @@ class MistralClient:
     BASE_URL = "https://api.mistral.ai/v1"
 
     def __init__(self, api_key: str = None, model: str = "mistral-small-latest"):
-        self.api_key = api_key or require_secret("MISTRAL_API_KEY")
+        self.api_key = require(api_key, "MISTRAL_API_KEY")
         self.model = model
 
     def _get_headers(self) -> dict:

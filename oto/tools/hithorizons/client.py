@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any, List
 
 import requests
 
-from ...config import require_secret
+from ..common.credentials import require
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
@@ -30,10 +30,10 @@ class HitHorizonsClient:
         Initialize HitHorizons client.
 
         Args:
-            api_key: HitHorizons API key (or set HITHORIZONS_API_KEY env var)
+            api_key: HitHorizons API key
             country: Country code (default FR)
         """
-        self.api_key = api_key or require_secret("HITHORIZONS_API_KEY")
+        self.api_key = require(api_key, "HITHORIZONS_API_KEY")
         self.country = country
         self.session = requests.Session()
         self.session.headers.update({

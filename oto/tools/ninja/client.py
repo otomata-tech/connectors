@@ -1,12 +1,11 @@
 """HTTP client vers les endpoints `/api/*` de `mcp.oto.cx`.
 
-Auth via API token long-lived (`OTO_API_KEY`, SOPS), même mécanisme que
+Auth via API token long-lived (`token`, fourni par le consommateur), même mécanisme que
 `oto.tools.datastore.client`. Base URL override : env `OTO_API_URL`
 (défaut `https://mcp.oto.cx`).
 
 Scope : lecture/écriture des secrets multi-user (cookies LinkedIn,
 Crunchbase, API keys par provider) que la DB oto-mcp est seule à connaître.
-Le but est d'éviter de dupliquer ces valeurs dans le SOPS local.
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from typing import Any, Optional
 
 import requests
 
-from oto.config import require_secret
+from ..common.credentials import require
 
 
 _DEFAULT_BASE_URL = "https://mcp.oto.cx"
@@ -33,7 +32,7 @@ class NinjaClient:
         self.base_url = (
             base_url or os.environ.get("OTO_API_URL") or _DEFAULT_BASE_URL
         ).rstrip("/")
-        self.token = token or require_secret("OTO_API_KEY")
+        self.token = require(token, "OTO_API_KEY")
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {self.token}",

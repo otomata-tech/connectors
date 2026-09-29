@@ -48,8 +48,6 @@ def api(monkeypatch):
                                      "Results": {"series": series}})
 
     monkeypatch.setattr(bls.requests.Session, "post", fake_post)
-    monkeypatch.delenv("BLS_API_KEY", raising=False)
-    monkeypatch.setattr(bls, "get_secret", lambda name, default=None: None)
     return state
 
 
