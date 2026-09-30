@@ -46,22 +46,38 @@ class _ContentMixin:
             "GET", self._acct(f"/posts/{quote(post_id, safe='')}")
         )
 
-    def list_comments(self, post_id: str, cursor: Optional[str] = None) -> dict:
-        params: dict[str, Any] = {}
-        if cursor:
-            params["cursor"] = cursor
-        return self._norm(self._request(
-            "GET", self._acct(f"/posts/{quote(post_id, safe='')}/comments"),
-            params=params,
-        ))
+    def list_comments(self, post_id: str, offset: Optional[int] = None,
+                      limit: Optional[int] = None,
+                      comment_id: Optional[str] = None) -> dict:
+        """UNE page des commentaires d'un post — ou des réponses à un commentaire
+        (`comment_id` → `/posts/{id}/comments/{comment_id}/comments`).
 
-    def list_reactions(self, post_id: str, cursor: Optional[str] = None) -> dict:
+        ⚠️ Paginé par `offset` SEUL (doc Unipile v2 : « Pagination on the following
+        endpoints uses exclusively the `offset` parameter ») : un `cursor` n'a jamais
+        eu d'effet ici, d'où le plafond à la première page (oto#177). Page vide = fin.
+        La boucle de pages est à l'appelant, qui borne volume et durée."""
+        return self._engagement_page("comments", post_id, offset, limit, comment_id)
+
+    def list_reactions(self, post_id: str, offset: Optional[int] = None,
+                       limit: Optional[int] = None,
+                       comment_id: Optional[str] = None) -> dict:
+        """UNE page des réactions d'un post — ou d'un commentaire (`comment_id` →
+        `/posts/{id}/comments/{comment_id}/reactions`). Même pagination par
+        `offset` seul que `list_comments`."""
+        return self._engagement_page("reactions", post_id, offset, limit, comment_id)
+
+    def _engagement_page(self, what: str, post_id: str, offset: Optional[int],
+                         limit: Optional[int], comment_id: Optional[str]) -> dict:
+        path = f"/posts/{quote(post_id, safe='')}"
+        if comment_id:
+            path += f"/comments/{quote(comment_id, safe='')}"
         params: dict[str, Any] = {}
-        if cursor:
-            params["cursor"] = cursor
+        if offset:
+            params["offset"] = offset
+        if limit:
+            params["limit"] = limit
         return self._norm(self._request(
-            "GET", self._acct(f"/posts/{quote(post_id, safe='')}/reactions"),
-            params=params,
+            "GET", self._acct(f"{path}/{what}"), params=params,
         ))
 
     def create_post(self, text: str) -> dict:

@@ -83,6 +83,7 @@ from .errors import (
     UnipileRateLimited,
     _RETRY_RE,
     _parse_retry_after,
+    _retry_after_header,
 )
 from .feed import (
     _CAMEL_SPLIT,
@@ -149,6 +150,7 @@ __all__ = [
     "_is_promo",
     "_map_feed_item",
     "_parse_retry_after",
+    "_retry_after_header",
     "_posted_at_from_activity",
     "_sections_param",
     "_slug_from_company_url",
@@ -226,8 +228,11 @@ class UnipileClient(
             full = self._sanitize(f"Unipile {resp.status_code}: {msg}")
             # 429 = quota amont (LinkedIn cappe fiches société/profil ~100/12h par
             # compte) → type dédié + délai parsé, l'appelant STOPPE (cf. UnipileRateLimited).
+            # Le délai vient de l'en-tête `Retry-After` quand l'amont le pose (secondes),
+            # sinon du corps (« Retry in 3 seconds ») — oto#177.
             if resp.status_code == 429:
-                raise UnipileRateLimited(full, retry_after=_parse_retry_after(msg))
+                raise UnipileRateLimited(full, retry_after=(
+                    _retry_after_header(resp.headers) or _parse_retry_after(msg)))
             raise UnipileError(full, status_code=resp.status_code)
         if not resp.text:
             return None

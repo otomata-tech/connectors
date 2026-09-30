@@ -20,6 +20,7 @@ class _Resp:
         self._payload = payload
         self.text = "raw"
         self.reason = "R"
+        self.headers = {}   # comme une vraie réponse `requests` (lue au 429, oto#177)
 
     def json(self):
         return self._payload

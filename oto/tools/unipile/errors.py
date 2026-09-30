@@ -43,3 +43,13 @@ def _parse_retry_after(msg: str) -> Optional[int]:
     if not m:
         return None
     return int(m.group(1)) * {"h": 3600, "m": 60, "s": 1}[m.group(2).lower()[0]]
+
+
+def _retry_after_header(headers) -> Optional[int]:
+    """Secondes avant réessai depuis l'en-tête HTTP `Retry-After` (forme en secondes).
+    None si absent, ou sous la forme date HTTP (le corps prend alors le relais)."""
+    raw = (headers or {}).get("Retry-After") if hasattr(headers, "get") else None
+    if raw is None:
+        return None
+    raw = str(raw).strip()
+    return int(raw) if raw.isdigit() else None
