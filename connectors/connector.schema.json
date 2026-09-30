@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/otomata-tech/connectors/connectors/connector.schema.json",
+  "title": "Connector description",
+  "description": "One file per connector: what the agent sees (name, description, input schema, class, examples, named refusals) and the call behind it. Python and TypeScript are generated from it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["connector", "functions"],
+  "properties": {
+    "connector": { "$ref": "#/$defs/connector" },
+    "functions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/function" }
+    },
+    "exposure": { "$ref": "#/$defs/exposure" }
+  },
+  "if": {
+    "properties": { "connector": { "not": { "required": ["base_url"] } } }
+  },
+  "then": {
+    "$comment": "Without base_url, every function must be handwritten.",
+    "properties": { "functions": { "items": { "required": ["handwritten"] } } }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "http_status": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    },
+    "argument_map": {
+      "description": "API-side name to input argument name. Each input argument goes to one place only.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/identifier" }
+    },
+    "handwritten": {
+      "description": "Code written by hand, referenced from the file. The rest of the entry stays declarative.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "typescript"],
+      "properties": {
+        "python": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module", "function"],
+          "properties": {
+            "module": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$" },
+            "function": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+          }
+        },
+        "typescript": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "export"],
+          "properties": {
+            "file": { "$ref": "#/$defs/text" },
+            "export": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" }
+          }
+        }
+      }
+    },
+    "connector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label", "namespace", "version", "api_version", "auth", "modes", "errors"],
+      "properties": {
+        "name": {
+          "description": "Stable identifier, first segment of the tools.",
+          "$ref": "#/$defs/identifier"
+        },
+        "label": { "description": "Display name.", "$ref": "#/$defs/text" },
+        "namespace": {
+          "description": "Prefix of the exposed tools, often equal to name.",
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "description": "Version of this file, semver.",
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "api_version": {
+          "description": "Version of the third-party API, as the vendor names it.",
+          "$ref": "#/$defs/text"
+        },
+        "base_url": {
+          "description": "Root of the call paths. Required unless every function is handwritten.",
+          "type": "string",
+          "pattern": "^https://[^\\s]+[^/\\s]$"
+        },
+        "auth": { "$ref": "#/$defs/auth" },
+        "credential": {
+          "description": "Fields of the credential supplied by the consumer. Required unless auth.kind is none.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "label", "secret"],
+            "properties": {
+              "name": { "$ref": "#/$defs/identifier" },
+              "label": { "$ref": "#/$defs/text" },
+              "secret": { "type": "boolean" }
+            }
+          }
+        },
+        "modes": {
+          "description": "Who may hold an account. Current vocabulary, to be aligned with organisation, team and person.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["platform", "byo_user", "byo_org"] }
+        },
+        "timeout_s": {
+          "description": "Timeout of one call, in seconds.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 30
+        },
+        "quota": {
+          "description": "Default quota on a platform key. Absent when the connector has no platform key. Shape still to be fixed.",
+          "type": "object",
+          "minProperties": 1
+        },
+        "query_arrays": {
+          "description": "Encoding of lists in the query string.",
+          "enum": ["repeat", "brackets", "comma"]
+        },
+        "errors": {
+          "description": "Error table shared by every function.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "code", "message", "retryable"],
+            "properties": {
+              "status": {
+                "oneOf": [
+                  { "$ref": "#/$defs/http_status" },
+                  {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "$ref": "#/$defs/http_status" }
+                  }
+                ]
+              },
+              "code": { "$ref": "#/$defs/identifier" },
+              "message": { "$ref": "#/$defs/text" },
+              "retryable": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "auth": { "properties": { "kind": { "const": "none" } } } }
+          },
+          "then": { "not": { "required": ["credential"] } },
+          "else": { "required": ["credential"] }
+        }
+      ],
+      "dependentSchemas": {
+        "quota": {
+          "properties": { "modes": { "contains": { "const": "platform" } } }
+        }
+      }
+    },
+    "auth": {
+      "description": "Other keys depend on kind. Values naming a credential field refer to connector.credential[].name.",
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["api_key", "bearer", "basic", "oauth2_client_credentials", "oauth2_user", "none"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "api_key" },
+            "header": { "type": "string", "pattern": "^[A-Za-z0-9-]+$" },
+            "prefix": { "type": "string" },
+            "key": { "description": "Credential field sent in the header.", "$ref": "#/$defs/identifier" }
+          },
+          "required": ["kind", "header", "key"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": { "const": "bearer" },
+            "token": { "description": "Credential field sent as the bearer token.", "$ref": "#/$defs/identifier" }
+          },
+          "required": ["kind", "token"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": { "const": "basic" },
+            "username": { "$ref": "#/$defs/identifier" },
+            "password": { "$ref": "#/$defs/identifier" }
+          },
+          "required": ["kind", "username", "password"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": { "const": "oauth2_client_credentials" },
+            "token_url": { "type": "string", "pattern": "^https://[^\\s]+$" },
+            "token_request": { "description": "Body of the token request.", "enum": ["json", "form"] },
+            "client_id": { "description": "Credential field.", "$ref": "#/$defs/identifier" },
+            "client_secret": { "description": "Credential field.", "$ref": "#/$defs/identifier" },
+            "scope": { "type": "string" },
+            "expires_in_default": { "type": "integer", "minimum": 1 }
+          },
+          "required": ["kind", "token_url", "token_request", "client_id", "client_secret"],
+          "additionalProperties": false
+        },
+        {
+          "properties": {
+            "kind": { "const": "oauth2_user" },
+            "handwritten": { "$ref": "#/$defs/handwritten" }
+          },
+          "required": ["kind", "handwritten"],
+          "additionalProperties": false
+        },
+        {
+          "properties": { "kind": { "const": "none" } },
+          "required": ["kind"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "input_schema": {
+      "description": "JSON Schema of the function input: a strict object.",
+      "allOf": [
+        { "$ref": "https://json-schema.org/draft/2020-12/schema" },
+        {
+          "type": "object",
+          "required": ["type", "additionalProperties", "properties"],
+          "properties": {
+            "type": { "const": "object" },
+            "additionalProperties": { "const": false },
+            "properties": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "class", "description", "input", "examples"],
+      "properties": {
+        "name": { "description": "A verb and its object.", "$ref": "#/$defs/identifier" },
+        "class": { "enum": ["read", "write", "sensitive"] },
+        "description": { "description": "What the agent reads, in English.", "$ref": "#/$defs/text" },
+        "input": { "$ref": "#/$defs/input_schema" },
+        "examples": {
+          "description": "Each input is validated against the function input.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["title", "input"],
+            "properties": {
+              "title": { "$ref": "#/$defs/text" },
+              "input": { "type": "object" }
+            }
+          }
+        },
+        "refusals": {
+          "description": "Overrides or completes the connector error table.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "when", "message"],
+            "properties": {
+              "code": { "$ref": "#/$defs/identifier" },
+              "when": {
+                "description": "HTTP status, or a condition.",
+                "oneOf": [{ "$ref": "#/$defs/http_status" }, { "$ref": "#/$defs/text" }]
+              },
+              "message": { "$ref": "#/$defs/text" }
+            }
+          }
+        },
+        "call": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "path"],
+          "properties": {
+            "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+            "path": {
+              "description": "Relative to base_url, with {param} placeholders naming input arguments.",
+              "type": "string",
+              "pattern": "^/[^\\s?#]*$"
+            },
+            "query": { "$ref": "#/$defs/argument_map" },
+            "body": { "$ref": "#/$defs/argument_map" },
+            "headers": { "$ref": "#/$defs/argument_map" }
+          }
+        },
+        "pagination": {
+          "description": "When present, all_pages and max_pages are added to the served input schema.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "request_param", "next", "max_pages"],
+          "properties": {
+            "kind": { "enum": ["cursor", "page"] },
+            "request_param": { "description": "Input argument carrying the cursor or page number.", "$ref": "#/$defs/identifier" },
+            "next": { "description": "Dotted path of the next cursor or page number in the response.", "$ref": "#/$defs/text" },
+            "total": { "description": "Dotted path of the total count in the response.", "$ref": "#/$defs/text" },
+            "max_pages": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "items": { "description": "Dotted path of the list in the response.", "$ref": "#/$defs/text" },
+            "strip": { "description": "Keys removed.", "type": "array", "items": { "$ref": "#/$defs/text" } },
+            "projection": { "description": "Keys kept.", "type": "array", "items": { "$ref": "#/$defs/text" } }
+          }
+        },
+        "cost": {
+          "description": "Unit counted against the quota.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["per"],
+          "properties": {
+            "per": { "enum": ["request", "page"] }
+          }
+        },
+        "confirm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["summary"],
+          "properties": {
+            "summary": { "description": "Template shown before execution, with {param} placeholders.", "$ref": "#/$defs/text" }
+          }
+        },
+        "handwritten": { "$ref": "#/$defs/handwritten" }
+      },
+      "allOf": [
+        {
+          "$comment": "call and handwritten are exclusive; one of them is required.",
+          "oneOf": [
+            { "required": ["call"], "not": { "required": ["handwritten"] } },
+            { "required": ["handwritten"], "not": { "required": ["call"] } }
+          ]
+        },
+        {
+          "if": { "properties": { "class": { "const": "sensitive" } } },
+          "then": { "required": ["confirm"] }
+        }
+      ]
+    },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "Overrides the instance default for this connector.",
+          "enum": ["per_action", "per_connector", "via_call"]
+        },
+        "tool": {
+          "description": "Name of the single tool in per_connector mode; namespace otherwise.",
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    }
+  }
+}
