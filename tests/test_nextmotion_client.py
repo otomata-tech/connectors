@@ -55,8 +55,8 @@ def client():
     return NextmotionClient(api_key="nm-test")
 
 
-#: La surface entière. Aucune méthode ne vise un dossier ou une liste de patients, un
-#: antécédent, une photo, une ordonnance, un consentement, un soin, une consultation,
+#: La surface entière. Aucune méthode ne vise un dossier patient (seule la LISTE, pour
+#: des agrégats), un antécédent, une photo, une ordonnance, un consentement, un soin, une consultation,
 #: une visite, un questionnaire de santé ou le chat.
 METHODS = {
     "get_me", "list_clinics", "list_clinic_features", "list_doctors", "get_doctor",
@@ -86,6 +86,7 @@ METHODS = {
     "list_communication_templates", "get_communication_template",
     "list_document_templates", "get_document_template",
     "list_webhooks", "get_webhook",
+    "list_patients",
 }
 
 _MEDICAL_MARKERS = ("patient", "medical", "prescription", "consent", "media",
@@ -95,6 +96,9 @@ _MEDICAL_MARKERS = ("patient", "medical", "prescription", "consent", "media",
 #: La seule méthode par patient, voulue : des totaux financiers et des dates de visite,
 #: par id. Ajouter un nom ici est une décision de périmètre, pas un contournement.
 _PER_PATIENT_ADMIN = {"get_patient_stats"}
+#: La liste des patients, voulue : elle n'existe que pour COMPTER la patientèle (code
+#: postal, tranche d'âge, genre) ; le backend n'en sert jamais une ligne.
+_PATIENT_LIST_FOR_AGGREGATES = {"list_patients"}
 
 
 def test_surface_is_exactly_the_administrative_scope():
@@ -104,7 +108,7 @@ def test_surface_is_exactly_the_administrative_scope():
 
 
 def test_no_method_targets_a_medical_resource():
-    for name in METHODS - _PER_PATIENT_ADMIN:
+    for name in METHODS - _PER_PATIENT_ADMIN - _PATIENT_LIST_FOR_AGGREGATES:
         assert not any(m in name for m in _MEDICAL_MARKERS), name
 
 
@@ -227,6 +231,10 @@ def test_api_key_goes_in_bearer_header_never_in_params(calls, client):
     ("list_webhooks", (A,), {}, "GET", f"/v4/clinics/{A}/webhooks",
      {"limit": 50, "offset": 0}),
     ("get_webhook", (A,), {}, "GET", f"/v4/webhooks/{A}", {}),
+    ("list_patients", (A,), {"is_archived": False, "limit": 100}, "GET",
+     f"/v4/clinics/{A}/patients", {"limit": 100, "offset": 0, "is_archived": "false"}),
+    ("list_patients", (A,), {}, "GET", f"/v4/clinics/{A}/patients",
+     {"limit": 50, "offset": 0}),
 ])
 def test_read_paths_and_params(calls, client, fn, args, kwargs, method, path, params):
     getattr(client, fn)(*args, **kwargs)
@@ -255,6 +263,13 @@ def test_no_name_search_is_exposed_where_the_api_matches_on_a_person():
 
     for fn in ("list_leads", "list_calendar_journeys"):
         assert "search" not in inspect.signature(getattr(NextmotionClient, fn)).parameters
+
+
+def test_patient_list_has_no_filter_that_looks_a_person_up():
+    import inspect
+
+    params = set(inspect.signature(NextmotionClient.list_patients).parameters)
+    assert params == {"self", "clinic_id", "is_archived", "limit", "offset"}
 
 
 def test_omitted_filters_are_not_sent(calls, client):

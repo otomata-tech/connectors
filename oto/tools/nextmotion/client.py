@@ -11,7 +11,8 @@ and never expires until rerolled or deleted.
 
 This module carries construction and transport; the calls live in the
 `_api/` mixins, one per family: clinics & staff, calendar, service catalogue,
-sales (quotes, invoices, payments, statistics, stock), CRM & settings.
+sales (quotes, invoices, payments, statistics, stock), CRM & settings, and
+the patient list (aggregates only).
 
 ## Scope of this client
 
@@ -22,9 +23,12 @@ The API also serves medical content — patient records and lists, medical
 history, photos and media, prescriptions, consent forms, clinical treatments,
 consultations, visits (clinical notes), health survey forms, post-treatment
 follow-up configuration — and a chat whose contacts are patients. **None of
-those endpoints has a method here.** Neither do the technical endpoints (VPS,
-shell runs, AI-assistant skills). The one per-patient method is
-`get_patient_stats`: financial totals and visit dates, by patient id.
+those endpoints has a method here**, except the patient LIST
+(`list_patients`), kept for aggregates (clientele by zip code, age band,
+gender) and stripped of every filter that looks a person up. Neither do the
+technical endpoints (VPS, shell runs, AI-assistant skills). The one
+per-patient method is `get_patient_stats`: financial totals and visit dates,
+by patient id.
 
 ⚠️ Some in-scope responses still EMBED personal data: an appointment, a
 journey, a quote, an invoice or a payment carries a nested `patient` object
@@ -64,7 +68,8 @@ import requests
 
 from ..common.credentials import require
 from ..common import raise_for_upstream
-from ._api import _CalendarMixin, _CatalogMixin, _ClinicsMixin, _CrmMixin, _SalesMixin
+from ._api import (_CalendarMixin, _CatalogMixin, _ClinicsMixin, _CrmMixin,
+                   _PatientsMixin, _SalesMixin)
 from ._http import _page, _query
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
@@ -72,7 +77,7 @@ _BASE_URL = "https://api.nextmotion.net/open_api"
 
 
 class NextmotionClient(_ClinicsMixin, _CalendarMixin, _CatalogMixin, _SalesMixin,
-                       _CrmMixin):
+                       _CrmMixin, _PatientsMixin):
     """Nextmotion External API client, Bearer API key."""
 
     BASE_URL = _BASE_URL

@@ -7,6 +7,7 @@ from .calendar import _CalendarMixin
 from .catalog import _CatalogMixin
 from .clinics import _ClinicsMixin
 from .crm import _CrmMixin
+from .patients import _PatientsMixin
 from .sales import _SalesMixin
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "_CatalogMixin",
     "_ClinicsMixin",
     "_CrmMixin",
+    "_PatientsMixin",
     "_SalesMixin",
 ]
