@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oto-core"
-version = "1.152.0"
+version = "1.153.0"
 description = "Oto connector library — API clients for AI agents. Credentials are always provided by the consumer."
 readme = "README.md"
 license = { text = "MIT" }
