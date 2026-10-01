@@ -2,13 +2,17 @@
 statistics, a patient's financial totals, and the product stock.
 
 Never instantiated alone: composed into `NextmotionClient`, which provides the
-transport (`_get`, `_list`).
+transport (`_get`, `_list`, `_post`, `_put`, `_delete`).
+
+Deleting an invoice or a payment has no method: an accounting record is
+corrected (credit note, payment update), not erased. Creating a quote or an
+invoice neither: the API only creates them under a consultation.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
-from .._http import _id, _opt_id
+from .._http import _body, _id, _opt_id
 
 _PERIOD_TYPES = ("year", "month", "week", "day")
 
@@ -36,6 +40,41 @@ class _SalesMixin:
         """GET /v4/invoices/{invoice_id}."""
         return self._get(f"/v4/invoices/{_id(invoice_id, 'invoice_id')}")
 
+    def update_quote(self, quote_id: str, *, body: Dict[str, Any]) -> Any:
+        """PUT /v4/quotes/{quote_id}."""
+        return self._put(f"/v4/quotes/{_id(quote_id, 'quote_id')}", _body(body))
+
+    def delete_quote(self, quote_id: str) -> Any:
+        """DELETE /v4/quotes/{quote_id} — answers 204."""
+        return self._delete(f"/v4/quotes/{_id(quote_id, 'quote_id')}")
+
+    def validate_quote(self, quote_id: str, *, body: Optional[Dict[str, Any]] = None) -> Any:
+        """POST /v4/quotes/{quote_id}/validate — a draft becomes a validated quote,
+        optionally updated in the same request (same fields as `update_quote`)."""
+        return self._post(f"/v4/quotes/{_id(quote_id, 'quote_id')}/validate",
+                          _body(body if body is not None else {}))
+
+    def update_invoice(self, invoice_id: str, *, body: Dict[str, Any]) -> Any:
+        """PUT /v4/invoices/{invoice_id}."""
+        return self._put(f"/v4/invoices/{_id(invoice_id, 'invoice_id')}", _body(body))
+
+    def validate_invoice(self, invoice_id: str, *,
+                         body: Optional[Dict[str, Any]] = None) -> Any:
+        """POST /v4/invoices/{invoice_id}/validate — a draft becomes a validated
+        invoice; `issued_time` / `invoiced_time` optional, the body may be empty."""
+        return self._post(f"/v4/invoices/{_id(invoice_id, 'invoice_id')}/validate",
+                          _body(body if body is not None else {}))
+
+    def pay_invoice(self, invoice_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/invoices/{invoice_id}/pay — records a payment (amount per means,
+        custom mediums, voucher, deferred date; `do_validate`)."""
+        return self._post(f"/v4/invoices/{_id(invoice_id, 'invoice_id')}/pay", _body(body))
+
+    def create_credit_note(self, clinic_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/credit_notes (`patient`, `items` required)."""
+        return self._post(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/credit_notes",
+                          _body(body))
+
     # ---- payments ------------------------------------------------------------
 
     def list_payments(self, clinic_id: str, *, invoice_id: Optional[str] = None,
@@ -52,6 +91,10 @@ class _SalesMixin:
         """GET /v4/payments/{payment_id}."""
         return self._get(f"/v4/payments/{_id(payment_id, 'payment_id')}")
 
+    def update_payment(self, payment_id: str, *, body: Dict[str, Any]) -> Any:
+        """PUT /v4/payments/{payment_id}."""
+        return self._put(f"/v4/payments/{_id(payment_id, 'payment_id')}", _body(body))
+
     def list_payment_mediums(self, clinic_id: str, *, limit: int = 50,
                              offset: int = 0) -> Any:
         """GET /v4/clinics/{clinic_id}/payment_mediums — custom payment means."""
@@ -61,6 +104,23 @@ class _SalesMixin:
     def get_payment_medium(self, payment_medium_id: str) -> Any:
         """GET /v4/payment_mediums/{payment_medium_id}."""
         return self._get(
+            f"/v4/payment_mediums/{_id(payment_medium_id, 'payment_medium_id')}")
+
+    def create_payment_medium(self, clinic_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/payment_mediums (`name` required)."""
+        return self._post(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/payment_mediums",
+                          _body(body))
+
+    def update_payment_medium(self, payment_medium_id: str, *,
+                              body: Dict[str, Any]) -> Any:
+        """PUT /v4/payment_mediums/{payment_medium_id} (`name` required)."""
+        return self._put(
+            f"/v4/payment_mediums/{_id(payment_medium_id, 'payment_medium_id')}",
+            _body(body))
+
+    def delete_payment_medium(self, payment_medium_id: str) -> Any:
+        """DELETE /v4/payment_mediums/{payment_medium_id} — answers 204."""
+        return self._delete(
             f"/v4/payment_mediums/{_id(payment_medium_id, 'payment_medium_id')}")
 
     # ---- statistics ----------------------------------------------------------
@@ -112,7 +172,7 @@ class _SalesMixin:
         requests, media counts. No identity in the response."""
         return self._get(f"/v4/patients/{_id(patient_id, 'patient_id')}/stats")
 
-    # ---- product stock (read only) -------------------------------------------
+    # ---- product stock ---------------------------------------------------------
 
     def list_products(self, clinic_id: str, *, search: Optional[str] = None,
                       stock_state: Optional[str] = None,
@@ -137,3 +197,16 @@ class _SalesMixin:
     def get_product(self, product_id: str) -> Any:
         """GET /v4/products/{product_id}."""
         return self._get(f"/v4/products/{_id(product_id, 'product_id')}")
+
+    def create_product(self, clinic_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/products — a lot (`global_product` required)."""
+        return self._post(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/products",
+                          _body(body))
+
+    def update_product(self, product_id: str, *, body: Dict[str, Any]) -> Any:
+        """PUT /v4/products/{product_id}."""
+        return self._put(f"/v4/products/{_id(product_id, 'product_id')}", _body(body))
+
+    def delete_product(self, product_id: str) -> Any:
+        """DELETE /v4/products/{product_id} — answers 200 with the product."""
+        return self._delete(f"/v4/products/{_id(product_id, 'product_id')}")

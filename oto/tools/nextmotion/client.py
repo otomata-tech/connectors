@@ -12,32 +12,50 @@ and never expires until rerolled or deleted.
 This module carries construction and transport; the calls live in the
 `_api/` mixins, one per family: clinics & staff, calendar, service catalogue,
 sales (quotes, invoices, payments, statistics, stock), CRM & settings, and
-the patient list (aggregates only).
+the patient's identity.
 
 ## Scope of this client
 
-The administrative side of a clinic, read — plus two calendar writes
-(rescheduling and deleting an appointment).
+Two axes, read AND write, and only those:
 
-The API also serves medical content — patient records and lists, medical
-history, photos and media, prescriptions, consent forms, clinical treatments,
-consultations, visits (clinical notes), health survey forms, post-treatment
-follow-up configuration — and a chat whose contacts are patients. **None of
-those endpoints has a method here**, except the patient LIST
-(`list_patients`), kept for aggregates (clientele by zip code, age band,
-gender) and stripped of every filter that looks a person up. Neither do the
-technical endpoints (VPS, shell runs, AI-assistant skills). The one
-per-patient method is `get_patient_stats`: financial totals and visit dates,
-by patient id.
+- **the administrative side of a clinic**: staff, calendar organisation
+  (rooms, devices, opening hours, absences, appointments and online requests),
+  the service catalogue (visit types, treatment types and pricings, packages,
+  accounting distributions, post-treatment email configuration), sales
+  (quotes, invoices, payments, credit notes, payment means, product stock),
+  CRM (leads, call log, messages sent from a template) and settings
+  (communication, document and survey-form TEMPLATES, webhooks);
+- **the patient's identity**: list (with its look-up filters), record,
+  creation and update (`get_patient`, `create_patient`, `update_patient`).
 
-⚠️ Some in-scope responses still EMBED personal data: an appointment, a
-journey, a quote, an invoice or a payment carries a nested `patient` object
-(birth date, gender, doctor comments, photograph…), an appointment request
-and a lead carry the requester's name, email and phone, and many carry
+The API also serves medical content — medical history, photos and media,
+prescriptions and their signature, consent-form uploads, clinical
+treatments, consultations, visits (clinical notes), and the quotes or
+invoices created under a consultation — and a chat whose contacts are
+patients. **None of those endpoints has a method here.** Neither do the
+technical endpoints (VPS, shell runs, AI-assistant skills, the schema), nor
+the deletion of a patient, an invoice or a payment.
+
+### Writing convention
+
+Every write that sends a JSON object takes it as ONE keyword argument,
+`body` (a dict); a JSON array body (reorder, replace a package's items, set
+per-user distributions) is `items` (a list of dicts). The body is sent as
+given minus its `None` values (`_clean`): a field cannot be set to null
+through this client. The client checks the ids of the PATH (UUIDs) and the
+body's shape (an object, a list of objects); the body's FIELDS are the
+caller's — the spec names them, the client does not filter them. The two
+writes that predate the convention (`reschedule_appointment`,
+`search_time_slots`) keep their named arguments.
+
+⚠️ Many responses EMBED personal data: a patient record carries the
+practitioner's comments and a photograph; an appointment, a journey, a quote,
+an invoice or a payment carries a nested `patient` object; an appointment
+request and a lead carry the requester's name, email and phone; many carry
 free-text fields (`notes`, `free_text`, `details`, event titles). This client
 returns responses as the API sends them; reducing them is the caller's
-decision. Search parameters that match on a person's name (`search` on leads
-and journeys, `order=patient_name`) are deliberately not exposed.
+decision. Search parameters that match on a person's name are exposed on the
+patient list only — not on leads nor journeys (`search`, `order=patient_name`).
 
 ## Protocol facts that shape a caller
 
@@ -50,6 +68,9 @@ and journeys, `order=patient_name`) are deliberately not exposed.
   order of the list is not documented.
 - The product stock is not linked to invoices nor to treatments: no endpoint
   says which lot an invoice consumed.
+- Writes answer `{data: {...}}` (201 on creation); a deletion answers 204,
+  except a product's (200, with the lot). Array writes answer a list (or 204
+  when a package's items are replaced).
 - A 403 `non_employee_access_denied` means the key's user is not an employee
   of that clinic.
 - `reschedule_appointment` needs a `visit_type_opening_hour` id and its
@@ -114,3 +135,12 @@ class NextmotionClient(_ClinicsMixin, _CalendarMixin, _CatalogMixin, _SalesMixin
 
     def _list(self, path: str, limit: int, offset: int, **filters: Any) -> Any:
         return self._request("GET", path, params={**_page(limit, offset), **filters})
+
+    def _post(self, path: str, body: Any = None) -> Any:
+        return self._request("POST", path, json_body=body)
+
+    def _put(self, path: str, body: Any) -> Any:
+        return self._request("PUT", path, json_body=body)
+
+    def _delete(self, path: str) -> Any:
+        return self._request("DELETE", path)

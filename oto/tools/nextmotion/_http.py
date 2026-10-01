@@ -49,6 +49,22 @@ def _ids(values: Optional[Iterable[Any]], name: str) -> Optional[List[str]]:
     return [_id(v, name) for v in values]
 
 
+def _body(value: Any) -> Dict[str, Any]:
+    """A JSON object body: a dict, `None` values dropped (`_clean`). Its fields are
+    the caller's to choose — the client checks the ids of the PATH, not the body."""
+    if not isinstance(value, dict):
+        raise ValueError(f"body doit être un objet JSON (dict) — reçu {type(value).__name__}.")
+    return _clean(value)
+
+
+def _items(values: Any) -> List[Dict[str, Any]]:
+    """A JSON array body (reorder, replace a package's items, set distributions):
+    a list of objects, each one `_body`-cleaned."""
+    if not isinstance(values, list):
+        raise ValueError(f"items doit être une liste d'objets — reçu {type(values).__name__}.")
+    return [_body(v) for v in values]
+
+
 def _page(limit: int, offset: int) -> Dict[str, int]:
     if not 1 <= limit <= _MAX_LIMIT:
         raise ValueError(f"limit doit être entre 1 et {_MAX_LIMIT} — reçu {limit}.")

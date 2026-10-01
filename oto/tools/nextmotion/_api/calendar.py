@@ -2,7 +2,7 @@
 requests, patient journeys, absences, opening hours, rooms and devices.
 
 Never instantiated alone: composed into `NextmotionClient`, which provides the
-transport (`_request`, `_get`, `_list`).
+transport (`_request`, `_get`, `_list`, `_post`, `_put`, `_delete`).
 
 ⚠️ Two filters of the API are deliberately absent: `search` on journeys matches
 the patient's NAME, and `order=patient_name` sorts by it — either would let a
@@ -10,9 +10,9 @@ caller pair a person with a visit. Filter by patient id instead.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from .._http import _clean, _id, _ids, _opt_id
+from .._http import _body, _clean, _id, _ids, _opt_id
 
 
 class _CalendarMixin:
@@ -56,6 +56,13 @@ class _CalendarMixin:
             "POST",
             f"/v4/calendar_appointments/{_id(appointment_id, 'appointment_id')}/reschedule",
             json_body=body)
+
+    def update_appointment(self, appointment_id: str, *, body: Dict[str, Any]) -> Any:
+        """PUT /v4/calendar_appointments/{id} (`calendar_event` required, with its
+        `start_time` and `end_time`)."""
+        return self._put(
+            f"/v4/calendar_appointments/{_id(appointment_id, 'appointment_id')}",
+            _body(body))
 
     def delete_appointment(self, appointment_id: str) -> Any:
         """DELETE /v4/calendar_appointments/{id} — answers 204."""
@@ -101,6 +108,13 @@ class _CalendarMixin:
         """GET /v4/appointment_requests/{appointment_request_id}."""
         return self._get("/v4/appointment_requests/"
                          f"{_id(appointment_request_id, 'appointment_request_id')}")
+
+    def create_appointment_request(self, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/appointment_requests — an online booking request on a free slot
+        (`visit_type_opening_hour`, `time_slot` from `search_time_slots`) for a
+        person (`first_name`, `last_name`, `email`, `phone_number`, `birth_date`).
+        The clinic is the slot's: the path carries none."""
+        return self._post("/v4/appointment_requests", _body(body))
 
     def list_calendar_journeys(self, clinic_id: str, *, start_date: Optional[str] = None,
                                end_date: Optional[str] = None,
@@ -197,3 +211,77 @@ class _CalendarMixin:
         """GET /v4/appointment_devices/{appointment_device_id}."""
         return self._get("/v4/appointment_devices/"
                          f"{_id(appointment_device_id, 'appointment_device_id')}")
+
+    # ---- writes: absences, opening hours, rooms, devices --------------------
+
+    def create_calendar_absence(self, clinic_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/calendar_absences (`calendar_event` required)."""
+        return self._post(
+            f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/calendar_absences", _body(body))
+
+    def update_calendar_absence(self, calendar_absence_id: str, *,
+                                body: Dict[str, Any]) -> Any:
+        """PUT /v4/calendar_absences/{calendar_absence_id}."""
+        return self._put("/v4/calendar_absences/"
+                         f"{_id(calendar_absence_id, 'calendar_absence_id')}", _body(body))
+
+    def delete_calendar_absence(self, calendar_absence_id: str) -> Any:
+        """DELETE /v4/calendar_absences/{calendar_absence_id} — answers 204."""
+        return self._delete("/v4/calendar_absences/"
+                            f"{_id(calendar_absence_id, 'calendar_absence_id')}")
+
+    def create_calendar_opening_hour(self, clinic_id: str, *,
+                                     body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/calendar_opening_hours (`calendar_event`
+        required)."""
+        return self._post(
+            f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/calendar_opening_hours",
+            _body(body))
+
+    def update_calendar_opening_hour(self, calendar_opening_hour_id: str, *,
+                                     body: Dict[str, Any]) -> Any:
+        """PUT /v4/calendar_opening_hours/{calendar_opening_hour_id}."""
+        return self._put(
+            "/v4/calendar_opening_hours/"
+            f"{_id(calendar_opening_hour_id, 'calendar_opening_hour_id')}", _body(body))
+
+    def delete_calendar_opening_hour(self, calendar_opening_hour_id: str) -> Any:
+        """DELETE /v4/calendar_opening_hours/{calendar_opening_hour_id} — answers 204."""
+        return self._delete(
+            "/v4/calendar_opening_hours/"
+            f"{_id(calendar_opening_hour_id, 'calendar_opening_hour_id')}")
+
+    def create_appointment_room(self, clinic_id: str, *, body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/appointment_rooms (`name` required)."""
+        return self._post(
+            f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/appointment_rooms", _body(body))
+
+    def update_appointment_room(self, appointment_room_id: str, *,
+                                body: Dict[str, Any]) -> Any:
+        """PUT /v4/appointment_rooms/{appointment_room_id} (`name` required)."""
+        return self._put(
+            f"/v4/appointment_rooms/{_id(appointment_room_id, 'appointment_room_id')}",
+            _body(body))
+
+    def delete_appointment_room(self, appointment_room_id: str) -> Any:
+        """DELETE /v4/appointment_rooms/{appointment_room_id} — answers 204."""
+        return self._delete(
+            f"/v4/appointment_rooms/{_id(appointment_room_id, 'appointment_room_id')}")
+
+    def create_appointment_device(self, clinic_id: str, *,
+                                  body: Dict[str, Any]) -> Any:
+        """POST /v4/clinics/{clinic_id}/appointment_devices (`name` required)."""
+        return self._post(
+            f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/appointment_devices", _body(body))
+
+    def update_appointment_device(self, appointment_device_id: str, *,
+                                  body: Dict[str, Any]) -> Any:
+        """PUT /v4/appointment_devices/{appointment_device_id} (`name` required)."""
+        return self._put("/v4/appointment_devices/"
+                         f"{_id(appointment_device_id, 'appointment_device_id')}",
+                         _body(body))
+
+    def delete_appointment_device(self, appointment_device_id: str) -> Any:
+        """DELETE /v4/appointment_devices/{appointment_device_id} — answers 204."""
+        return self._delete("/v4/appointment_devices/"
+                            f"{_id(appointment_device_id, 'appointment_device_id')}")
