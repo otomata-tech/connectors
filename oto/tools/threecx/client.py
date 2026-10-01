@@ -25,6 +25,7 @@ call log of the PBX and downloads its recordings, but listing the
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
@@ -49,11 +50,16 @@ def _base_url(value: Optional[str]) -> str:
 
 
 def _instant(value: str, name: str) -> str:
-    """An OData DateTimeOffset literal; a bare date is midnight UTC."""
+    """An OData DateTimeOffset literal in UTC — the call log refuses any other
+    offset. A bare date is midnight UTC; an instant with an offset is converted."""
     if isinstance(value, str) and _DATE.match(value):
         return f"{value}T00:00:00Z"
     if isinstance(value, str) and _DATETIME.match(value):
-        return value
+        # Fraction completed to 6 digits: Python 3.10 parses no other width.
+        texte = re.sub(r"\.(\d+)", lambda m: "." + m.group(1)[:6].ljust(6, "0"),
+                       value.replace("Z", "+00:00"))
+        instant = datetime.fromisoformat(texte)
+        return instant.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     raise ValueError(f"{name} doit être une date yyyy-MM-dd ou un instant ISO 8601 "
                      f"avec fuseau — reçu {value!r}.")
 

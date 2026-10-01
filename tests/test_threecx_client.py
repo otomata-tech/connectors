@@ -181,9 +181,20 @@ def test_journal_chemin_et_pagination(token, api):
     url = calls[0]["url"]
     assert url.startswith(f"{BASE}/xapi/v1/ReportCallLogData/Pbx.GetCallLogData(")
     assert "periodFrom=2026-09-01T00:00:00Z" in url
-    assert "periodTo=2026-09-02T12:00:00+02:00" in url
+    assert "periodTo=2026-09-02T10:00:00.000000Z" in url
     assert calls[0]["params"] == {"$top": 3, "$skip": 6}
     assert out["next_skip"] == 9
+
+
+@pytest.mark.parametrize("instant, utc", [
+    ("2026-09-30T15:00:00+02:00", "2026-09-30T13:00:00.000000Z"),
+    ("2026-09-30T09:30:00-04:00", "2026-09-30T13:30:00.000000Z"),
+    ("2026-09-30T13:00:00.25Z", "2026-09-30T13:00:00.250000Z"),
+    ("2026-09-30T13:00Z", "2026-09-30T13:00:00.000000Z"),
+])
+def test_journal_instant_converti_en_utc(token, api, instant, utc):
+    _user().list_calls(instant, "2026-10-01")
+    assert f"periodFrom={utc}," in api[0][0]["url"]
 
 
 def test_journal_derniere_page(token, api):
