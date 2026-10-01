@@ -30,8 +30,8 @@ from urllib.parse import urlsplit
 
 import requests
 
-from ...config import get_secret
 from ..common import raise_for_upstream
+from ..common.credentials import require
 from . import auth
 
 _HTTP_TIMEOUT = (10, 120)  # (connect, read) — never an unbounded wait
@@ -67,32 +67,31 @@ def _filename(resp, rec_id: int) -> str:
 class ThreeCXClient:
     """3CX XAPI client, Bearer auth (API client or user account)."""
 
-    def __init__(self, base_url: Optional[str] = None, *,
+    def __init__(self, base_url: str, *,
                  client_id: Optional[str] = None, client_secret: Optional[str] = None,
                  username: Optional[str] = None, password: Optional[str] = None):
         """
         Args:
-            base_url: the PBX's https address (or `THREECX_BASE_URL`).
-            client_id / client_secret: an API client of the PBX
-                (or `THREECX_CLIENT_ID` / `THREECX_CLIENT_SECRET`).
-            username / password: a user account, used when no API client is
-                given (or `THREECX_USERNAME` / `THREECX_PASSWORD`).
+            base_url: the PBX's https address.
+            client_id / client_secret: an API client of the PBX.
+            username / password: a user account, used when no `client_id` is
+                given.
+
+        A missing credential raises `MissingCredential`: the library never
+        reads one from the environment.
         """
-        self.base_url = _base_url(base_url or get_secret("THREECX_BASE_URL"))
-        self.client_id = client_id or (None if username else get_secret("THREECX_CLIENT_ID"))
-        if self.client_id:
-            self.username = None
-            secret = client_secret or get_secret("THREECX_CLIENT_SECRET")
-            self._creds = {"client_id": self.client_id, "client_secret": secret}
-            identity = f"client:{self.client_id}"
+        self.base_url = _base_url(require(base_url, "THREECX_BASE_URL"))
+        if client_id:
+            self.client_id, self.username = client_id, None
+            secret = require(client_secret, "THREECX_CLIENT_SECRET")
+            self._creds = {"client_id": client_id, "client_secret": secret}
+            identity = f"client:{client_id}"
         else:
-            self.username = username or get_secret("THREECX_USERNAME")
-            secret = password or get_secret("THREECX_PASSWORD")
+            self.client_id = None
+            self.username = require(username, "THREECX_USERNAME")
+            secret = require(password, "THREECX_PASSWORD")
             self._creds = {"username": self.username, "password": secret}
             identity = f"user:{self.username}"
-        if not secret or not (self.client_id or self.username):
-            raise ValueError("3CX : il faut client_id + client_secret, "
-                             "ou username + password.")
         self._key = auth.cred_key(self.base_url, identity, secret)
         self.session = requests.Session()
 

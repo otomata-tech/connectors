@@ -10,6 +10,7 @@ import json
 import pytest
 
 from oto.tools.common import UpstreamHTTPError
+from oto.tools.common.credentials import MissingCredential
 from oto.tools.threecx import ThreeCXAuthError, ThreeCXClient
 from oto.tools.threecx import auth as threecx_auth
 
@@ -83,7 +84,7 @@ def _user():
 # --- construction -------------------------------------------------------------
 
 @pytest.mark.parametrize("url", [
-    "http://pbx.example.test", "pbx.example.test", "https://pbx.example.test/webclient", ""])
+    "http://pbx.example.test", "pbx.example.test", "https://pbx.example.test/webclient"])
 def test_base_url_invalide_refusee(url):
     with pytest.raises(ValueError, match="base_url"):
         ThreeCXClient(url, username="u", password="p")
@@ -93,10 +94,21 @@ def test_base_url_normalisee():
     assert ThreeCXClient(BASE + "/", username="u", password="p").base_url == BASE
 
 
-def test_credential_incomplet_refuse(monkeypatch):
-    monkeypatch.setattr("oto.tools.threecx.client.get_secret", lambda name, default=None: None)
-    with pytest.raises(ValueError, match="client_id"):
-        ThreeCXClient(BASE, username="u")
+@pytest.mark.parametrize("kw, nom", [
+    ({}, "THREECX_USERNAME"),
+    ({"username": "u"}, "THREECX_PASSWORD"),
+    ({"client_id": "cid"}, "THREECX_CLIENT_SECRET"),
+])
+def test_credential_manquant_nomme(kw, nom):
+    with pytest.raises(MissingCredential) as exc:
+        ThreeCXClient(BASE, **kw)
+    assert exc.value.name == nom
+
+
+def test_adresse_manquante_nommee():
+    with pytest.raises(MissingCredential) as exc:
+        ThreeCXClient(None, username="u", password="p")
+    assert exc.value.name == "THREECX_BASE_URL"
 
 
 # --- auth ---------------------------------------------------------------------
