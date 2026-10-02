@@ -152,6 +152,7 @@ def test_query_parameters_inference():
 @pytest.mark.parametrize("ref,default,want", [
     ("p.d.t", None, ("p", "d", "t")),
     ("`p.d.t`", None, ("p", "d", "t")),
+    ("`p`.`d`.`t`", None, ("p", "d", "t")),
     ("d.t", "p", ("p", "d", "t")),
 ])
 def test_split_table_ref(ref, default, want):

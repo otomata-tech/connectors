@@ -62,7 +62,7 @@ def split_table_ref(ref: str, default_project: Optional[str] = None) -> tuple[st
     """`project.dataset.table` (or `dataset.table` + default project) → 3-tuple.
 
     Backticks are tolerated (`` `p.d.t` ``), as an agent copies them from SQL."""
-    parts = ref.strip().strip('`').split('.')
+    parts = ref.replace('`', '').strip().split('.')
     if len(parts) == 2 and default_project:
         parts = [default_project, *parts]
     if len(parts) != 3 or not all(parts):
