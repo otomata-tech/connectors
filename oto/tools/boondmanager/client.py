@@ -48,61 +48,20 @@ import requests
 
 from ..common import raise_for_upstream
 from ..common.credentials import require
+from ._spec import (ENTITIES, KEYWORD_PREFIXES, KEYWORDS_TYPES, MAX_RESULTS,
+                    PERIODS, REQUIRED_ATTRIBUTES, REQUIRED_RELATIONSHIPS,
+                    RETURN_MORE_DATA, SEARCH_FILTERS, SORTS, check_attributes,
+                    check_relationships)
 
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 BASE_URL = "https://ui.boondmanager.com/api"
 JWT_HEADER = "X-Jwt-Client-BoondManager"
 
-# The four CRM entities, and the JSON:API `type` of one record of each.
-ENTITIES = ("contacts", "companies", "opportunities", "actions")
+# The JSON:API `type` of one record of each entity.
 RECORD_TYPES = {"contacts": "contact", "companies": "company",
                 "opportunities": "opportunity", "actions": "action"}
-
-MAX_RESULTS = {"contacts": 500, "companies": 500, "opportunities": 500,
-               "actions": 100}
 ORDERS = ("asc", "desc")
-
-# Id prefixes each search understands in `keywords` (from the API reference).
-KEYWORD_PREFIXES = {
-    "contacts": ("CCON", "CSOC"),
-    "companies": ("CSOC",),
-    "opportunities": ("AO", "PROD", "CAND", "COMP", "CCON", "CSOC"),
-    "actions": ("COMP", "CAND", "PRJ", "CCON", "CSOC", "AO", "BDC", "FACT"),
-}
 _ALL_PREFIXES = frozenset(p for ps in KEYWORD_PREFIXES.values() for p in ps)
-KEYWORDS_TYPES = {
-    "contacts": ("default", "lastName", "firstName", "fullName", "strictFullName",
-                 "companyFullName", "emails", "phones", "socialNetworks"),
-    "companies": ("default", "name", "phones", "emails", "socialNetworks"),
-    "opportunities": (),
-    "actions": (),
-}
-# Search filters passed through as is. Anything else (CSV export, download
-# center, encoding…) is refused rather than forwarded.
-SEARCH_FILTERS = {
-    "contacts": ("states", "companyStates", "typesOf", "activityAreas", "tools",
-                 "expertiseAreas", "origins", "flags", "influencers",
-                 "returnMoreData"),
-    "companies": ("states", "expertiseAreas", "origins", "flags", "influencers",
-                  "returnMoreData"),
-    "opportunities": ("opportunityStates", "opportunityTypes", "positioningStates",
-                      "expertiseAreas", "activityAreas", "tools", "places",
-                      "durations", "origins", "flags", "onlyVisible",
-                      "returnMoreData"),
-    "actions": ("actionTypes", "origins", "flags", "onlyVisible"),
-}
-PERIODS = {
-    "contacts": ("created", "updated", "noAction", "withActions", "withoutActions"),
-    "companies": ("created", "updated", "noAction", "withActions", "withoutActions"),
-    "opportunities": ("created", "updated", "started", "stopped"),
-    "actions": ("started", "created", "updated"),
-}
-
-# Required on creation (from the API reference), checked before any call.
-REQUIRED_ATTRIBUTES = {"contacts": ("firstName", "lastName"),
-                       "companies": ("name",), "opportunities": ("title",),
-                       "actions": ("typeOf",)}
-REQUIRED_RELATIONSHIPS = {"contacts": ("company",), "actions": ("dependsOn",)}
 
 # A 429 on a GET is retried once if `Retry-After` is this short; a longer wait
 # is the caller's call, not a hidden stall inside a request.
@@ -178,7 +137,10 @@ def _date(value: Optional[str], name: str) -> Optional[str]:
 
 
 def _relationship(entity: str, name: str, value: Any) -> Dict[str, Any]:
-    """`{"type": …, "id": …}` (or a list of them) as a JSON:API relationship."""
+    """`{"type": …, "id": …}` (a list of them, or None) as a JSON:API relationship."""
+    if value is None:
+        return {"data": None}
+
     def one(item: Any) -> Dict[str, str]:
         if not isinstance(item, dict) or "type" not in item or "id" not in item:
             raise ValueError(
@@ -203,11 +165,13 @@ def build_create_body(entity: str, attributes: Dict[str, Any],
         raise ValueError("`relationships` must be an object.")
     missing = [a for a in REQUIRED_ATTRIBUTES[entity]
                if attributes.get(a) in (None, "")]
-    missing += [r for r in REQUIRED_RELATIONSHIPS.get(entity, ())
+    missing += [r for r in REQUIRED_RELATIONSHIPS[entity]
                 if not relationships.get(r)]
     if missing:
         raise ValueError(f"a new {RECORD_TYPES[entity]} requires "
                          + ", ".join(f"`{m}`" for m in missing) + ".")
+    check_attributes(entity, attributes)
+    check_relationships(entity, relationships)
     data: Dict[str, Any] = {"type": RECORD_TYPES[entity], "attributes": dict(attributes)}
     if relationships:
         data["relationships"] = {k: _relationship(entity, k, v)
@@ -326,10 +290,22 @@ class BoondManagerClient:
                 raise ValueError(
                     f"filter `{name}` is not supported on {entity}. Accepted: "
                     + ", ".join(SEARCH_FILTERS[entity]) + ".")
-            if isinstance(value, bool):
-                value = "true" if value else "false"
-            params[f"{name}[]" if isinstance(value, (list, tuple)) else name] = (
-                list(value) if isinstance(value, (list, tuple)) else value)
+            values = list(value) if isinstance(value, (list, tuple)) else [value]
+            if not values or any(isinstance(v, bool) or not isinstance(v, (int, str))
+                                 for v in values):
+                raise ValueError(f"filter `{name}` takes ids (integers or "
+                                 f"strings), one or a list; got {value!r}.")
+            if name == "returnMoreData":
+                unknown = [v for v in values if v not in RETURN_MORE_DATA[entity]]
+                if unknown:
+                    raise ValueError(
+                        f"`returnMoreData` on {entity} accepts "
+                        + ", ".join(RETURN_MORE_DATA[entity]) + f"; got {unknown}.")
+            # Repeated parameters travel as `name[]=a&name[]=b`.
+            params[f"{name}[]"] = values
+        if sort is not None and sort not in SORTS[entity]:
+            raise ValueError(f"`sort` {sort!r} is not sortable on {entity}. "
+                             "Accepted: " + ", ".join(SORTS[entity]) + ".")
         if order is not None and order not in ORDERS:
             raise ValueError(f"`order` must be asc or desc; got {order!r}.")
         params.update({"sort": sort, "order": order})
@@ -369,7 +345,8 @@ class BoondManagerClient:
                relationships: Optional[Dict[str, Any]] = None) -> Any:
         """POST /{entity} — create one record. Required: contact `firstName`,
         `lastName` + `company`; company `name`; opportunity `title`; action
-        `typeOf` + `dependsOn`. Never retried."""
+        `typeOf` + `dependsOn`. Attributes and relationships are checked against
+        the creation schema first (`_spec`). Never retried."""
         body = build_create_body(entity, attributes, relationships)
         return self._request("POST", f"/{entity}", body=body)
 

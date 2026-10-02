@@ -236,3 +236,29 @@ def test_refus_amont_type(capture, cli):
     with pytest.raises(UpstreamHTTPError) as exc:
         cli.current_user()
     assert exc.value.status_code == 401
+
+
+def test_tri_et_donnees_en_plus_bornes_par_entite(capture, cli):
+    with pytest.raises(ValueError, match="sortable"):
+        cli.search("companies", sort="lastName")
+    with pytest.raises(ValueError, match="returnMoreData"):
+        cli.search("companies", filters={"returnMoreData": ["lastAction"]})
+    with pytest.raises(ValueError, match="ids"):
+        cli.search("contacts", filters={"states": [True]})
+    assert capture["calls"] == []
+    cli.search("contacts", filters={"returnMoreData": "lastAction", "flags": 3})
+    assert _params(capture)["returnMoreData[]"] == ["lastAction"]
+    assert _params(capture)["flags[]"] == [3]
+
+
+def test_periode_des_opportunites_selon_la_reference(capture, cli):
+    with pytest.raises(ValueError, match="period"):
+        cli.search("opportunities", period="stopped", start_date="2026-01-01")
+    cli.search("opportunities", period="closingDate", start_date="2026-01-01")
+    assert _params(capture)["period"] == "closingDate"
+
+
+def test_attribut_inconnu_refuse_avant_l_appel(capture, cli):
+    with pytest.raises(ValueError, match="nickname"):
+        cli.create("companies", {"name": "Acme", "nickname": "A"})
+    assert capture["calls"] == []

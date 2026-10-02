@@ -1,0 +1,432 @@
+{
+ "$schema": "http://json-schema.org/schema#",
+ "additionalProperties": false,
+ "description": "Opportunity's information data sent in the body with a POST method",
+ "id": "schemas/opportunities/bodyPost.json",
+ "properties": {
+  "data": {
+   "additionalProperties": false,
+   "properties": {
+    "attributes": {
+     "additionalProperties": false,
+     "properties": {
+      "activityAreas": {
+       "database": "TAB_AO.AO_APPLICATIONS",
+       "items": {
+        "description": "List of activity area {id}",
+        "links": {
+         "href": "/api/application/dictionary/setting.activityArea",
+         "rel": "describedBy"
+        },
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "creationDate": {
+       "database": "TAB_AO.AO_DEPOT",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$",
+       "type": "string"
+      },
+      "currency": {
+       "database": "TAB_AO.AO_DEVISE",
+       "links": {
+        "href": "/api/application/dictionary/setting.currency",
+        "rel": "describedBy"
+       },
+       "minimum": 0,
+       "type": "integer"
+      },
+      "currencyAgency": {
+       "database": "TAB_AO.AO_DEVISEAGENCE",
+       "links": {
+        "href": "/api/application/dictionary/setting.currency",
+        "rel": "describedBy"
+       },
+       "minimum": 0,
+       "type": "integer"
+      },
+      "duration": {
+       "database": "TAB_AO.AO_DUREE",
+       "links": {
+        "href": "/api/application/dictionary/setting.duration",
+        "rel": "describedBy"
+       },
+       "type": "integer"
+      },
+      "endDate": {
+       "database": "TAB_AO.AO_FIN",
+       "pattern": "^|[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+       "type": "string"
+      },
+      "estimatesExcludingTax": {
+       "database": "TAB_AO.AO_BUDGET",
+       "type": "number"
+      },
+      "exchangeRate": {
+       "database": "TAB_AO.AO_CHANGE",
+       "type": "number"
+      },
+      "exchangeRateAgency": {
+       "database": "TAB_AO.AO_CHANGEAGENCE",
+       "type": "number"
+      },
+      "expertiseArea": {
+       "database": "TAB_AO.AO_INTERVENTION",
+       "description": "Expertise area {id}",
+       "links": {
+        "href": "/api/application/dictionary/setting.expertiseArea",
+        "rel": "describedBy"
+       },
+       "type": "string"
+      },
+      "isVisible": {
+       "database": "TAB_AO.AO_VISIBILITE",
+       "type": "boolean"
+      },
+      "origin": {
+       "additionalProperties": false,
+       "properties": {
+        "detail": {
+         "database": "TAB_AO.AO_SOURCE",
+         "maxLength": 100,
+         "type": "string"
+        },
+        "typeOf": {
+         "database": "TAB_AO.AO_TYPESOURCE",
+         "links": {
+          "href": "/api/application/dictionary/setting.origin",
+          "rel": "describedBy"
+         },
+         "minimum": -1,
+         "type": "integer"
+        }
+       },
+       "required": [
+        "typeOf",
+        "detail"
+       ],
+       "type": "object"
+      },
+      "place": {
+       "database": "TAB_AO.AO_LIEU",
+       "links": {
+        "href": "/api/application/dictionary/setting.mobilityArea",
+        "rel": "describedBy"
+       },
+       "type": "string"
+      },
+      "reference": {
+       "database": "TAB_AO.AO_REF",
+       "maxLength": 250,
+       "type": "string"
+      },
+      "startDate": {
+       "oneOf": [
+        {
+         "database": "TAB_AO.AO_TYPEDEBUT, TAB_AO.AO_DEBUT",
+         "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+         "type": "string"
+        },
+        {
+         "database": "TAB_AO.AO_TYPEDEBUT, TAB_AO.AO_DEBUT",
+         "enum": [
+          "immediate"
+         ],
+         "type": "string"
+        }
+       ]
+      },
+      "state": {
+       "database": "TAB_AO.AO_ETAT",
+       "links": {
+        "href": "/api/application/dictionary/setting.state.opportunity",
+        "rel": "describedBy"
+       },
+       "minimum": 0,
+       "type": "integer"
+      },
+      "stateReason": {
+       "properties": {
+        "detail": {
+         "database": "TAB_AO.AO_STATE_REASON_COMMENT",
+         "type": "string"
+        },
+        "typeOf": {
+         "database": "TAB_AO.AO_STATE_REASON",
+         "minimum": 0,
+         "type": "integer"
+        }
+       },
+       "type": "object"
+      },
+      "title": {
+       "database": "TAB_AO.AO_TITLE",
+       "maxLength": 150,
+       "type": "string"
+      },
+      "tools": {
+       "database": "TAB_AO.AO_OUTILS",
+       "items": {
+        "description": "List of tools {id}",
+        "links": {
+         "href": "/api/application/dictionary/setting.tool",
+         "rel": "describedBy"
+        },
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "turnoverEstimatedExcludingTax": {
+       "database": "TAB_AO.AO_CA",
+       "type": "number"
+      },
+      "typeOf": {
+       "database": "TAB_AO.AO_TYPEREF",
+       "links": {
+        "href": "/api/application/dictionary/setting.typeOf.project",
+        "rel": "describedBy"
+       },
+       "minimum": 1,
+       "type": "integer"
+      },
+      "weighting": {
+       "database": "TAB_AO.AO_PROBA",
+       "type": "number"
+      }
+     },
+     "required": [
+      "title"
+     ],
+     "type": "object"
+    },
+    "relationships": {
+     "additionalProperties": false,
+     "properties": {
+      "agency": {
+       "additionalProperties": false,
+       "description": "Opportunity's agency",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_AO.ID_SOCIETE",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "agency"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "company": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "No relationships",
+         "properties": {
+          "data": {
+           "type": "null"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Opportunity's company. If defined then opportunity's contact have to be set.",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_AO.ID_CRMSOCIETE",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "company"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      },
+      "contact": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "No relationships",
+         "properties": {
+          "data": {
+           "type": "null"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Opportunity's contact. If defined then opportunity's company have to be set.",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_AO.ID_CRMCONTACT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "contact"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      },
+      "mainManager": {
+       "additionalProperties": false,
+       "description": "Opportunity's main manager",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_AO.ID_PROFIL",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "resource"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "pole": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "No relationships",
+         "properties": {
+          "data": {
+           "type": "null"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Opportunity's pole",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_AO.ID_POLE",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "pole"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      }
+     },
+     "type": "object"
+    },
+    "type": {
+     "enum": [
+      "opportunity"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "attributes"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "data"
+ ],
+ "type": "object"
+}

@@ -1,0 +1,416 @@
+{
+ "$schema": "http://json-schema.org/schema#",
+ "additionalProperties": false,
+ "description": "Action's basic data sent in the body with a POST method",
+ "id": "schemas/actions/bodyPost.json",
+ "properties": {
+  "data": {
+   "additionalProperties": false,
+   "properties": {
+    "attributes": {
+     "additionalProperties": false,
+     "properties": {
+      "description": {
+       "description": "Action's description, used by the Calendar App",
+       "maxLength": 1000,
+       "type": "string"
+      },
+      "endDate": {
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$",
+       "type": "string"
+      },
+      "endTimezone": {
+       "href": "/api/application/dictionary/setting.timezone",
+       "rel": "describedBy",
+       "type": "string"
+      },
+      "guests": {
+       "description": "Action's list of emails used by the Calendar App",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "location": {
+       "description": "Action's place used by the Calendar App",
+       "type": "string"
+      },
+      "startDate": {
+       "database": "TAB_ACTION.ACTION_DATE",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$",
+       "type": "string"
+      },
+      "startTimezone": {
+       "href": "/api/application/dictionary/setting.timezone",
+       "rel": "describedBy",
+       "type": "string"
+      },
+      "synchronizeWithAdvancedAppCalendar": {
+       "description": "true if the entity is synchronized with the advandced app calendar",
+       "type": "boolean"
+      },
+      "text": {
+       "database": "TAB_ACTION.ACTION_TEXTE",
+       "maxLength": 65000,
+       "type": "string"
+      },
+      "title": {
+       "description": "Action's title used by the Calendar App",
+       "maxLength": 8192,
+       "type": "string"
+      },
+      "typeOf": {
+       "database": "TAB_ACTION.ACTION_TYPE",
+       "links": {
+        "oneOf": [
+         {
+          "href": "/api/application/dictionary/setting.action.contact",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.candidate",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.resource",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.opportunity",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.project",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.order",
+          "rel": "describedBy"
+         },
+         {
+          "href": "/api/application/dictionary/setting.action.invoice",
+          "rel": "describedBy"
+         }
+        ]
+       },
+       "minimum": 0,
+       "type": "integer"
+      }
+     },
+     "required": [
+      "typeOf"
+     ],
+     "type": "object"
+    },
+    "relationships": {
+     "additionalProperties": false,
+     "properties": {
+      "company": {
+       "additionalProperties": false,
+       "description": "Action's company. If defines then dependsOn must represents a contact.",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_ACTION.ID_OTHER",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "company"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "dependsOn": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "Resource on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "resource"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Candidate on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "candidate"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Opportunity on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "opportunity"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Project on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "project"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Order on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "order"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Invoice on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "invoice"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Contact on which action depends",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_ACTION.ID_PARENT",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "contact"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      },
+      "mainManager": {
+       "additionalProperties": false,
+       "description": "Action's main manager",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_ACTION.ID_RESPUSER",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "resource"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "dependsOn"
+     ],
+     "type": "object"
+    },
+    "type": {
+     "enum": [
+      "action"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "attributes",
+    "relationships"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "data"
+ ],
+ "type": "object"
+}
