@@ -15,6 +15,7 @@ microseconds (`useInt64Timestamp`) so they convert without float rounding.
 """
 
 import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -256,7 +257,10 @@ class BigQueryClient:
         referenced_tables}`."""
         job = {'configuration': {'dryRun': True, 'query': self._query_config(sql, params)}}
         if location:
-            job['jobReference'] = {'projectId': project, 'location': location}
+            # A jobReference carries its own jobId (as the Google client libraries do):
+            # the location rides on it, and the API documents jobId as required there.
+            job['jobReference'] = {'projectId': project, 'location': location,
+                                   'jobId': f'oto_dry_{uuid.uuid4().hex}'}
         resp = self.service.jobs().insert(projectId=project, body=job).execute()
         stats = (resp.get('statistics') or {}).get('query') or {}
         return {

@@ -65,7 +65,9 @@ def test_dry_run_uses_jobs_insert(client, sent, monkeypatch):
     body = json.loads(req.body)
     assert body["configuration"]["dryRun"] is True
     assert body["configuration"]["query"]["useLegacySql"] is False
-    assert body["jobReference"] == {"projectId": "proj", "location": "europe-west1"}
+    ref = body["jobReference"]
+    assert (ref["projectId"], ref["location"]) == ("proj", "europe-west1")
+    assert ref["jobId"].startswith("oto_dry_")
 
 
 def test_dry_run_parses_statistics(client, monkeypatch):
