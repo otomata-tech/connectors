@@ -1,0 +1,195 @@
+type: { search: { type: contacts } }
+securedBy: [ basic-authentication, x-JWT-App, x-JWT-Client ]
+description: Search & create contacts
+
+get:
+  description: |
+    Search contacts
+
+    _You can specify the output format by appending to the url **.csv**_
+    *Example : {BASE_URL}/api/contacts.csv?keywords=CCON100*
+  is: [ searchable, sortablePaginable: { sortList: "company.name | town | lastName | firstName | function | state | company.expertiseArea | mainManager.lastName | updateDate" } ]
+  queryParameters:
+    keywords:
+      type: string
+      description: |
+        If `keywords = CCON**ID1** CSOC**ID2**` then contacts :
+        * of which [unique identifier](../bddboondmanager/classes/TAB_CRMCONTACT.html#property_ID_CRMCONTACT) &isin; [__ID1__] are filtered.
+        * with companies related to them, of which [unique identifier](../bddboondmanager/classes/TAB_CRMSOCIETE.html#property_ID_CRMSOCIETE) &isin; [__ID2__] are filtered.
+    keywordsType:
+      type: string
+      default: "default"
+      description: |
+        * `default` : Contacts are filtered following `keywords` found into their last name, first name, company's name, function and technical perimeter
+        * `lastName` : Contacts are filtered following `keywords` found into their last name
+        * `firstName` : Contacts are filtered following `keywords` found into their first name
+        * `fullName` : Contacts are filtered following `keywords` found into their last name and first name with `keywords = lastName#firstName`
+        * `strictFullName` : Contacts are filtered following `keywords` found into their last name and first name
+        * `companyFullName` : Contacts are filtered following `keywords` found into company's unique identifier and their last name and first name with `keywords = CSOCid#lastName#firstName`
+        * `emails` : Contacts are filtered following `keywords` found into their emails
+        * `phones` : Contacts are filtered following `keywords` found into their phones
+        * `socialNetworks` : Companies are filtered following `keywords` found into their socialNetworks url
+    returnMoreData:
+      description: |
+        Returns the following attributes or relationships, if specified and user is allowed to :
+        * `lastAction`
+        * `previousAction`
+        * `nextAction`
+      type: string
+      repeat: true
+    states:
+      type: integer
+      repeat: true
+      description: List of contact states `id` to filter (described by [/api/rest/application/dictionary/setting.state.contact](#rest_application_dictionary))
+    companyStates:
+      type: integer
+      repeat: true
+      description: List of company states `id` to filter (described by [/api/rest/application/dictionary/setting.state.company](#rest_application_dictionary))
+    typesOf:
+      type: integer
+      repeat: true
+      description: List of contact typesOf `id` to filter (described by [/api/rest/application/dictionary/setting.typeOf.contact](#rest_application_dictionary))
+    activityAreas:
+      type: string
+      repeat: true
+      description: List of contact activity areas `id` to filter (described by [/api/rest/application/dictionary/setting.activityArea](#rest_application_dictionary))
+    tools:
+      type: string
+      repeat: true
+      description: |
+        List of contact tools `id` to filter (described by [/api/rest/application/dictionary/setting.tool](#rest_application_dictionary))
+        **Operator support:** By default, contacts matching ANY of the specified tools are returned (OR logic).
+        To require ALL tools, add `#AND#` as the first element of the array.
+        *Examples:*
+        * `tools=1,2,3` → Contacts with tool 1 OR 2 OR 3
+        * `tools=#AND#,1,2,3` → Contacts with tool 1 AND 2 AND 3
+    expertiseAreas:
+      type: string
+      repeat: true
+      description: List of company expertise areas `id` to filter (described by [/api/rest/application/dictionary/setting.expertiseArea](#rest_application_dictionary))
+    origins:
+      type: string
+      repeat: true
+      description: List of contact origins `id` to filter (described by [/api/rest/application/dictionary/setting.origin](#rest_application_dictionary))
+    period:
+      type: string
+      description: |
+        * `created` : Contacts created between `startDate` and `endDate` are filtered
+        * `updated` : Contacts updated between `startDate` and `endDate` are filtered
+        * `noAction` : Contacts whose do not have actions between `startDate` and `endDate` are filtered
+        * `withActions` : Contacts whose actions exist between `startDate` and `endDate` are filtered
+        * `withoutActions` : Contacts whose actions dont exist between `startDate` and `endDate` are filtered
+        * `<appId>_running` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_started` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_stopped` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_fieldId` : App entities whose date or datetime field between `startDate` and `endDate` are filtered
+    periodActions:
+      type: integer
+      repeat: true
+      description: List of actions `id` (../bddboondmanager/classes/TAB_ACTION.html#property_ACTION_TYPE described by [/api/rest/application/dictionary/setting.action.contact](#rest_application_dictionary) = integer
+    periodDynamic:
+      type: string
+      description: |
+        * `today` : Contacts filtered according to the grid for today's period
+        * `thisWeek` : Contacts filtered according to the mesh for the period of this week
+        * `thisMonth` : Contacts filtered according to the mesh for the period of this month
+        * `thisTrimester` : Contacts filtered according to the mesh for the period of this trimester
+        * `thisSemester` : Contacts filtered according to the mesh for the period of this semester
+        * `thisYear` : Contacts filtered according to the mesh for the period of this year
+        * `thisFiscalYear` : Contacts filtered according to the mesh for the period of this fiscal year
+        * `yesterday` : Contacts filtered according to the mesh for the period of yesterday
+        * `lastWeek` : Contacts filtered according to the mesh for the period of last week
+        * `lastMonth` : Contacts filtered according to the mesh for the period of last month
+        * `lastTrimester` : Contacts filtered according to the mesh for the period of last trimester
+        * `lastSemester` : Contacts filtered according to the mesh for the period of last semester
+        * `lastYear` : Contacts filtered according to the mesh for the period of last year
+        * `lastFiscalYear` : Contacts filtered according to the mesh for the period of last fiscal year
+        * `tomorrow` : Contacts filtered according to the mesh for the period of tomorrow
+        * `nextWeek` : Contacts filtered according to the mesh for the period of next week
+        * `nextMonth` : Contacts filtered according to the mesh for the period of next month
+        * `nextTrimester` : Contacts filtered according to the mesh for the period of next trimester
+        * `nextSemester` : Contacts filtered according to the mesh for the period of next semester
+        * `nextYear` : Contacts filtered according to the mesh for the period of next year
+        * `nextFiscalYear` : Contacts filtered according to the mesh for the period of next fiscal year
+        * `lastCustomPeriod` : Contacts filtered according to the mesh from the last custom period until now
+        * `nextCustomPeriod` : Contacts filtered according to the mesh for the next custom period from now
+    periodDynamicParameters:
+      type: string
+      description: |
+        Filter parameters of dynamic period. Used when periodDynamic is "lastCustomPeriod" or "nextCustomPeriod"
+        You need two values separated by "," (duration,unit) eg (3,months)
+
+        * `1,n` : Duration of the custom period (max 100)
+        * `days,weeks,months,trimesters,semesters,years` : Unit of the custom period
+    startDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: Start date
+    endDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: End date
+    flags:
+      type: integer
+      repeat: true
+      description: Contacts attached to this flag whom [flag's unique identifier = integer](../bddboondmanager/classes/TAB_USERFLAG.html#property_ID_USERFLAG) are filtered
+    columns:
+      type: string
+      repeat: true
+      description: |
+        List of columns
+        * `lastName`
+        * `function`
+        * `company`
+        * `state`
+        * `typesOf`
+        * `billingDetails`
+        * `town`
+        * `lastAction`
+        * `mainManager`
+        * `creationDate`
+        * `updateDate`
+    encoding:
+      type: string
+      description: |
+        If the output format is **csv** then **encoding** filter should be one of :
+        * `UTF-8`
+        * `ISO-8859-15`
+        * `WINDOWS-1250`
+        * `MAC-OS-ROMAN`
+    exportToDownloadCenter:
+      type: boolean
+      default: false
+      description: Export purchases formatted file to the download center
+    appEntityFields:
+      type: string
+      repeat: true
+      description: |
+        List of app entity responses filtered by `<appId>_<fieldId>:<responseValue>` and with html characters encoded
+    influencers:
+      type: integer
+      repeat: true
+      description: List of contact influencers `id` to filter
+    completeness:
+      type: string
+      repeat: true
+      description: |
+        Filter contacts by field completeness (filled or empty).
+        Format: `<fieldId>:<mode>` where:
+        * `fieldId` can be: `email`, `phone`, `socialNetworks`
+        * `mode` can be: `empty` (field is not filled) or `filled` (field is filled)
+        **Operator support:** By default, contacts matching ANY condition are returned (OR logic).
+        To require ALL conditions, add `#AND#` as the first element of the array.
+        *Examples:*
+        * `completeness=email:empty` → Contacts without email
+        * `completeness=email:empty,phone:empty` → Contacts without email OR without phone
+        * `completeness=#AND#,email:empty,phone:empty` → Contacts without email AND without phone
+    shields:
+      type: string
+      repeat: true
+      description: |
+        Filter contacts by their shield status (conditional fields completion level):
+        * `uncomplete` : Required fields are missing
+        * `minimum` : Required fields OK, recommended fields missing
+        * `complete` : All conditional fields are filled
+

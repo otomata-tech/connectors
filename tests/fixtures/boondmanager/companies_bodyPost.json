@@ -1,0 +1,714 @@
+{
+ "$schema": "http://json-schema.org/schema#",
+ "additionalProperties": false,
+ "description": "Company's information data sent in the body with a POST method",
+ "id": "schemas/companies/bodyPost.json",
+ "properties": {
+  "data": {
+   "additionalProperties": false,
+   "properties": {
+    "attributes": {
+     "additionalProperties": false,
+     "properties": {
+      "address": {
+       "database": "TAB_CRMSOCIETE.CSOC_ADR",
+       "maxLength": 250,
+       "type": "string"
+      },
+      "apeCode": {
+       "database": "TAB_CRMSOCIETE.CSOC_NAF",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "billingDetails": {
+       "description": "List of details",
+       "items": {
+        "oneOf": [
+         {
+          "additionalProperties": false,
+          "description": "Create a detail",
+          "properties": {
+           "address1": {
+            "database": "TAB_COORDONNEES.COORD_ADR1",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "address2": {
+            "database": "TAB_COORDONNEES.COORD_ADR2",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "address3": {
+            "database": "TAB_COORDONNEES.COORD_ADR3",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "bcc": {
+            "database": "TAB_COORDONNEES.COORD_BCC",
+            "type": "array"
+           },
+           "cc": {
+            "database": "TAB_COORDONNEES.COORD_CC",
+            "type": "array"
+           },
+           "contact": {
+            "database": "TAB_COORDONNEES.COORD_CONTACT",
+            "maxLength": 200,
+            "type": "string"
+           },
+           "country": {
+            "database": "TAB_COORDONNEES.COORD_PAYS",
+            "links": {
+             "href": "/api/application/dictionary/country",
+             "rel": "describedBy"
+            },
+            "maxLength": 100,
+            "type": "string"
+           },
+           "emails": {
+            "database": "TAB_COORDONNEES.COORD_EMAILS",
+            "type": "array"
+           },
+           "invalid": {
+            "database": "TAB_COORDONNEES.COORD_INVALID",
+            "type": "boolean"
+           },
+           "invalidType": {
+            "database": "TAB_COORDONNEES.COORD_INVALID_TYPE",
+            "minimum": 0,
+            "type": "integer"
+           },
+           "name": {
+            "database": "TAB_COORDONNEES.COORD_NOM",
+            "maxLength": 100,
+            "type": "string"
+           },
+           "number": {
+            "database": "TAB_COORDONNEES.COORD_NUMBER",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "phone1": {
+            "database": "TAB_COORDONNEES.COORD_TEL",
+            "maxLength": 20,
+            "type": "string"
+           },
+           "postcode": {
+            "database": "TAB_COORDONNEES.COORD_CP",
+            "maxLength": 10,
+            "type": "string"
+           },
+           "registrationNumber": {
+            "maxLength": 100,
+            "type": "string"
+           },
+           "reminderBcc": {
+            "database": "TAB_COORDONNEES.COORD_BCC_REMINDER",
+            "type": "array"
+           },
+           "reminderCc": {
+            "database": "TAB_COORDONNEES.COORD_CC_REMINDER",
+            "type": "array"
+           },
+           "reminderEmails": {
+            "database": "TAB_COORDONNEES.COORD_EMAILS_REMINDER",
+            "type": "array"
+           },
+           "sendingMode": {
+            "database": "TAB_COORDONNEES.COORD_SENDING_MODE",
+            "minimum": -1,
+            "type": "number"
+           },
+           "sendingModeParams": {
+            "oneOf": [
+             {
+              "database": "TAB_COORDONNEES.COORD_SENDING_MODE_PARAMS",
+              "description": "JSON Object representing params depending on sendingMode. For example, for sendingMode code 'choruspro' : { value: 'SERVICE_CODE_VAlUE' }",
+              "type": "object"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "state": {
+            "database": "TAB_COORDONNEES.COORD_ETAT",
+            "type": "boolean"
+           },
+           "subDivision": {
+            "database": "TAB_COORDONNEES.COORD_SUBDIVISION",
+            "maxLength": 6,
+            "type": "string"
+           },
+           "town": {
+            "database": "TAB_COORDONNEES.COORD_VILLE",
+            "maxLength": 100,
+            "type": "string"
+           },
+           "vatNumber": {
+            "database": "TAB_COORDONNEES.COORD_VAT_NUMBER",
+            "maxLength": 100,
+            "type": "string"
+           }
+          },
+          "required": [
+           "name",
+           "contact",
+           "emails",
+           "phone1",
+           "postcode",
+           "town",
+           "country",
+           "cc",
+           "bcc",
+           "reminderEmails",
+           "reminderCc",
+           "reminderBcc",
+           "address1",
+           "address2",
+           "address3",
+           "vatNumber",
+           "registrationNumber",
+           "number",
+           "sendingMode",
+           "sendingModeParams",
+           "state"
+          ],
+          "type": "object"
+         },
+         {
+          "additionalProperties": false,
+          "description": "Update a detail",
+          "properties": {
+           "address1": {
+            "database": "TAB_COORDONNEES.COORD_ADR1",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "address2": {
+            "database": "TAB_COORDONNEES.COORD_ADR2",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "address3": {
+            "database": "TAB_COORDONNEES.COORD_ADR3",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "bcc": {
+            "database": "TAB_COORDONNEES.COORD_BCC",
+            "type": "array"
+           },
+           "cc": {
+            "database": "TAB_COORDONNEES.COORD_CC",
+            "type": "array"
+           },
+           "contact": {
+            "database": "TAB_COORDONNEES.COORD_CONTACT",
+            "maxLength": 200,
+            "type": "string"
+           },
+           "country": {
+            "database": "TAB_COORDONNEES.COORD_PAYS",
+            "links": {
+             "href": "/api/application/dictionary/country",
+             "rel": "describedBy"
+            },
+            "maxLength": 100,
+            "type": "string"
+           },
+           "emails": {
+            "database": "TAB_COORDONNEES.COORD_EMAILS",
+            "type": "array"
+           },
+           "id": {
+            "database": "TAB_COORDONNEES.ID_COORDONNEES",
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+           },
+           "invalid": {
+            "database": "TAB_COORDONNEES.COORD_INVALID",
+            "type": "boolean"
+           },
+           "invalidType": {
+            "database": "TAB_COORDONNEES.COORD_INVALID_TYPE",
+            "minimum": 0,
+            "type": "integer"
+           },
+           "name": {
+            "database": "TAB_COORDONNEES.COORD_NOM",
+            "maxLength": 100,
+            "type": "string"
+           },
+           "number": {
+            "database": "TAB_COORDONNEES.COORD_NUMBER",
+            "maxLength": 250,
+            "type": "string"
+           },
+           "phone1": {
+            "database": "TAB_COORDONNEES.COORD_TEL",
+            "maxLength": 20,
+            "type": "string"
+           },
+           "postcode": {
+            "database": "TAB_COORDONNEES.COORD_CP",
+            "maxLength": 10,
+            "type": "string"
+           },
+           "registrationNumber": {
+            "maxLength": 100,
+            "type": "string"
+           },
+           "sendingMode": {
+            "database": "TAB_COORDONNEES.COORD_SENDING_MODE",
+            "minimum": -1,
+            "type": "number"
+           },
+           "sendingModeParams": {
+            "oneOf": [
+             {
+              "database": "TAB_COORDONNEES.COORD_SENDING_MODE_PARAMS",
+              "description": "JSON Object representing params depending on sendingMode. For example, for sendingMode code 'choruspro' : { value: 'SERVICE_CODE_VAlUE' }",
+              "type": "object"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "state": {
+            "database": "TAB_COORDONNEES.COORD_ETAT",
+            "type": "boolean"
+           },
+           "subDivision": {
+            "database": "TAB_COORDONNEES.COORD_SUBDIVISION",
+            "maxLength": 6,
+            "type": "string"
+           },
+           "town": {
+            "database": "TAB_COORDONNEES.COORD_VILLE",
+            "maxLength": 100,
+            "type": "string"
+           },
+           "vatNumber": {
+            "database": "TAB_COORDONNEES.COORD_VAT_NUMBER",
+            "maxLength": 100,
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "name",
+           "contact",
+           "emails",
+           "cc",
+           "bcc",
+           "phone1",
+           "postcode",
+           "town",
+           "country",
+           "address1",
+           "address2",
+           "address3",
+           "vatNumber",
+           "registrationNumber",
+           "number",
+           "sendingMode",
+           "sendingModeParams",
+           "state"
+          ],
+          "type": "object"
+         }
+        ]
+       },
+       "type": "array"
+      },
+      "country": {
+       "database": "TAB_CRMSOCIETE.CSOC_PAYS",
+       "links": {
+        "href": "/api/application/dictionary/country",
+        "rel": "describedBy"
+       },
+       "maxLength": 100,
+       "type": "string"
+      },
+      "creationDate": {
+       "database": "TAB_CRMSOCIETE.CSOC_DATE",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$",
+       "type": "string"
+      },
+      "departments": {
+       "database": "TAB_CRMSOCIETE.CSOC_SERVICES",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "expertiseArea": {
+       "database": "TAB_CRMSOCIETE.CSOC_INTERVENTION",
+       "links": {
+        "href": "/api/application/dictionary/setting.expertiseArea",
+        "rel": "describedBy"
+       },
+       "maxLength": 100,
+       "type": "string"
+      },
+      "fax": {
+       "database": "TAB_CRMSOCIETE.CSOC_FAX",
+       "maxLength": 20,
+       "type": "string"
+      },
+      "informationComments": {
+       "database": "TAB_CRMSOCIETE.CSOC_METIERS",
+       "maxLength": 1000,
+       "type": "string"
+      },
+      "legalStatus": {
+       "database": "TAB_CRMSOCIETE.CSOC_STATUT",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "name": {
+       "database": "TAB_CRMSOCIETE.CSOC_SOCIETE",
+       "maxLength": 100,
+       "minLength": 1,
+       "type": "string"
+      },
+      "number": {
+       "database": "TAB_CRMSOCIETE.CSOC_NUMERO",
+       "maxLength": 250,
+       "type": "string"
+      },
+      "origin": {
+       "additionalProperties": false,
+       "properties": {
+        "detail": {
+         "database": "TAB_CRMSOCIETE.CSOC_SOURCE",
+         "defaultValue": "",
+         "maxLength": 100,
+         "type": "string"
+        },
+        "typeOf": {
+         "database": "TAB_CRMSOCIETE.CSOC_TYPESOURCE",
+         "links": {
+          "href": "/api/application/dictionary/setting.origin",
+          "rel": "describedBy"
+         },
+         "minimum": -1,
+         "type": "integer"
+        }
+       },
+       "required": [
+        "typeOf"
+       ],
+       "type": "object"
+      },
+      "phone1": {
+       "database": "TAB_CRMSOCIETE.CSOC_TEL",
+       "maxLength": 20,
+       "type": "string"
+      },
+      "postcode": {
+       "database": "TAB_CRMSOCIETE.CSOC_CP",
+       "maxLength": 10,
+       "type": "string"
+      },
+      "registeredOffice": {
+       "database": "TAB_CRMSOCIETE.CSOC_RCS",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "registrationNumber": {
+       "database": "TAB_CRMSOCIETE.CSOC_SIREN TAB_CRMSOCIETE.CSOC_NIC",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "socialNetworks": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "network": {
+          "database": "TAB_WEBSOCIAL.WEBSOCIAL_NETWORK",
+          "enum": [
+           "facebook",
+           "viadeo",
+           "linkedin",
+           "x"
+          ],
+          "type": "string"
+         },
+         "url": {
+          "database": "TAB_WEBSOCIAL.WEBSOCIAL_URL",
+          "maxLength": 250,
+          "type": "string"
+         }
+        },
+        "required": [
+         "network",
+         "url"
+        ],
+        "type": "object"
+       },
+       "maxItems": 4,
+       "minItems": 0,
+       "type": "array",
+       "uniqueItems": true
+      },
+      "staff": {
+       "database": "TAB_CRMSOCIETE.CSOC_EFFECTIF",
+       "minimum": 0,
+       "type": "integer"
+      },
+      "state": {
+       "database": "TAB_CRMSOCIETE.CSOC_TYPE",
+       "links": {
+        "href": "/api/application/dictionary/setting.state.company",
+        "rel": "describedBy"
+       },
+       "minimum": 0,
+       "type": "integer"
+      },
+      "subDivision": {
+       "database": "TAB_CRMSOCIETE.CSOC_SUBDIVISION",
+       "maxLength": 6,
+       "type": "string"
+      },
+      "town": {
+       "database": "TAB_CRMSOCIETE.CSOC_VILLE",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "vatNumber": {
+       "database": "TAB_CRMSOCIETE.CSOC_TVA",
+       "maxLength": 100,
+       "type": "string"
+      },
+      "website": {
+       "database": "TAB_CRMSOCIETE.CSOC_WEB",
+       "maxLength": 100,
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "type": "object"
+    },
+    "relationships": {
+     "additionalProperties": false,
+     "properties": {
+      "agency": {
+       "additionalProperties": false,
+       "description": "Company's agency",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_CRMSOCIETE.ID_SOCIETE",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "agency"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "influencers": {
+       "additionalProperties": false,
+       "description": "List of company's influencers",
+       "properties": {
+        "data": {
+         "items": {
+          "additionalProperties": false,
+          "properties": {
+           "id": {
+            "database": "TAB_INFLUENCER.ID_PROFIL",
+            "pattern": "^[1-9][0-9]*$",
+            "type": "string"
+           },
+           "type": {
+            "enum": [
+             "resource"
+            ],
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "type"
+          ],
+          "type": "object"
+         },
+         "type": "array",
+         "uniqueItems": true
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "mainManager": {
+       "additionalProperties": false,
+       "description": "Company's main manager",
+       "properties": {
+        "data": {
+         "additionalProperties": false,
+         "properties": {
+          "id": {
+           "database": "TAB_CRMSOCIETE.ID_PROFIL",
+           "pattern": "^[1-9][0-9]*$",
+           "type": "string"
+          },
+          "type": {
+           "enum": [
+            "resource"
+           ],
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "type"
+         ],
+         "type": "object"
+        }
+       },
+       "required": [
+        "data"
+       ],
+       "type": "object"
+      },
+      "parentCompany": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "No relationships",
+         "properties": {
+          "data": {
+           "type": "null"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Company's parent",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_CRMSOCIETE.ID_CRMSOCIETE",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "company"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      },
+      "pole": {
+       "oneOf": [
+        {
+         "additionalProperties": false,
+         "description": "No relationships",
+         "properties": {
+          "data": {
+           "type": "null"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        },
+        {
+         "additionalProperties": false,
+         "description": "Company's pole",
+         "properties": {
+          "data": {
+           "additionalProperties": false,
+           "properties": {
+            "id": {
+             "database": "TAB_CRMSOCIETE.ID_POLE",
+             "pattern": "^[1-9][0-9]*$",
+             "type": "string"
+            },
+            "type": {
+             "enum": [
+              "pole"
+             ],
+             "type": "string"
+            }
+           },
+           "required": [
+            "id",
+            "type"
+           ],
+           "type": "object"
+          }
+         },
+         "required": [
+          "data"
+         ],
+         "type": "object"
+        }
+       ]
+      }
+     },
+     "type": "object"
+    },
+    "type": {
+     "enum": [
+      "company"
+     ],
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "attributes"
+   ],
+   "type": "object"
+  }
+ },
+ "required": [
+  "data"
+ ],
+ "type": "object"
+}
