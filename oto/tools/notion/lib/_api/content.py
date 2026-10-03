@@ -37,6 +37,8 @@ class _ContentMixin:
             allow_deleting_content: needed when the edit would remove child
                 pages or databases (refused otherwise).
         """
+        if replacements is not None and not replacements:
+            raise ValueError("replacements is empty.")
         modes = [m for m in (replacements, new_content, insert) if m is not None]
         if len(modes) != 1:
             raise ValueError("Give exactly one of replacements, new_content or insert.")

@@ -23,12 +23,16 @@ def _rich_text(text: str) -> list:
 class _StructureMixin:
     """Create / update databases, edit their columns, manage views."""
 
-    def _database_and_source(self, database_id: str) -> Tuple[str, Dict]:
-        """(database id, data source object) for a database or data source id."""
+    def _database_and_source(self, database_id: str) -> Tuple[Optional[str], Dict]:
+        """(database id, data source object) for a database or data source id.
+
+        The database id is None when the data source does not hang directly
+        off a database (e.g. an externally synced source).
+        """
         data_source = self.resolve_data_source(database_id)
         parent = data_source.get('parent') or {}
-        db_id = parent.get('database_id') or database_id
-        return db_id.replace('-', ''), data_source
+        db_id = parent.get('database_id') if parent.get('type') == 'database_id' else None
+        return (db_id.replace('-', '') if db_id else None), data_source
 
     def create_database(self, parent_page_id: str, title: Optional[str] = None,
                         properties: Optional[Dict] = None, is_inline: bool = False,
@@ -73,6 +77,8 @@ class _StructureMixin:
         """
         db_id, data_source = self._database_and_source(database_id)
         result: Dict[str, Any] = {}
+        # Two requests when both columns and title/description change: the
+        # columns go first; if the second fails, they are already applied.
         if properties:
             result["data_source"] = self._request(
                 'PATCH', f"data_sources/{data_source['id'].replace('-', '')}",
@@ -84,6 +90,10 @@ class _StructureMixin:
             meta["description"] = _rich_text(description)
         if in_trash is not None:
             meta["in_trash"] = in_trash
+        if meta and not db_id:
+            raise ValueError(
+                f"{database_id}: this data source does not belong directly to a "
+                f"database — its title cannot be changed here.")
         if meta:
             result["database"] = self._request(
                 'PATCH', f'databases/{db_id}', data=meta, use_cache=False)
@@ -96,8 +106,10 @@ class _StructureMixin:
 
     def list_views(self, database_id: str, start_cursor: Optional[str] = None) -> Dict:
         """Views of a database (database or data source id)."""
-        db_id, _ = self._database_and_source(database_id)
-        params: Dict[str, Any] = {"database_id": db_id, "page_size": 100}
+        db_id, data_source = self._database_and_source(database_id)
+        params: Dict[str, Any] = (
+            {"database_id": db_id} if db_id else {"data_source_id": data_source['id']})
+        params["page_size"] = 100
         if start_cursor:
             params["start_cursor"] = start_cursor
         return self._request('GET', 'views', params=params, use_cache=False)
@@ -120,6 +132,10 @@ class _StructureMixin:
         if view_type not in _VIEW_TYPES:
             raise ValueError(f"view type {view_type!r}: expected one of {', '.join(_VIEW_TYPES)}.")
         db_id, data_source = self._database_and_source(database_id)
+        if not db_id:
+            raise ValueError(
+                f"{database_id}: this data source does not belong directly to a "
+                f"database — pass the database id.")
         data: Dict[str, Any] = {
             "database_id": db_id,
             "data_source_id": data_source['id'],
@@ -155,6 +171,8 @@ class _StructureMixin:
         for field in clear or []:
             if field not in ("filter", "sorts"):
                 raise ValueError(f"clear {field!r}: only 'filter' and 'sorts' can be cleared.")
+            if field in data:
+                raise ValueError(f"{field!r} is both set and cleared.")
             data[field] = None
         if not data:
             raise ValueError("Nothing to update on the view.")

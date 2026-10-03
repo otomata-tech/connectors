@@ -29,6 +29,22 @@ def _search_object(filter_type: str) -> str:
 
 
 
+class NotionAPIError(Exception):
+    """An HTTP error answered by Notion, with its status and error code."""
+
+    def __init__(self, message: str, status: int, code: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+def _wrong_kind(error: Exception) -> bool:
+    """True when Notion says "not found / not this kind of object" — the only
+    errors after which trying the id as another kind makes sense. Auth, rate
+    limit and server errors must surface as they are."""
+    return isinstance(error, NotionAPIError) and error.status in (400, 404)
+
+
 class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
     """Notion API client with automatic caching."""
 
@@ -142,39 +158,44 @@ class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
 
             # Enhanced error messages based on status code
             if status_code == 404:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (404): Resource not found.\n"
                     f"  Endpoint: {endpoint}\n"
                     f"  Message: {error_msg}\n"
                     f"  Possible causes:\n"
                     f"  - Invalid ID (database/page does not exist)\n"
                     f"  - Integration lacks access permissions to this resource\n"
-                    f"  - Resource is in trash or archived"
+                    f"  - Resource is in trash or archived",
+                    status_code, error_code
                 )
             elif status_code == 403:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (403): Forbidden.\n"
                     f"  Message: {error_msg}\n"
                     f"  The integration does not have permission to access this resource.\n"
-                    f"  Add the integration to the page/database in Notion."
+                    f"  Add the integration to the page/database in Notion.",
+                    status_code, error_code
                 )
             elif status_code == 401:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (401): Unauthorized.\n"
                     f"  Message: {error_msg}\n"
-                    f"  Check that your Notion integration token is valid."
+                    f"  Check that your Notion integration token is valid.",
+                    status_code, error_code
                 )
             elif status_code == 400:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (400): Bad request.\n"
                     f"  Message: {error_msg}\n"
                     f"  Code: {error_code}\n"
-                    f"  Check the request parameters."
+                    f"  Check the request parameters.",
+                    status_code, error_code
                 )
             else:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error ({status_code}): {error_msg}\n"
-                    f"  Code: {error_code}"
+                    f"  Code: {error_code}",
+                    status_code, error_code
                 )
         except Exception as e:
             raise Exception(f"Request failed: {str(e)}")
@@ -309,7 +330,8 @@ class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
 
         if recursive and 'results' in result:
             for block in result['results']:
-                if block.get('has_children'):
+                if block.get('has_children') and block.get('type') not in (
+                        'child_page', 'child_database'):
                     block_id = block['id'].replace('-', '')
                     children = self.get_page_blocks(block_id, recursive=True)
                     block['children'] = children.get('results', [])
@@ -362,30 +384,42 @@ class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
         """
         database_id = database_id.replace('-', '')
         try:
-            db_info = self._request('GET', f'databases/{database_id}')
+            db_info = self._request('GET', f'databases/{database_id}', use_cache=False)
         except Exception as db_error:
+            if not _wrong_kind(db_error):
+                raise
             try:
-                return self._request('GET', f'data_sources/{database_id}')
-            except Exception:
+                return self._request('GET', f'data_sources/{database_id}', use_cache=False)
+            except Exception as ds_error:
+                if not _wrong_kind(ds_error):
+                    raise
                 raise self._not_a_database(database_id, db_error) from db_error
         # Since 2025-09-03 the columns live on the data source, not the database.
         data_sources = db_info.get('data_sources') or []
-        if data_sources and 'properties' not in db_info:
+        if len(data_sources) == 1 and 'properties' not in db_info:
             data_source = self._request(
-                'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}")
+                'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}",
+                use_cache=False)
             db_info = {**db_info, "properties": data_source.get('properties', {})}
         return db_info
 
     def resolve_data_source(self, database_id: str) -> Dict:
-        """Data source object (with `properties`) for a database or data source id."""
+        """Data source object (with `properties`) for a database or data source id.
+
+        A database with several data sources is refused: which one is meant
+        cannot be guessed — the caller passes the data source id instead.
+        """
         database_id = database_id.replace('-', '')
         try:
-            return self._request('GET', f'data_sources/{database_id}')
-        except Exception:
-            pass
+            return self._request('GET', f'data_sources/{database_id}', use_cache=False)
+        except Exception as ds_error:
+            if not _wrong_kind(ds_error):
+                raise
         try:
-            db_info = self._request('GET', f'databases/{database_id}')
+            db_info = self._request('GET', f'databases/{database_id}', use_cache=False)
         except Exception as db_error:
+            if not _wrong_kind(db_error):
+                raise
             raise self._not_a_database(database_id, db_error) from db_error
         data_sources = db_info.get('data_sources') or []
         if not data_sources:
@@ -394,8 +428,14 @@ class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
                 f"see (empty database, or a linked view of a database that was "
                 f"not shared with the integration)."
             )
+        if len(data_sources) > 1:
+            listed = ", ".join(f"{d.get('name') or '?'} ({d['id']})" for d in data_sources)
+            raise ValueError(
+                f"Database {database_id} has {len(data_sources)} data sources: "
+                f"{listed}. Pass the id of the data source to use.")
         return self._request(
-            'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}")
+            'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}",
+            use_cache=False)
 
     def _not_a_database(self, object_id: str, error: Exception) -> Exception:
         """Error for an id that is neither a database nor a data source."""

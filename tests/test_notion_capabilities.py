@@ -247,3 +247,59 @@ def test_list_users(notion):
     routes[("GET", "users")] = _Resp(body={"results": []})
     client.list_users()
     assert calls[0]["params"] == {"page_size": 100}
+
+
+# --- review fixes -------------------------------------------------------------
+
+def test_rate_limit_is_not_misreported_as_sharing(notion):
+    client, routes, calls = notion
+    routes[("GET", f"data_sources/{DS}")] = _Resp(429, {"message": "Rate limited",
+                                                        "code": "rate_limited"})
+    with pytest.raises(Exception, match="429") as err:
+        client.create_page(DS, "database", "T")
+    assert "not a database" not in str(err.value)
+    assert [c["endpoint"] for c in calls] == [f"data_sources/{DS}"]
+
+
+def test_get_database_auth_error_surfaces(notion):
+    client, routes, calls = notion
+    routes[("GET", f"databases/{DB}")] = _Resp(401, {"message": "bad token",
+                                                     "code": "unauthorized"})
+    with pytest.raises(Exception, match="401"):
+        client.get_database(DB)
+    assert len(calls) == 1
+
+
+def test_database_with_several_data_sources_asks_which(notion):
+    client, routes, calls = notion
+    routes[("GET", f"databases/{DB}")] = _Resp(body={"id": DB, "data_sources": [
+        {"id": "a1", "name": "2025"}, {"id": "b2", "name": "2026"}]})
+    with pytest.raises(ValueError, match="2 data sources"):
+        client.create_page(DB, "database", "T")
+    assert not [c for c in calls if c["endpoint"] == "pages"]
+
+
+def test_synced_data_source_lists_views_by_data_source(notion):
+    client, routes, calls = notion
+    routes[("GET", f"data_sources/{DS}")] = _Resp(body={
+        "id": DS, "parent": {"type": "data_source_id", "data_source_id": "x"},
+        "properties": {}})
+    routes[("GET", "views")] = _Resp(body={"results": []})
+    client.list_views(DS)
+    assert _last(calls, "GET")["params"] == {"data_source_id": DS, "page_size": 100}
+
+
+def test_update_view_refuses_set_and_clear(notion):
+    client, _, _ = notion
+    with pytest.raises(ValueError):
+        client.update_view("v1", filter_obj={"x": 1}, clear=["filter"])
+
+
+def test_recursive_blocks_skip_child_pages(notion):
+    client, routes, calls = notion
+    routes[("GET", f"blocks/{PAGE}/children")] = _Resp(body={"results": [
+        {"id": "sub", "type": "child_page", "has_children": True},
+        {"id": "tog", "type": "toggle", "has_children": True}], "has_more": False})
+    routes[("GET", "blocks/tog/children")] = _Resp(body={"results": [], "has_more": False})
+    client.get_page_blocks(PAGE, recursive=True)
+    assert [c["endpoint"] for c in calls] == [f"blocks/{PAGE}/children", "blocks/tog/children"]
