@@ -18,6 +18,19 @@ _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
 logger = logging.getLogger(__name__)
 
+# Notion caps `children` at 100 blocks per request (create page / append).
+_MAX_CHILDREN = 100
+
+
+def _search_object(filter_type: str) -> str:
+    """Map our `filter_type` to Notion's search filter value.
+
+    Since API 2025-09-03 search returns data sources, not databases: the
+    filter only accepts "page" or "data_source" — "database" is a 400.
+    """
+    return "data_source" if filter_type == "database" else filter_type
+
+
 
 class NotionClient:
     """Notion API client with automatic caching."""
@@ -189,7 +202,7 @@ class NotionClient:
             data["sort"] = {"direction": "descending", "timestamp": sort}
 
         if filter_type:
-            data["filter"] = {"value": filter_type, "property": "object"}
+            data["filter"] = {"value": _search_object(filter_type), "property": "object"}
 
         return self._request('POST', 'search', data=data, use_cache=True)
 
@@ -246,7 +259,7 @@ class NotionClient:
                 "page_size": 100,
             }
             if filter_type:
-                data["filter"] = {"value": filter_type, "property": "object"}
+                data["filter"] = {"value": _search_object(filter_type), "property": "object"}
             if start_cursor:
                 data["start_cursor"] = start_cursor
 
@@ -324,79 +337,118 @@ class NotionClient:
 
     def query_database(self, database_id: str, filter_obj: Optional[Dict] = None,
                        sorts: Optional[list] = None, page_size: int = 100) -> Dict:
-        """Query database by finding its data source and querying that.
+        """Query a database's rows.
 
-        In Notion API 2025-09-03, databases must be queried via their data_sources.
-        This method automatically retrieves the database's data source and queries it.
+        In Notion API 2025-09-03, rows live in data sources. `database_id`
+        may be a database id (we query its first data source) or directly a
+        data source id (what `search` returns).
         """
-        database_id = database_id.replace('-', '')
-
-        try:
-            # Get database to find data sources
-            db_info = self.get_database(database_id)
-            data_sources = db_info.get('data_sources', [])
-
-            if not data_sources:
-                raise Exception(
-                    f"Database {database_id} has no data sources.\n"
-                    f"This may be an empty database or a permissions issue."
-                )
-
-            # Use the first data source (most common case)
-            data_source_id = data_sources[0]['id']
-
-            # Query the data source
-            return self.query_data_source(data_source_id, filter_obj, sorts, page_size)
-
-        except Exception as e:
-            error_str = str(e)
-            if 'invalid_request_url' in error_str.lower():
-                raise Exception(
-                    f"Cannot query database {database_id}.\n"
-                    f"Original error: {error_str}\n\n"
-                    f"This error occurs when using API version 2025-09-03 with the old endpoint.\n"
-                    f"The tool has been updated to use data sources, but this error persists.\n"
-                    f"Please verify the database has data sources and your integration has access."
-                )
-            raise
+        data_source = self.resolve_data_source(database_id)
+        return self.query_data_source(data_source['id'], filter_obj, sorts, page_size)
 
     def get_database(self, database_id: str) -> Dict:
-        """Get database metadata and schema."""
+        """Get database metadata and schema.
+
+        Also accepts a data source id (what `search` returns since 2025-09-03):
+        the data source is returned then, it carries the `properties` schema.
+        """
         database_id = database_id.replace('-', '')
-        return self._request('GET', f'databases/{database_id}')
+        try:
+            db_info = self._request('GET', f'databases/{database_id}')
+        except Exception as db_error:
+            try:
+                return self._request('GET', f'data_sources/{database_id}')
+            except Exception:
+                raise self._not_a_database(database_id, db_error) from db_error
+        # Since 2025-09-03 the columns live on the data source, not the database.
+        data_sources = db_info.get('data_sources') or []
+        if data_sources and 'properties' not in db_info:
+            data_source = self._request(
+                'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}")
+            db_info = {**db_info, "properties": data_source.get('properties', {})}
+        return db_info
+
+    def resolve_data_source(self, database_id: str) -> Dict:
+        """Data source object (with `properties`) for a database or data source id."""
+        database_id = database_id.replace('-', '')
+        try:
+            return self._request('GET', f'data_sources/{database_id}')
+        except Exception:
+            pass
+        try:
+            db_info = self._request('GET', f'databases/{database_id}')
+        except Exception as db_error:
+            raise self._not_a_database(database_id, db_error) from db_error
+        data_sources = db_info.get('data_sources') or []
+        if not data_sources:
+            raise Exception(
+                f"Database {database_id} has no data source the integration can "
+                f"see (empty database, or a linked view of a database that was "
+                f"not shared with the integration)."
+            )
+        return self._request(
+            'GET', f"data_sources/{data_sources[0]['id'].replace('-', '')}")
+
+    def _not_a_database(self, object_id: str, error: Exception) -> Exception:
+        """Error for an id that is neither a database nor a data source."""
+        hint = ""
+        if "is a page" in str(error):
+            hint = ("\n  This id is a PAGE, not a database: read it as a page; "
+                    "to create under it, use parent_type 'page'.")
+        else:
+            try:
+                block = self._request('GET', f'blocks/{object_id}')
+            except Exception:
+                block = {}
+            if block.get('type') == 'child_database':
+                hint = ("\n  This id is a LINKED VIEW of a database: the API cannot "
+                        "read or write through a view. Use the id of the source "
+                        "database (shared with the integration).")
+        return Exception(
+            f"{object_id} is not a database or data source the integration can see."
+            f"{hint}\n  Original error: {error}")
 
     def create_page(self, parent_id: str, parent_type: str,
                     title: str, properties: Optional[Dict] = None,
                     content: Optional[list] = None) -> Dict:
-        """Create new page."""
+        """Create new page.
+
+        Args:
+            parent_type: "page", or "database"/"data_source" for a database
+                row — either a database id or a data source id works.
+            content: block objects; more than 100 are appended in batches.
+        """
         parent_id = parent_id.replace('-', '')
+        properties = dict(properties or {})
 
-        data = {
-            "parent": {
-                f"{parent_type}_id": parent_id
-            },
-            "properties": {}
-        }
-
-        # Set title
-        if parent_type == "database":
-            data["properties"]["Name"] = {
-                "title": [{"text": {"content": title}}]
-            }
+        if parent_type in ("database", "data_source"):
+            data_source = self.resolve_data_source(parent_id)
+            parent = {"type": "data_source_id", "data_source_id": data_source['id']}
+            title_prop = next(
+                (name for name, prop in (data_source.get('properties') or {}).items()
+                 if prop.get('type') == 'title'),
+                "Name",
+            )
+        elif parent_type == "page":
+            parent = {"page_id": parent_id}
+            title_prop = "title"
         else:
-            data["properties"]["title"] = {
-                "title": [{"text": {"content": title}}]
-            }
+            raise ValueError(
+                f"parent_type {parent_type!r}: expected 'page' or 'database'.")
 
-        # Add custom properties
-        if properties:
-            data["properties"].update(properties)
+        # The caller may already set the title column in `properties`.
+        if not any(isinstance(v, dict) and 'title' in v for v in properties.values()):
+            properties[title_prop] = {"title": [{"text": {"content": title}}]}
 
-        # Add content blocks
+        data = {"parent": parent, "properties": properties}
+        content = list(content or [])
         if content:
-            data["children"] = content
+            data["children"] = content[:_MAX_CHILDREN]
 
-        return self._request('POST', 'pages', data=data, use_cache=False)
+        page = self._request('POST', 'pages', data=data, use_cache=False)
+        if len(content) > _MAX_CHILDREN:
+            self.append_blocks(page['id'], content[_MAX_CHILDREN:])
+        return page
 
     def update_page(self, page_id: str, properties: Optional[Dict] = None,
                     archived: Optional[bool] = None) -> Dict:
@@ -411,8 +463,25 @@ class NotionClient:
 
         return self._request('PATCH', f'pages/{page_id}', data=data, use_cache=False)
 
-    def append_blocks(self, page_id: str, blocks: list) -> Dict:
-        """Append blocks to page."""
+    def append_blocks(self, page_id: str, blocks: list,
+                      after: Optional[str] = None) -> Dict:
+        """Append blocks to a page/block, at the end or right after `after`.
+
+        Args:
+            after: id of an existing child block; the new blocks go just below it.
+        """
         page_id = page_id.replace('-', '')
-        data = {"children": blocks}
-        return self._request('PATCH', f'blocks/{page_id}/children', data=data, use_cache=False)
+        result: Dict = {}
+        appended: list = []
+        for i in range(0, len(blocks), _MAX_CHILDREN):
+            data: Dict[str, Any] = {"children": blocks[i:i + _MAX_CHILDREN]}
+            if after:
+                data["after"] = after
+            result = self._request(
+                'PATCH', f'blocks/{page_id}/children', data=data, use_cache=False)
+            appended.extend(result.get('results', []))
+            if after and appended:
+                after = appended[-1]['id']  # keep the batches in order
+        if len(blocks) > _MAX_CHILDREN:
+            result = {**result, "results": appended}
+        return result
