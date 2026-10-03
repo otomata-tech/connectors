@@ -13,14 +13,11 @@ import requests
 
 from ...common.credentials import require
 from ...common.local_dirs import get_cache_dir
+from ._api import _CollabMixin, _ContentMixin, _PagesMixin, _StructureMixin
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
 
 logger = logging.getLogger(__name__)
-
-# Notion caps `children` at 100 blocks per request (create page / append).
-_MAX_CHILDREN = 100
-
 
 def _search_object(filter_type: str) -> str:
     """Map our `filter_type` to Notion's search filter value.
@@ -32,7 +29,7 @@ def _search_object(filter_type: str) -> str:
 
 
 
-class NotionClient:
+class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
     """Notion API client with automatic caching."""
 
     def __init__(self, token: Optional[str] = None, cache_enabled: bool = True):
@@ -302,7 +299,13 @@ class NotionClient:
             recursive: If True, fetch children of blocks recursively
         """
         page_id = page_id.replace('-', '')
-        result = self._request('GET', f'blocks/{page_id}/children')
+        result = self._request('GET', f'blocks/{page_id}/children',
+                               params={"page_size": 100})
+        # A page with more than 100 top-level blocks comes in several pages.
+        while result.get('has_more') and result.get('next_cursor'):
+            more = self._request('GET', f'blocks/{page_id}/children', params={
+                "page_size": 100, "start_cursor": result['next_cursor']})
+            result = {**more, "results": result['results'] + more.get('results', [])}
 
         if recursive and 'results' in result:
             for block in result['results']:
@@ -323,10 +326,13 @@ class NotionClient:
         return self.get_page_blocks(block_id, recursive=recursive)
 
     def query_data_source(self, data_source_id: str, filter_obj: Optional[Dict] = None,
-                          sorts: Optional[list] = None, page_size: int = 100) -> Dict:
+                          sorts: Optional[list] = None, page_size: int = 100,
+                          start_cursor: Optional[str] = None) -> Dict:
         """Query data source (Notion API 2025-09-03)."""
         data_source_id = data_source_id.replace('-', '')
-        data = {"page_size": page_size}
+        data: Dict[str, Any] = {"page_size": page_size}
+        if start_cursor:
+            data["start_cursor"] = start_cursor
 
         if filter_obj:
             data["filter"] = filter_obj
@@ -336,15 +342,17 @@ class NotionClient:
         return self._request('POST', f'data_sources/{data_source_id}/query', data=data)
 
     def query_database(self, database_id: str, filter_obj: Optional[Dict] = None,
-                       sorts: Optional[list] = None, page_size: int = 100) -> Dict:
-        """Query a database's rows.
+                       sorts: Optional[list] = None, page_size: int = 100,
+                       start_cursor: Optional[str] = None) -> Dict:
+        """Query a database's rows (one page; `has_more` + `next_cursor`).
 
         In Notion API 2025-09-03, rows live in data sources. `database_id`
         may be a database id (we query its first data source) or directly a
         data source id (what `search` returns).
         """
         data_source = self.resolve_data_source(database_id)
-        return self.query_data_source(data_source['id'], filter_obj, sorts, page_size)
+        return self.query_data_source(
+            data_source['id'], filter_obj, sorts, page_size, start_cursor=start_cursor)
 
     def get_database(self, database_id: str) -> Dict:
         """Get database metadata and schema.
@@ -407,81 +415,3 @@ class NotionClient:
         return Exception(
             f"{object_id} is not a database or data source the integration can see."
             f"{hint}\n  Original error: {error}")
-
-    def create_page(self, parent_id: str, parent_type: str,
-                    title: str, properties: Optional[Dict] = None,
-                    content: Optional[list] = None) -> Dict:
-        """Create new page.
-
-        Args:
-            parent_type: "page", or "database"/"data_source" for a database
-                row — either a database id or a data source id works.
-            content: block objects; more than 100 are appended in batches.
-        """
-        parent_id = parent_id.replace('-', '')
-        properties = dict(properties or {})
-
-        if parent_type in ("database", "data_source"):
-            data_source = self.resolve_data_source(parent_id)
-            parent = {"type": "data_source_id", "data_source_id": data_source['id']}
-            title_prop = next(
-                (name for name, prop in (data_source.get('properties') or {}).items()
-                 if prop.get('type') == 'title'),
-                "Name",
-            )
-        elif parent_type == "page":
-            parent = {"page_id": parent_id}
-            title_prop = "title"
-        else:
-            raise ValueError(
-                f"parent_type {parent_type!r}: expected 'page' or 'database'.")
-
-        # The caller may already set the title column in `properties`.
-        if not any(isinstance(v, dict) and 'title' in v for v in properties.values()):
-            properties[title_prop] = {"title": [{"text": {"content": title}}]}
-
-        data = {"parent": parent, "properties": properties}
-        content = list(content or [])
-        if content:
-            data["children"] = content[:_MAX_CHILDREN]
-
-        page = self._request('POST', 'pages', data=data, use_cache=False)
-        if len(content) > _MAX_CHILDREN:
-            self.append_blocks(page['id'], content[_MAX_CHILDREN:])
-        return page
-
-    def update_page(self, page_id: str, properties: Optional[Dict] = None,
-                    archived: Optional[bool] = None) -> Dict:
-        """Update page properties."""
-        page_id = page_id.replace('-', '')
-        data = {}
-
-        if properties:
-            data["properties"] = properties
-        if archived is not None:
-            data["archived"] = archived
-
-        return self._request('PATCH', f'pages/{page_id}', data=data, use_cache=False)
-
-    def append_blocks(self, page_id: str, blocks: list,
-                      after: Optional[str] = None) -> Dict:
-        """Append blocks to a page/block, at the end or right after `after`.
-
-        Args:
-            after: id of an existing child block; the new blocks go just below it.
-        """
-        page_id = page_id.replace('-', '')
-        result: Dict = {}
-        appended: list = []
-        for i in range(0, len(blocks), _MAX_CHILDREN):
-            data: Dict[str, Any] = {"children": blocks[i:i + _MAX_CHILDREN]}
-            if after:
-                data["after"] = after
-            result = self._request(
-                'PATCH', f'blocks/{page_id}/children', data=data, use_cache=False)
-            appended.extend(result.get('results', []))
-            if after and appended:
-                after = appended[-1]['id']  # keep the batches in order
-        if len(blocks) > _MAX_CHILDREN:
-            result = {**result, "results": appended}
-        return result

@@ -10,53 +10,13 @@ call to Notion.
 from __future__ import annotations
 
 import pytest
-import requests
 
-from oto.tools.notion.lib import notion_client as nc
-
-DS = "11111111111111111111111111111111"
-DB = "22222222222222222222222222222222"
-PAGE = "33333333333333333333333333333333"
-
-
-class _Resp:
-    def __init__(self, status=200, body=None):
-        self.status_code = status
-        self._body = body if body is not None else {}
-        self.text = "x"
-        self.headers: dict = {}
-
-    def json(self):
-        return self._body
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.exceptions.HTTPError(response=self)
+from notion_fake import DB, DS, PAGE, _Resp, notion  # noqa: F401
 
 
 def _schema(title="Name"):
     return {"object": "data_source", "id": DS,
             "properties": {title: {"type": "title"}, "Status": {"type": "select"}}}
-
-
-@pytest.fixture()
-def notion(monkeypatch):
-    """Routes requests by (method, endpoint) -> response; records each call."""
-    routes: dict = {}
-    calls: list = []
-
-    def fake_request(method, url, **kwargs):
-        endpoint = url.split("/v1/", 1)[1]
-        calls.append({"method": method, "endpoint": endpoint, **kwargs})
-        resp = routes.get((method, endpoint))
-        if callable(resp):
-            resp = resp(kwargs)
-        return resp or _Resp(404, {"message": "Could not find object",
-                                   "code": "object_not_found"})
-
-    monkeypatch.setattr(nc.requests, "request", fake_request)
-    client = nc.NotionClient(token="t", cache_enabled=False)
-    return client, routes, calls
 
 
 def _posted_page(calls):
@@ -195,13 +155,27 @@ def test_append_after_a_block_keeps_batches_in_order(notion):
     routes[("PATCH", f"blocks/{PAGE}/children")] = lambda kw: _Resp(body={"results": [
         {"id": f"b{b['n']}"} for b in kw["json"]["children"]]})
     blocks = [{"type": "paragraph", "n": i} for i in range(150)]
-    client.append_blocks(PAGE, blocks, after="top")
-    afters = [c["json"]["after"] for c in calls if c["method"] == "PATCH"]
-    assert afters == ["top", "b99"]
+    client.append_blocks(PAGE, blocks, position="top")
+    positions = [c["json"]["position"] for c in calls if c["method"] == "PATCH"]
+    assert positions == [
+        {"type": "after_block", "after_block": {"id": "top"}},
+        {"type": "after_block", "after_block": {"id": "b99"}}]
 
 
-def test_append_without_after_sends_none(notion):
+def test_append_at_start_then_keeps_order(notion):
+    client, routes, calls = notion
+    routes[("PATCH", f"blocks/{PAGE}/children")] = lambda kw: _Resp(body={"results": [
+        {"id": f"b{b['n']}"} for b in kw["json"]["children"]]})
+    client.append_blocks(PAGE, [{"type": "paragraph", "n": i} for i in range(101)],
+                         position="start")
+    positions = [c["json"]["position"] for c in calls if c["method"] == "PATCH"]
+    assert positions[0] == {"type": "start"}
+    assert positions[1] == {"type": "after_block", "after_block": {"id": "b99"}}
+
+
+def test_append_by_default_sends_no_position(notion):
     client, routes, calls = notion
     routes[("PATCH", f"blocks/{PAGE}/children")] = _Resp(body={"results": []})
     client.append_blocks(PAGE, [{"type": "paragraph"}])
+    assert "position" not in calls[0]["json"]
     assert "after" not in calls[0]["json"]
