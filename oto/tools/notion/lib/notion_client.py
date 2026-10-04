@@ -13,13 +13,52 @@ import requests
 
 from ...common.credentials import require
 from ...common.local_dirs import get_cache_dir
+from ._api import _CollabMixin, _ContentMixin, _PagesMixin, _StructureMixin
+from ._ids import notion_id
 
 _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+# Bounds of a block read: pages of 100 per level, nesting depth.
+_MAX_BLOCK_PAGES = 50
+_MAX_BLOCK_DEPTH = 8
 
 logger = logging.getLogger(__name__)
 
+def _search_object(filter_type: str) -> str:
+    """Map our `filter_type` to Notion's search filter value.
 
-class NotionClient:
+    Since API 2025-09-03 search returns data sources, not databases: the
+    filter only accepts "page" or "data_source" — "database" is a 400.
+    """
+    return "data_source" if filter_type == "database" else filter_type
+
+
+
+class NotionAPIError(Exception):
+    """An HTTP error answered by Notion, with its status and error code."""
+
+    def __init__(self, message: str, status: int, code: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+class NotionIdKindError(ValueError):
+    """The id exists but is not the kind of object the call needs — a page
+    where a database was expected, a linked view, a database with several
+    data sources. The message says what to pass instead; `status` is 400 so
+    callers that read a status treat it as a bad argument, not a 404."""
+
+    status = 400
+
+
+def _wrong_kind(error: Exception) -> bool:
+    """True when Notion says "not found / not this kind of object" — the only
+    errors after which trying the id as another kind makes sense. Auth, rate
+    limit and server errors must surface as they are."""
+    return isinstance(error, NotionAPIError) and error.status in (400, 404)
+
+
+class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
     """Notion API client with automatic caching."""
 
     def __init__(self, token: Optional[str] = None, cache_enabled: bool = True):
@@ -115,7 +154,12 @@ class NotionClient:
                 json=data
             , timeout=_HTTP_TIMEOUT)
             response.raise_for_status()
-            result = response.json()
+            try:
+                result = response.json()
+            except ValueError:
+                raise NotionAPIError(
+                    f"Notion API error: non-JSON answer (HTTP {response.status_code}) "
+                    f"on {endpoint}.", 502)
 
             # Cache GET requests
             if use_cache and method == 'GET':
@@ -125,47 +169,57 @@ class NotionClient:
             return result
 
         except requests.exceptions.HTTPError as e:
-            error_data = e.response.json() if e.response.text else {}
+            try:
+                error_data = e.response.json() if e.response.text else {}
+            except ValueError:  # an HTML error page (proxy, 5xx), not Notion JSON
+                error_data = {"message": (e.response.text or "")[:200]}
             error_msg = error_data.get('message', str(e))
             error_code = error_data.get('code', '')
             status_code = e.response.status_code
 
             # Enhanced error messages based on status code
             if status_code == 404:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (404): Resource not found.\n"
                     f"  Endpoint: {endpoint}\n"
                     f"  Message: {error_msg}\n"
                     f"  Possible causes:\n"
                     f"  - Invalid ID (database/page does not exist)\n"
                     f"  - Integration lacks access permissions to this resource\n"
-                    f"  - Resource is in trash or archived"
+                    f"  - Resource is in trash or archived",
+                    status_code, error_code
                 )
             elif status_code == 403:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (403): Forbidden.\n"
                     f"  Message: {error_msg}\n"
                     f"  The integration does not have permission to access this resource.\n"
-                    f"  Add the integration to the page/database in Notion."
+                    f"  Add the integration to the page/database in Notion.",
+                    status_code, error_code
                 )
             elif status_code == 401:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (401): Unauthorized.\n"
                     f"  Message: {error_msg}\n"
-                    f"  Check that your Notion integration token is valid."
+                    f"  Check that your Notion integration token is valid.",
+                    status_code, error_code
                 )
             elif status_code == 400:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error (400): Bad request.\n"
                     f"  Message: {error_msg}\n"
                     f"  Code: {error_code}\n"
-                    f"  Check the request parameters."
+                    f"  Check the request parameters.",
+                    status_code, error_code
                 )
             else:
-                raise Exception(
+                raise NotionAPIError(
                     f"Notion API error ({status_code}): {error_msg}\n"
-                    f"  Code: {error_code}"
+                    f"  Code: {error_code}",
+                    status_code, error_code
                 )
+        except NotionAPIError:
+            raise
         except Exception as e:
             raise Exception(f"Request failed: {str(e)}")
 
@@ -189,7 +243,7 @@ class NotionClient:
             data["sort"] = {"direction": "descending", "timestamp": sort}
 
         if filter_type:
-            data["filter"] = {"value": filter_type, "property": "object"}
+            data["filter"] = {"value": _search_object(filter_type), "property": "object"}
 
         return self._request('POST', 'search', data=data, use_cache=True)
 
@@ -246,7 +300,7 @@ class NotionClient:
                 "page_size": 100,
             }
             if filter_type:
-                data["filter"] = {"value": filter_type, "property": "object"}
+                data["filter"] = {"value": _search_object(filter_type), "property": "object"}
             if start_cursor:
                 data["start_cursor"] = start_cursor
 
@@ -278,24 +332,54 @@ class NotionClient:
 
     def get_page(self, page_id: str) -> Dict:
         """Get page metadata."""
-        page_id = page_id.replace('-', '')
+        page_id = notion_id(page_id, "page_id")
         return self._request('GET', f'pages/{page_id}')
 
-    def get_page_blocks(self, page_id: str, recursive: bool = False) -> Dict:
+    def get_page_blocks(self, page_id: str, recursive: bool = False,
+                        _depth: int = 0) -> Dict:
         """Get page blocks (content).
 
         Args:
             page_id: Page or block ID
-            recursive: If True, fetch children of blocks recursively
+            recursive: If True, fetch children of blocks recursively (child
+                pages and databases are not entered). Nesting deeper than
+                `_MAX_BLOCK_DEPTH` is not fetched: the block is marked
+                `children_truncated: true`.
+
+        A level with more than `_MAX_BLOCK_PAGES` pages of 100 blocks stops
+        there: the answer carries `truncated: true` with `has_more` and
+        `next_cursor` from Notion.
         """
-        page_id = page_id.replace('-', '')
-        result = self._request('GET', f'blocks/{page_id}/children')
+        page_id = notion_id(page_id, 'page_id')
+        result = self._request('GET', f'blocks/{page_id}/children',
+                               params={"page_size": 100})
+        # A page with more than 100 top-level blocks comes in several pages.
+        seen = set()
+        pages = 1
+        while result.get('has_more') and result.get('next_cursor'):
+            cursor = result['next_cursor']
+            if cursor in seen:
+                raise NotionAPIError(
+                    f"Notion API error: the same cursor came back twice on "
+                    f"blocks/{page_id}/children — stopping instead of looping.", 502)
+            if pages >= _MAX_BLOCK_PAGES:
+                result = {**result, "truncated": True}
+                break
+            seen.add(cursor)
+            more = self._request('GET', f'blocks/{page_id}/children', params={
+                "page_size": 100, "start_cursor": cursor})
+            result = {**more, "results": result['results'] + more.get('results', [])}
+            pages += 1
 
         if recursive and 'results' in result:
             for block in result['results']:
-                if block.get('has_children'):
-                    block_id = block['id'].replace('-', '')
-                    children = self.get_page_blocks(block_id, recursive=True)
+                if block.get('has_children') and block.get('type') not in (
+                        'child_page', 'child_database'):
+                    if _depth + 1 >= _MAX_BLOCK_DEPTH:
+                        block['children_truncated'] = True
+                        continue
+                    children = self.get_page_blocks(
+                        block['id'], recursive=True, _depth=_depth + 1)
                     block['children'] = children.get('results', [])
 
         return result
@@ -310,10 +394,13 @@ class NotionClient:
         return self.get_page_blocks(block_id, recursive=recursive)
 
     def query_data_source(self, data_source_id: str, filter_obj: Optional[Dict] = None,
-                          sorts: Optional[list] = None, page_size: int = 100) -> Dict:
+                          sorts: Optional[list] = None, page_size: int = 100,
+                          start_cursor: Optional[str] = None) -> Dict:
         """Query data source (Notion API 2025-09-03)."""
-        data_source_id = data_source_id.replace('-', '')
-        data = {"page_size": page_size}
+        data_source_id = notion_id(data_source_id, 'data_source_id')
+        data: Dict[str, Any] = {"page_size": page_size}
+        if start_cursor:
+            data["start_cursor"] = start_cursor
 
         if filter_obj:
             data["filter"] = filter_obj
@@ -323,96 +410,94 @@ class NotionClient:
         return self._request('POST', f'data_sources/{data_source_id}/query', data=data)
 
     def query_database(self, database_id: str, filter_obj: Optional[Dict] = None,
-                       sorts: Optional[list] = None, page_size: int = 100) -> Dict:
-        """Query database by finding its data source and querying that.
+                       sorts: Optional[list] = None, page_size: int = 100,
+                       start_cursor: Optional[str] = None) -> Dict:
+        """Query a database's rows (one page; `has_more` + `next_cursor`).
 
-        In Notion API 2025-09-03, databases must be queried via their data_sources.
-        This method automatically retrieves the database's data source and queries it.
+        In Notion API 2025-09-03, rows live in data sources. `database_id`
+        may be a database id (we query its first data source) or directly a
+        data source id (what `search` returns).
         """
-        database_id = database_id.replace('-', '')
-
-        try:
-            # Get database to find data sources
-            db_info = self.get_database(database_id)
-            data_sources = db_info.get('data_sources', [])
-
-            if not data_sources:
-                raise Exception(
-                    f"Database {database_id} has no data sources.\n"
-                    f"This may be an empty database or a permissions issue."
-                )
-
-            # Use the first data source (most common case)
-            data_source_id = data_sources[0]['id']
-
-            # Query the data source
-            return self.query_data_source(data_source_id, filter_obj, sorts, page_size)
-
-        except Exception as e:
-            error_str = str(e)
-            if 'invalid_request_url' in error_str.lower():
-                raise Exception(
-                    f"Cannot query database {database_id}.\n"
-                    f"Original error: {error_str}\n\n"
-                    f"This error occurs when using API version 2025-09-03 with the old endpoint.\n"
-                    f"The tool has been updated to use data sources, but this error persists.\n"
-                    f"Please verify the database has data sources and your integration has access."
-                )
-            raise
+        data_source = self.resolve_data_source(database_id)
+        return self.query_data_source(
+            data_source['id'], filter_obj, sorts, page_size, start_cursor=start_cursor)
 
     def get_database(self, database_id: str) -> Dict:
-        """Get database metadata and schema."""
-        database_id = database_id.replace('-', '')
-        return self._request('GET', f'databases/{database_id}')
+        """Get database metadata and schema.
 
-    def create_page(self, parent_id: str, parent_type: str,
-                    title: str, properties: Optional[Dict] = None,
-                    content: Optional[list] = None) -> Dict:
-        """Create new page."""
-        parent_id = parent_id.replace('-', '')
+        Also accepts a data source id (what `search` returns since 2025-09-03):
+        the data source is returned then, it carries the `properties` schema.
+        """
+        database_id = notion_id(database_id, 'database_id')
+        try:
+            db_info = self._request('GET', f'databases/{database_id}', use_cache=False)
+        except Exception as db_error:
+            if not _wrong_kind(db_error):
+                raise
+            try:
+                return self._request('GET', f'data_sources/{database_id}', use_cache=False)
+            except Exception as ds_error:
+                if not _wrong_kind(ds_error):
+                    raise
+                raise self._not_a_database(database_id, db_error) from db_error
+        # Since 2025-09-03 the columns live on the data source, not the database.
+        data_sources = db_info.get('data_sources') or []
+        if len(data_sources) == 1 and 'properties' not in db_info:
+            data_source = self._request(
+                'GET', f"data_sources/{notion_id(data_sources[0]['id'])}",
+                use_cache=False)
+            db_info = {**db_info, "properties": data_source.get('properties', {})}
+        return db_info
 
-        data = {
-            "parent": {
-                f"{parent_type}_id": parent_id
-            },
-            "properties": {}
-        }
+    def resolve_data_source(self, database_id: str) -> Dict:
+        """Data source object (with `properties`) for a database or data source id.
 
-        # Set title
-        if parent_type == "database":
-            data["properties"]["Name"] = {
-                "title": [{"text": {"content": title}}]
-            }
+        A database with several data sources is refused: which one is meant
+        cannot be guessed — the caller passes the data source id instead.
+        """
+        database_id = notion_id(database_id, 'database_id')
+        try:
+            return self._request('GET', f'data_sources/{database_id}', use_cache=False)
+        except Exception as ds_error:
+            if not _wrong_kind(ds_error):
+                raise
+        try:
+            db_info = self._request('GET', f'databases/{database_id}', use_cache=False)
+        except Exception as db_error:
+            if not _wrong_kind(db_error):
+                raise
+            raise self._not_a_database(database_id, db_error) from db_error
+        data_sources = db_info.get('data_sources') or []
+        if not data_sources:
+            raise NotionIdKindError(
+                f"Database {database_id} has no data source the integration can "
+                f"see (empty database, or a linked view of a database that was "
+                f"not shared with the integration)."
+            )
+        if len(data_sources) > 1:
+            listed = ", ".join(f"{d.get('name') or '?'} ({d['id']})" for d in data_sources)
+            raise NotionIdKindError(
+                f"Database {database_id} has {len(data_sources)} data sources: "
+                f"{listed}. Pass the id of the data source to use.")
+        return self._request(
+            'GET', f"data_sources/{notion_id(data_sources[0]['id'])}",
+            use_cache=False)
+
+    def _not_a_database(self, object_id: str, error: Exception) -> NotionIdKindError:
+        """Error for an id that is neither a database nor a data source."""
+        hint = ""
+        if "is a page" in str(error):
+            hint = ("\n  This id is a PAGE, not a database: read it as a page; "
+                    "to create under it, use parent_type 'page'.")
         else:
-            data["properties"]["title"] = {
-                "title": [{"text": {"content": title}}]
-            }
-
-        # Add custom properties
-        if properties:
-            data["properties"].update(properties)
-
-        # Add content blocks
-        if content:
-            data["children"] = content
-
-        return self._request('POST', 'pages', data=data, use_cache=False)
-
-    def update_page(self, page_id: str, properties: Optional[Dict] = None,
-                    archived: Optional[bool] = None) -> Dict:
-        """Update page properties."""
-        page_id = page_id.replace('-', '')
-        data = {}
-
-        if properties:
-            data["properties"] = properties
-        if archived is not None:
-            data["archived"] = archived
-
-        return self._request('PATCH', f'pages/{page_id}', data=data, use_cache=False)
-
-    def append_blocks(self, page_id: str, blocks: list) -> Dict:
-        """Append blocks to page."""
-        page_id = page_id.replace('-', '')
-        data = {"children": blocks}
-        return self._request('PATCH', f'blocks/{page_id}/children', data=data, use_cache=False)
+            try:
+                block = self._request('GET', f'blocks/{object_id}')
+            except Exception:
+                block = {}
+            if block.get('type') == 'child_database':
+                hint = ("\n  This id is a LINKED VIEW of a database: the API cannot "
+                        "read or write through a view. Use the id of the source "
+                        "database (shared with the integration).")
+        return NotionIdKindError(
+            f"{object_id} is not a database or data source the integration can see."
+            f"{hint}\n  Original error: {error}")
