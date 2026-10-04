@@ -1,0 +1,201 @@
+type: { search: { type: opportunities } }
+securedBy: [basic-authentication, x-JWT-App, x-JWT-Client]
+description: Search & create opportunities
+
+get:
+  description: |
+    Search opportunities
+
+    _You can specify the output format by appending to the url **.csv**_
+    *Example : {BASE_URL}/api/opportunities.csv?keywords=AO100*
+  is: [searchable, sortablePaginable:{ sortList: "creationDate | title | company.name | place | numberOfActivePositionings | startDate | endDate | duration | state | alertCount | closingDate | updateDate | answerDate | totalWeightedTurnOverExcludingTax | mainManager.lastName"}]
+  queryParameters:
+    keywords:
+      type: string
+      description: |
+        If `keywords = AO**ID1** PROD**ID2** CAND**ID3** COMP**ID4** CCON**ID5** CSOC**ID6**` then opportunities :
+        * of which [unique identifier](../bddboondmanager/classes/TAB_AO.html#property_ID_AO) &isin; [__ID1__] are filtered.
+        * with products related to them, of which [unique identifier](../bddboondmanager/classes/TAB_PRODUIT.html#property_ID_PRODUIT) &isin; [__ID2__] are filtered.
+        * with candidates related to them, of which [unique identifier](../bddboondmanager/classes/TAB_PROFIL.html#property_ID_PROFIL) &isin; [__ID3__] are filtered.
+        * with resources related to them, of which [unique identifier](../bddboondmanager/classes/TAB_PROFIL.html#property_ID_PROFIL) &isin; [__ID4__] are filtered.
+        * with contacts related to them, of which [unique identifier](../bddboondmanager/classes/TAB_CRMCONTACT.html#property_ID_CONTACT) &isin; [__ID5__] are filtered.
+        * with companies related to them, of which [unique identifier](../bddboondmanager/classes/TAB_CRMSOCIETE.html#property_ID_CRMSOCIETE) &isin; [__ID6__] are filtered.
+    returnMoreData:
+      description: |
+        Returns the following attributes or relationships, if specified and user is allowed to :
+        * `hrManager`
+        * `previousAction`
+        * `nextAction`
+        * `alerts` : Returns `alertCount` and `alertMaxPeriod` attributes (non-legacy offers only)
+      type: string
+      repeat: true
+    perimeterManagersType:
+      type: string
+      description: |
+        - `main`: The filter **perimeterManagers** is used only on the **Main Manager** of opportunities
+        - `hr`: The filter **perimeterManagers** is used only on the **HR Manager** of opportunities
+    positioningStates:
+      type: string
+      repeat: true
+      description: |
+        * `none` :  Opportunities with none positionings are filtered
+        * _integer_  : List of positioning states `id` to filter (described by [/api/rest/application/dictionary/setting.state.positioning](#rest_application_dictionary))
+    period:
+      type: string
+      description: |
+        * `created` : Opportunities created between `startDate` and `endDate` are filtered
+        * `updatedPositioning` : Opportunities, with positionings updated between `startDate` and `endDate`, are filtered
+        * `started` : Opportunities started between `startDate` and `endDate` are filtered
+        * `updated` : Opportunities updated between `startDate` and `endDate` are filtered
+        * `closingDate` : Opportunities closed between `startDate` and `endDate` are filtered,
+        * `noAction` : Opportunities whose do not have actions between `startDate` and `endDate` are filtered
+        * `withActions`: Opportunities whose actions exist between `startDate` and `endDate` are filtered
+        * `withoutActions`: Opportunities whose actions dont exist between `startDate` and `endDate` are filtered
+        * `<appId>_running` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_started` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_stopped` : App entities whose the period field between `startDate` and `endDate` are filtered
+        * `<appId>_fieldId` : App entities whose date or datetime field between `startDate` and `endDate` are filtered
+    periodActions:
+      type: integer
+      repeat: true
+      description: List of actions `id` (../bddboondmanager/classes/TAB_ACTION.html#property_ACTION_TYPE described by [/api/rest/application/dictionary/setting.action.opportunity](#rest_application_dictionary) = integer
+    periodDynamic:
+      type: string
+      description: |
+        * `today` : Opportunities filtered according to the grid for today's period
+        * `thisWeek` : Opportunities filtered according to the mesh for the period of this week
+        * `thisMonth` : Opportunities filtered according to the mesh for the period of this month
+        * `thisTrimester` : Opportunities filtered according to the mesh for the period of this trimester
+        * `thisSemester` : Opportunities filtered according to the mesh for the period of this semester
+        * `thisYear` : Opportunities filtered according to the mesh for the period of this year
+        * `thisFiscalYear` : Opportunities filtered according to the mesh for the period of this fiscal year
+        * `yesterday` : Opportunities filtered according to the mesh for the period of yesterday
+        * `lastWeek` : Opportunities filtered according to the mesh for the period of last week
+        * `lastMonth` : Opportunities filtered according to the mesh for the period of last month
+        * `lastTrimester` : Opportunities filtered according to the mesh for the period of last trimester
+        * `lastSemester` : Opportunities filtered according to the mesh for the period of last semester
+        * `lastYear` : Opportunities filtered according to the mesh for the period of last year
+        * `lastFiscalYear` : Opportunities filtered according to the mesh for the period of last fiscal year
+        * `tomorrow` : Opportunities filtered according to the mesh for the period of tomorrow
+        * `nextWeek` : Opportunities filtered according to the mesh for the period of next week
+        * `nextMonth` : Opportunities filtered according to the mesh for the period of next month
+        * `nextTrimester` : Opportunities filtered according to the mesh for the period of next trimester
+        * `nextSemester` : Opportunities filtered according to the mesh for the period of next semester
+        * `nextYear` : Opportunities filtered according to the mesh for the period of next year
+        * `nextFiscalYear` : Opportunities filtered according to the mesh for the period of next fiscal year
+        * `lastCustomPeriod` : Opportunities filtered according to the mesh from the last custom period until now
+        * `nextCustomPeriod` : Opportunities filtered according to the mesh for the next custom period from now
+    periodDynamicParameters:
+      type: string
+      description: |
+        Filter parameters of dynamic period. Used when periodDynamic is "lastCustomPeriod" or "nextCustomPeriod"
+        You need two values separated by "," (duration,unit) eg (3,months)
+
+        * `1,n` : Duration of the custom period (max 100)
+        * `days,weeks,months,trimesters,semesters,years` : Unit of the custom period
+    startDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: Start date
+    endDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: End date
+    opportunityStates:
+      type: integer
+      repeat: true
+      description: List of opportunity states `id` to filter (described by [/api/rest/application/dictionary/setting.state.opportunity](#rest_application_dictionary))
+    opportunityTypes:
+      type: string
+      repeat: true
+      description: List of opportunity types `id` to filter (described by [/api/rest/application/dictionary/setting.typeOf.project](#rest_application_dictionary))
+    expertiseAreas:
+      type: string
+      repeat: true
+      description: List of expertise areas `id` to filter (described by [/api/rest/application/dictionary/setting.expertiseArea](#rest_application_dictionary))
+    activityAreas:
+      type: string
+      description: List of activity areas `id` to filter (described by [/api/rest/application/dictionary/setting.activityArea](#rest_application_dictionary))
+    tools:
+      type: string
+      repeat: true
+      description: List of tools `id` to filter (described by [/api/rest/application/dictionary/setting.tool](#rest_application_dictionary))
+    places:
+      type: string
+      repeat: true
+      description: List of mobility areas `id` to filter (described by [/api/rest/application/dictionary/setting.mobilityArea](#rest_application_dictionary))
+    durations:
+      type: integer
+      repeat: true
+      description: List of durations `id` to filter (described by [/api/rest/application/dictionary/setting.duration](#rest_application_dictionary))
+    origins:
+      type: string
+      repeat: true
+      description: List of origins `id` to filter (described by [/api/rest/application/dictionary/setting.origin](#rest_application_dictionary))
+    flags:
+      type: integer
+      repeat: true
+      description: Opportunities attached to this flag whom [flag's unique identifier = integer](../bddboondmanager/classes/TAB_USERFLAG.html#property_ID_USERFLAG) are filtered
+    onlyVisible:
+      type: boolean
+      default: true
+      description: |
+        The user has to have the global right `showGroupe` set to `true` or call this api into mode `god`.
+
+        _If not this parameter will be ignored._
+    columns:
+      type: string
+      repeat: true
+      description: |
+        List of columns
+        * `creationDate`
+        * `title`
+        * `company`
+        * `state`
+        * `alertCount`
+        * `numberOfActivePositionings`
+        * `place`
+        * `startDate`
+        * `duration`
+        * `turnoverWeightedExcludingTax`
+        * `mainManager`
+        * `turnoverEstimatedExcludingTax`
+        * `estimatesExcludingTax`
+        * `closingDate`
+        * `answerDate`
+        * `activityAreas`
+        * `expertiseArea`
+        * `tools`
+        * `origin`
+        * `hrManager`
+        * `pole`
+        * `agency`
+        * `creationDate`
+        * `updateDate`
+    encoding:
+      type: string
+      description: |
+        If the output format is **csv** then **encoding** filter should be one of :
+        * `UTF-8`
+        * `ISO-8859-15`
+        * `WINDOWS-1250`
+        * `MAC-OS-ROMAN`
+    appEntityFields:
+      type: string
+      repeat: true
+      description: |
+       List of app entity responses filtered by `<appId>_<fieldId>:<responseValue>` and with html characters encoded
+    shields:
+      type: string
+      repeat: true
+      description: |
+        Filter opportunities by their shield status (conditional fields completion level):
+        * `uncomplete` : Required fields are missing
+        * `minimum` : Required fields OK, recommended fields missing
+        * `complete` : All conditional fields are filled
+    opportunityAlerts:
+      type: boolean
+      description: |
+        * true : display only opportunities with alerts
+        * false : display only opportunities without alerts
+

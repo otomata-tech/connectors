@@ -1,0 +1,136 @@
+type: { search: { type: actions } }
+securedBy: [basic-authentication, x-JWT-App, x-JWT-Client]
+description: Search & create actions
+
+get:
+  description: |
+    Search actions entity (Resource, Candidate, Project, Opportunity, Order, Invoice, Contact)
+
+    _You can specify the output format by appending to the url **.csv**_
+    *Example : {BASE_URL}/api/actions.csv?keywords=COMP100*
+  is: [searchable, sortablePaginable: {sortList: "startDate | typeOf | mainManager.lastName | dependsOn.email1 | dependsOn.lastName | dependsOn.reference | dependsOn.name | dependsOn.title | dependsOn.id | dependsOn.number"}]
+  queryParameters:
+    maxResults:
+      type: number
+      description: number of results per page (capped at 100)
+      default: 30
+      maximum: 100
+      minimum: 1
+    keywords:
+      type: string
+      description: |
+        If `keywords = COMP**ID1** CAND**ID2** PRJ**ID3** CCON**ID4** CSOC**ID5** AO**ID6** BDC**ID7** FACT**ID8**` then :
+        * Resources who [unique identifier](../bddboondmanager/classes/TAB_PROFIL.html#property_ID_PROFIL) &isin; [__ID1__] are filtered.
+        * Candidates who [unique identifier](../bddboondmanager/classes/TAB_PROFIL.html#property_ID_PROFIL) &isin; [__ID2__] are filtered.
+        * Projects who [unique identifier](../bddboondmanager/classes/TAB_PROJET.html#property_ID_PROJET) &isin; [__ID3__] are filtered.
+        * Contacts who [unique identifier](../bddboondmanager/classes/TAB_CRMCONTACT.html#property_ID_CRMCONTACT) &isin; [__ID4__] are filtered.
+        * Opportunities who [unique identifier](../bddboondmanager/classes/TAB_AO.html#property_ID_AO) &isin; [__ID6__] are filtered.
+        * Orders who [unique identifier](../bddboondmanager/classes/TAB_BONDECOMMANDE.html#property_ID_BONDECOMMANDE) &isin; [__ID7__] are filtered.
+        * Bills who [unique identifier](../bddboondmanager/classes/TAB_FACTURATION.html#property_ID_FACTURATION) &isin; [__ID8__] are filtered.
+    actionTypes:
+      type: integer
+      repeat: true
+      description: List of action types `id`, related to the action's entity (Resource, Candidate, Project, Opportunity, Order, Bill, Contact), to filter (described by [/api/rest/application/dictionary/setting.action](#rest_application_dictionary))
+    states:
+      type: string
+      repeat: true
+      description: |
+        List of entity states `id`, related to the action's entity (Resource, Candidate, Project, Opportunity, Order, Bill, Contact), to filter (described by [/api/rest/dictionary/setting.state](#rest_application_dictionary))
+        Additionaly states from company can also be used for for project,opportunity,Contact and invoice entity.
+        *Note that All* `id` *must be included in an array which key is the `category`*. For example :
+        `states[resource]=0&states[resource]=2&states[candidate]=2`
+    origins:
+      type: string
+      repeat: true
+      description: List of contacts/companies/opportunities origins `id` to filter (described by [/api/rest/application/dictionary/setting.origin](#rest_application_dictionary))
+    period:
+      type: string
+      description: |
+        * `started` : Actions started between `startDate` and `endDate` are filtered
+        * `created` : Actions created between `startDate` and `endDate` are filtered
+        * `updated` : Actions updated between `startDate` and `endDate` are filtered
+    periodDynamic:
+      type: string
+      description: |
+        * `today` : Actions filtered according to the grid for today's period
+        * `thisWeek` : Actions filtered according to the mesh for the period of this week
+        * `thisMonth` : Actions filtered according to the mesh for the period of this month
+        * `thisTrimester` : Actions filtered according to the mesh for the period of this trimester
+        * `thisSemester` : Actions filtered according to the mesh for the period of this semester
+        * `thisYear` : Actions filtered according to the mesh for the period of this year
+        * `thisFiscalYear` : Actions filtered according to the mesh for the period of this fiscal year
+        * `yesterday` : Actions filtered according to the mesh for the period of yesterday
+        * `lastWeek` : Actions filtered according to the mesh for the period of last week
+        * `lastMonth` : Actions filtered according to the mesh for the period of last month
+        * `lastTrimester` : Actions filtered according to the mesh for the period of last trimester
+        * `lastSemester` : Actions filtered according to the mesh for the period of last semester
+        * `lastYear` : Actions filtered according to the mesh for the period of last year
+        * `lastFiscalYear` : Actions filtered according to the mesh for the period of last fiscal year
+        * `untilToday` : Actions filtered according to the mesh for the period until today
+        * `tomorrow` : Actions filtered according to the mesh for the period of tomorrow
+        * `nextWeek` : Actions filtered according to the mesh for the period of next week
+        * `nextMonth` : Actions filtered according to the mesh for the period of next month
+        * `nextTrimester` : Actions filtered according to the mesh for the period of next trimester
+        * `nextSemester` : Actions filtered according to the mesh for the period of next semester
+        * `nextYear` : Actions filtered according to the mesh for the period of next year
+        * `nextFiscalYear` : Actions filtered according to the mesh for the period of next fiscal year
+        * `lastCustomPeriod` : Actions filtered according to the mesh from the last custom period until now
+        * `nextCustomPeriod` : Actions filtered according to the mesh for the next custom period from now
+    periodDynamicParameters:
+      type: string
+      description: |
+        Filter parameters of dynamic period. Used when periodDynamic is "lastCustomPeriod" or "nextCustomPeriod"
+        You need two values separated by "," (duration,unit) eg (3,months)
+
+        * `1,n` : Duration of the custom period (max 100)
+        * `days,weeks,months,trimesters,semesters,years` : Unit of the custom period
+    startDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: Start date
+    endDate:
+      type: string
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$|^[0-9]{4}-[0-9]{2}-[0-9]{2}$ [0-9]{2}:[0-9]{2}:[0-9]{2}$
+      description: End date
+    flags:
+      type: integer
+      repeat: true
+      description: Entities (Resource, Candidate, Project, Opportunity, Order, Invoice, Contact, Positioning, Action) attached to this flag whom [flag's unique identifier = integer](../bddboondmanager/classes/TAB_USERFLAG.html#property_ID_USERFLAG) are filtered
+    onlyVisible:
+      type: boolean
+      default: true
+      description: |
+        The user has to have the global right `showGroupe` set to `true` or call this api into mode `god`.
+    returnRelatedActions:
+      type: boolean
+      default: false
+      description: Return related parent and child/sibbling actions
+    keywordsType:
+      type: string
+      default: ""
+      description: |
+        * `` : Actions are filtered following `keywords` found into their resource's name, candidate's name, contact's name, company's name, project's reference, order's number
+        * `relatedActions` : IDs of actions for which parents must be retrieved used only if returnRelatedActions is true
+    encoding:
+      type: string
+      description: |
+        If the output format is **csv** then **encoding** filter should be one of :
+        * `UTF-8`
+        * `ISO-8859-15`
+        * `WINDOWS-1250`
+        * `MAC-OS-ROMAN`
+    columns:
+      type: string
+      repeat: true
+      description: |
+        List of columns
+        * `startDate`
+        * `category`
+        * `typeOf`
+        * `dependsOn`
+        * `dependsOn_details`
+        * `title`
+        * `files`
+        * `creationDate`
+        * `updatedDate`
+
