@@ -1,0 +1,194 @@
+# yaml-language-server: $schema=../connector.schema.json
+# Typeform Create API reference: https://www.typeform.com/developers/create/reference/
+# Typeform Responses API reference: https://www.typeform.com/developers/responses/reference/retrieve-responses/
+# This file serves the US data center (api.typeform.com) only: the EU hosts
+# (api.eu.typeform.com, api.typeform.eu) need a base URL chosen per account,
+# which the format cannot express yet.
+connector:
+  name: typeform
+  label: Typeform
+  namespace: typeform
+  version: 1.0.0
+  api_version: Create API and Responses API (unversioned)
+  base_url: https://api.typeform.com
+  auth:
+    kind: bearer
+    token: access_token
+  credential:
+    - { name: access_token, label: Personal access token, secret: true }
+  modes: [byo_user, byo_org]
+  timeout_s: 60
+  query_arrays: comma
+  errors:
+    - { status: 400, code: invalid_request, retryable: false,
+        message: "Typeform rejected the request as invalid: check the arguments." }
+    - { status: 401, code: access_rejected, retryable: false,
+        message: "Typeform rejected the token: unknown, revoked, or issued by another data center." }
+    - { status: 403, code: scope_missing, retryable: false,
+        message: "The Typeform token lacks the read scope this call needs." }
+    - { status: 404, code: not_found, retryable: false,
+        message: "Typeform object not found: check the id." }
+    - { status: 429, code: rate_limited, retryable: true,
+        message: "Typeform rate limit reached: retry later." }
+    - { status: [500, 502, 503, 504], code: upstream_unavailable, retryable: true,
+        message: "Typeform is temporarily unavailable: retry later." }
+
+functions:
+  - name: list_workspaces
+    class: read
+    description: >-
+      List the Typeform workspaces the token can access, across organizations:
+      {total_items, page_count, items: [{id, name, account_id, shared, forms:
+      {count, href}}]}. The id filters list_forms. Needs the workspaces:read
+      scope.
+    input:
+      type: object
+      additionalProperties: false
+      properties:
+        search: { type: string, minLength: 1, description: "Only workspaces containing this text." }
+        page: &page { type: integer, minimum: 1, description: "Page number, from 1." }
+        page_size: &page_size { type: integer, minimum: 1, maximum: 200, default: 10 }
+    examples:
+      - title: Workspaces whose name contains Sales
+        input: { search: Sales }
+    call:
+      method: GET
+      path: /workspaces
+      query: { search: search, page: page, page_size: page_size }
+    cost: { per: request }
+
+  - name: list_forms
+    class: read
+    description: >-
+      List the forms of the Typeform account, public and private: {total_items,
+      page_count, items: [{id, title, created_at, last_updated_at, settings:
+      {is_public}, _links: {display, responses}}]}. Needs the forms:read scope.
+    input:
+      type: object
+      additionalProperties: false
+      properties:
+        search: { type: string, minLength: 1, description: "Only forms containing this text." }
+        workspace_id: { type: string, minLength: 1, description: "Only the forms of this workspace." }
+        sort_by: { type: string, enum: [created_at, last_updated_at] }
+        order_by: { type: string, enum: [asc, desc] }
+        is_public: { type: boolean, description: "Filter on settings.is_public." }
+        page: *page
+        page_size: *page_size
+    examples:
+      - title: Latest updated forms of one workspace
+        input: { workspace_id: "aBcD12", sort_by: last_updated_at, order_by: desc }
+    call:
+      method: GET
+      path: /forms
+      query: { search: search, workspace_id: workspace_id, sort_by: sort_by,
+               order_by: order_by, is_public: is_public, page: page, page_size: page_size }
+    cost: { per: request }
+
+  - name: get_form
+    class: read
+    description: >-
+      Get the full definition of one Typeform form: title, fields (each {id,
+      ref, title, type, properties: {description, choices, fields for groups},
+      validations}), hidden fields, variables, logic, screens, settings, and
+      _links.responses, the host that stores its responses. A response's
+      answers[].field.id points to these fields. If _links.responses is not on
+      api.typeform.com, the account lives in an EU data center and
+      list_responses here would come back empty. Needs the forms:read scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id]
+      properties:
+        form_id: &form_id
+          type: string
+          minLength: 1
+          not: { enum: [".", ".."] }
+          description: "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+    examples:
+      - title: One form's questions
+        input: { form_id: "u6nXL7" }
+    refusals:
+      - &form_not_found { code: form_not_found, when: 404, message: "No form with this id for this Typeform token." }
+    call: { method: GET, path: "/forms/{form_id}" }
+    cost: { per: request }
+
+  - name: list_responses
+    class: read
+    description: >-
+      List the responses to one Typeform form, newest first: {total_items,
+      page_count, items: [{response_id, token, landed_at, submitted_at,
+      metadata, hidden, calculated: {score}, variables, answers: [{field: {id,
+      type, ref}, type, <type>: value}]}]}. An answer's value sits under the
+      key named by its type (text, choice.label, choices.labels, number,
+      boolean, email, url, file_url, date...); answers come in no particular
+      order: match them to the form's fields by field.id. To get the next
+      page, pass the token of the last item as before. Responses from the last
+      ~30 minutes may not be listed yet. Queried outside the account's data
+      center, the list comes back empty without error: check get_form's
+      _links.responses first. Needs the responses:read scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id]
+      properties:
+        form_id: *form_id
+        page_size: { type: integer, minimum: 1, maximum: 1000, default: 25 }
+        since:
+          anyOf: &bound
+            - { type: string, minLength: 1 }
+            - { type: integer, minimum: 0 }
+          description: "Inclusive lower bound: ISO 8601 UTC to the second (2026-09-01T00:00:00) or UNIX seconds."
+        until:
+          anyOf: *bound
+          description: "Inclusive upper bound, same formats as since."
+        after: { type: string, minLength: 1, description: "Cursor: responses after this response token (exclusive)." }
+        before: { type: string, minLength: 1, description: "Cursor: responses before this response token (exclusive)." }
+        included_response_ids:
+          type: array
+          minItems: 1
+          items: &csv_item { type: string, pattern: "^[^,]+$" }
+          description: "Only these response ids."
+        excluded_response_ids:
+          type: array
+          minItems: 1
+          items: *csv_item
+          description: "All but these response ids."
+        response_type:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { enum: [completed, partial, started] }
+          description: >-
+            completed (default upstream), partial or started; also picks the
+            timestamp since/until filter on: submitted_at, staged_at or landed_at.
+        sort: { type: string, pattern: "^[A-Za-z_]+,(asc|desc)$", description: "<field>,<asc|desc>, e.g. submitted_at,desc." }
+        query: { type: string, minLength: 1, description: "Exact phrase searched in answers, hidden fields and variables." }
+        fields:
+          type: array
+          minItems: 1
+          items: *csv_item
+          description: "Field ids: only these appear in answers."
+        answered_fields:
+          type: array
+          minItems: 1
+          items: *csv_item
+          description: "Field ids: only responses answering at least one of them."
+    examples:
+      - title: Completed responses since 1 September 2026
+        input: { form_id: "u6nXL7", since: "2026-09-01T00:00:00", page_size: 50 }
+      - title: Next page, older responses
+        input: { form_id: "u6nXL7", before: "a1b2c3d4e5f6", response_type: [completed, partial] }
+    refusals:
+      - *form_not_found
+    call:
+      method: GET
+      path: /forms/{form_id}/responses
+      query: { page_size: page_size, since: since, until: until, after: after, before: before,
+               included_response_ids: included_response_ids,
+               excluded_response_ids: excluded_response_ids, response_type: response_type,
+               sort: sort, query: query, fields: fields, answered_fields: answered_fields }
+    cost: { per: request }
+
+exposure:
+  mode: per_connector
+  tool: typeform
