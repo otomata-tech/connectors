@@ -102,7 +102,7 @@ functions:
 
 ### Les connecteurs décrits
 
-Onze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `meta_ads` (8), `microsoft` (11), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée.
+Onze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée.
 
 Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur).
 
@@ -139,7 +139,6 @@ Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descripti
 - Le format se déclare YAML 1.2, mais le test lit avec PyYAML, qui suit YAML 1.1.
 - Le client Python Sellsy de la lib reste écrit à la main, sur des verbes génériques ; rien n'est généré.
 - Les clients Python restent écrits à la main ; leurs descriptions, écrites après eux, n'en sont pas encore la source.
-- La description `microsoft` suit l'accès applicatif (`oauth2_client_credentials`) ; l'accès délégué, au nom de chaque personne, le remplace côté client : elle passera en `bearer` sur un jeton fourni par l'hôte, `modes: [byo_user]`, quand ce client sera sur la branche principale.
 
 ## Questions ouvertes
 
@@ -149,7 +148,7 @@ Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descripti
 - Référencer la spec OpenAPI de l'éditeur quand elle existe ?
 - Le défaut `per_connector` vaut-il pour un hôte d'oto 2, dont les fonctions ne passent que par `call` ?
 - Ce que le format ne sait pas encore dire, relevé en décrivant dix connecteurs le 2026-10-05 :
-  - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe, `token_url` par locataire pour `microsoft`) ;
+  - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe) ;
   - un en-tête constant (`Notion-Version`, `X-Affinity-Api-Version`) ;
   - une constante ou un tableau en corps (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
   - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
@@ -164,3 +163,4 @@ Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descripti
 - 2026-09-30 : schéma `connector.schema.json` et fichier Sellsy vérifié contre la référence publique de l'API ; ajouts : le champ de `auth` qui nomme le secret (`key`, `token`, `username`, `password`), `scope` en OAuth2, l'erreur 400 `invalid_request` — choix du projet (source : lot 2 du 30/09).
 - 2026-10-05 : reprise en document de conception vivant depuis la conception connecteurs d'oto 2 (oto-enterprise, archivé) — décidé par le mainteneur.
 - 2026-10-05 : tout client ajouté à la lib entre au format ; dix connecteurs décrits, trois non descriptibles en l'état, et la liste de ce que le format ne sait pas encore dire — décidé par le mainteneur (source : séance du 05/10).
+- 2026-10-05 : la description microsoft passe à l'accès délégué (jeton d'une personne, fourni par l'hôte), version 2.0.0 — choix du projet (source : refonte du client, v1.155.0).

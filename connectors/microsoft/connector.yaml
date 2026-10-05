@@ -1,40 +1,37 @@
 # yaml-language-server: $schema=../connector.schema.json
 # Microsoft Graph v1.0 reference: https://learn.microsoft.com/graph/api/overview
-# Files surface only (SharePoint sites, document libraries, OneDrive items), with
-# the app-only token of an Entra app registered by the customer's organization.
+# Files surface only (SharePoint sites, document libraries, OneDrive items), on
+# behalf of one signed-in person (delegated access): every call sees exactly what
+# that person sees in Microsoft 365.
+# The access token comes from the person's sign-in (OAuth 2.0 authorization code,
+# delegated scopes offline_access, User.Read, Files.ReadWrite.All,
+# Sites.ReadWrite.All); obtaining and refreshing it belongs to the host, not to
+# this file.
 connector:
   name: microsoft
   label: Microsoft 365 (SharePoint, OneDrive)
   namespace: microsoft
-  version: 1.0.0
+  version: 2.0.0
   api_version: v1.0
   base_url: https://graph.microsoft.com/v1.0
   auth:
-    kind: oauth2_client_credentials
-    # {tenant_id} names the credential field of the same name.
-    token_url: https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
-    token_request: form
-    client_id: client_id
-    client_secret: client_secret
-    scope: https://graph.microsoft.com/.default
-    expires_in_default: 3600
+    kind: bearer
+    token: access_token
   credential:
-    - { name: tenant_id, label: Directory (tenant) ID, secret: false }
-    - { name: client_id, label: Application (client) ID, secret: false }
-    - { name: client_secret, label: Client secret value, secret: true }
-  modes: [byo_org]
+    - { name: access_token, label: Delegated access token, secret: true }
+  modes: [byo_user]
   timeout_s: 120
   errors:
     - { status: 400, code: invalid_request, retryable: false,
         message: "Microsoft Graph rejected the request as invalid: check the arguments." }
-    - { status: 401, code: access_rejected, retryable: false,
-        message: "Microsoft rejected the Entra app: check tenant_id, client_id and the client secret value." }
+    - { status: 401, code: authorization_expired, retryable: false,
+        message: "Microsoft no longer accepts this access token (expired or revoked): renew it, or have the person sign in again." }
     - { status: 403, code: permission_missing, retryable: false,
-        message: "The Entra app lacks the application permission for this resource (admin consent, or site not granted under Sites.Selected). It does not mean the resource is absent." }
+        message: "The signed-in person has no access to this resource, or a delegated scope is missing (offline_access, User.Read, Files.ReadWrite.All, Sites.ReadWrite.All). It does not mean the resource is absent." }
     - { status: 404, code: not_found, retryable: false,
         message: "Microsoft Graph object not found: check the id or path." }
     - { status: 429, code: rate_limited, retryable: true,
-        message: "Microsoft Graph is throttling this app: retry after the delay it gives." }
+        message: "Microsoft Graph is throttling these requests: retry after the delay it gives." }
     - { status: [500, 502, 503, 504], code: upstream_unavailable, retryable: true,
         message: "Microsoft Graph is temporarily unavailable: retry later." }
 
@@ -42,9 +39,8 @@ functions:
   - name: search_sites
     class: read
     description: >-
-      Search the organization's SharePoint sites whose name or description
-      matches a query. Only the sites the Entra app can see are returned: with
-      the Sites.Selected permission, only those granted to it one by one.
+      Search the SharePoint sites whose name or description matches a query.
+      Only the sites the signed-in person can open are returned.
     input:
       type: object
       additionalProperties: false
@@ -87,7 +83,7 @@ functions:
         input:
           site_id: "acme.sharepoint.com,0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0,1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809"
     refusals:
-      - { code: site_not_found, when: 404, message: "No SharePoint site with this id visible to the Entra app." }
+      - { code: site_not_found, when: 404, message: "No SharePoint site with this id that the signed-in person can open." }
     call: { method: GET, path: "/sites/{site_id}" }
     cost: { per: request }
 
@@ -114,7 +110,7 @@ functions:
       - title: The marketing site of Acme
         input: { hostname: acme.sharepoint.com, site_path: sites/Marketing }
     refusals:
-      - { code: site_not_found, when: 404, message: "No SharePoint site at this path visible to the Entra app." }
+      - { code: site_not_found, when: 404, message: "No SharePoint site at this path that the signed-in person can open." }
     call: { method: GET, path: "/sites/{hostname}:/{site_path}" }
     cost: { per: request }
 
@@ -147,12 +143,36 @@ functions:
       items: value
     cost: { per: request }
 
+  - name: get_me
+    class: read
+    description: >-
+      Get the signed-in person: id, displayName, mail and userPrincipalName.
+      Every other function acts on their behalf and sees what they see.
+    input: { type: object, additionalProperties: false, properties: {} }
+    examples:
+      - title: Who the token acts as
+        input: {}
+    call: { method: GET, path: /me }
+    cost: { per: request }
+
+  - name: get_my_drive
+    class: read
+    description: >-
+      Get the OneDrive of the signed-in person. Its id is the drive_id of the
+      item functions.
+    input: { type: object, additionalProperties: false, properties: {} }
+    examples:
+      - title: My OneDrive
+        input: {}
+    call: { method: GET, path: /me/drive }
+    cost: { per: request }
+
   - name: get_user_drive
     class: read
     description: >-
-      Get the OneDrive of one person of the organization, by user id or
-      userPrincipalName (usually the work email). Its id is the drive_id of the
-      item functions.
+      Get the OneDrive of a colleague, by user id or userPrincipalName (usually
+      the work email), if they shared it with the signed-in person. Its id is
+      the drive_id of the item functions.
     input:
       type: object
       additionalProperties: false
@@ -182,7 +202,7 @@ functions:
         drive_id: &drive_id
           type: string
           pattern: "^[^\\s/?#]+$"
-          description: "Drive id, from list_site_drives or get_user_drive."
+          description: "Drive id, from list_site_drives, get_my_drive or get_user_drive."
         item_id: &item_id
           type: string
           pattern: "^[^\\s/?#]+$"
