@@ -1,22 +1,26 @@
-"""GraphClient + auth Microsoft — verrouille le contrat HTTP construit par le client.
+"""GraphClient + auth Microsoft — verrouille le contrat HTTP construit par la lib.
 
-Mocke `requests.post` (jeton) et `requests.Session.request` (Graph), sans réseau ni
-credential réel. Cible ce qui pourrait dériver en silence : le secret dans le corps
-et jamais dans l'URL, le cache de jeton process-wide keyé par credential, le
-rejeu unique sur 401, l'adressage d'un item par id ou par chemin, la pagination
+Mocke `requests.post` (serveur d'autorisation) et `requests.Session.request`
+(Graph), sans réseau ni credential réel. Cible ce qui pourrait dériver en silence :
+les secrets dans le corps et jamais dans l'URL, la rotation du refresh token, le
+classement « autorisation morte » contre « configuration fausse », le jeton porté
+en Bearer, l'adressage d'un item par id ou par chemin, la pagination
 `@odata.nextLink` bornée, et la cible d'un upload.
 """
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from oto.tools.common import UpstreamHTTPError
 from oto.tools.common.credentials import MissingCredential
-from oto.tools.microsoft import GraphClient, MicrosoftAuthError
+from oto.tools.microsoft import (FILES_SCOPES, GraphClient, MicrosoftAuthError,
+                                 MicrosoftGrantExpired)
 from oto.tools.microsoft import auth as ms_auth
 
 G = "https://graph.microsoft.com/v1.0"
-TENANT, CID, SECRET = "tenant-guid", "client-guid", "s3cr3t-value"
+TOKEN_URL = "https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
+CID, SECRET, REDIRECT = "client-guid", "s3cr3t-value", "https://oto.example/cb"
 
 
 class _Resp:
@@ -40,32 +44,28 @@ class _Seen(list):
     """The captured calls, plus `responses`: queued replies, served in order."""
 
 
-@pytest.fixture(autouse=True)
-def _clear_cache():
-    ms_auth._TOKEN_CACHE.clear()
-    yield
-    ms_auth._TOKEN_CACHE.clear()
-
-
 @pytest.fixture
 def token_calls(monkeypatch):
-    seen = []
+    seen = _Seen()
+    seen.responses = []
 
     def fake_post(url, **kw):
         seen.append({"url": url, **kw})
-        return _Resp({"access_token": f"AT{len(seen)}", "expires_in": 3600})
+        return seen.responses.pop(0) if seen.responses else _Resp(
+            {"access_token": "AT", "refresh_token": "RT2", "expires_in": 3599,
+             "scope": "Files.ReadWrite.All"})
 
     monkeypatch.setattr(ms_auth.requests, "post", fake_post)
     return seen
 
 
 @pytest.fixture
-def calls(monkeypatch, token_calls):
+def calls(monkeypatch):
     seen = _Seen()
     seen.responses = responses = []
 
     def _request(self, method, url, **kwargs):
-        seen.append({"method": method, "url": url, **kwargs})
+        seen.append({"method": method, "url": url, "headers": dict(self.headers), **kwargs})
         return responses.pop(0) if responses else _Resp({"ok": True})
 
     monkeypatch.setattr("requests.Session.request", _request)
@@ -74,66 +74,94 @@ def calls(monkeypatch, token_calls):
 
 @pytest.fixture
 def client():
-    return GraphClient(TENANT, CID, SECRET)
+    return GraphClient("AT-personne")
 
 
-# --- construction & auth ------------------------------------------------------
+# --- auth : connexion d'une personne --------------------------------------------
 
-@pytest.mark.parametrize("args, nom", [
-    ((None, CID, SECRET), "MICROSOFT_TENANT_ID"),
-    ((TENANT, None, SECRET), "MICROSOFT_CLIENT_ID"),
-    ((TENANT, CID, ""), "MICROSOFT_CLIENT_SECRET"),
+def test_url_d_autorisation():
+    url = ms_auth.authorize_url(CID, REDIRECT, "etat-signe")
+    parts = urlsplit(url)
+    assert f"{parts.scheme}://{parts.netloc}{parts.path}" == (
+        "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize")
+    q = {k: v[0] for k, v in parse_qs(parts.query).items()}
+    assert q == {"client_id": CID, "response_type": "code", "redirect_uri": REDIRECT,
+                 "response_mode": "query", "scope": " ".join(FILES_SCOPES),
+                 "state": "etat-signe", "prompt": "select_account"}
+    assert "offline_access" in FILES_SCOPES
+
+
+def test_echange_du_code_secret_dans_le_corps(token_calls):
+    grant = ms_auth.exchange_code(CID, SECRET, "le-code", REDIRECT)
+    call = token_calls[0]
+    assert call["url"] == TOKEN_URL and "params" not in call
+    assert SECRET not in call["url"]
+    assert call["data"] == {"grant_type": "authorization_code", "client_id": CID,
+                            "client_secret": SECRET, "code": "le-code",
+                            "redirect_uri": REDIRECT, "scope": " ".join(FILES_SCOPES)}
+    assert (grant.access_token, grant.refresh_token, grant.expires_in) == ("AT", "RT2", 3599)
+
+
+def test_renouvellement_rend_le_refresh_token_tourne(token_calls):
+    grant = ms_auth.refresh(CID, SECRET, "RT1")
+    assert token_calls[0]["data"]["grant_type"] == "refresh_token"
+    assert token_calls[0]["data"]["refresh_token"] == "RT1"
+    assert grant.refresh_token == "RT2"
+
+
+def test_renouvellement_sans_rotation_garde_l_ancien(token_calls):
+    token_calls.responses.append(_Resp({"access_token": "AT", "expires_in": 60}))
+    assert ms_auth.refresh(CID, SECRET, "RT1").refresh_token == "RT1"
+
+
+def test_autorisation_morte_classee_a_part(token_calls):
+    token_calls.responses.append(_Resp({
+        "error": "invalid_grant",
+        "error_description": "AADSTS70008: The refresh token has expired.\r\nTrace ID: x"},
+        status_code=400))
+    with pytest.raises(MicrosoftGrantExpired) as exc:
+        ms_auth.refresh(CID, SECRET, "RT1")
+    assert exc.value.code == "AADSTS70008" and "Trace ID" not in str(exc.value)
+
+
+def test_secret_d_application_faux_n_est_pas_une_autorisation_morte(token_calls):
+    token_calls.responses.append(_Resp({
+        "error": "invalid_client",
+        "error_description": "AADSTS7000215: Invalid client secret provided."},
+        status_code=401))
+    with pytest.raises(MicrosoftAuthError) as exc:
+        ms_auth.refresh(CID, SECRET, "RT1")
+    assert not isinstance(exc.value, MicrosoftGrantExpired)
+    assert exc.value.code == "AADSTS7000215" and SECRET not in str(exc.value)
+
+
+@pytest.mark.parametrize("fn, nom", [
+    (lambda: ms_auth.refresh(CID, "", "RT"), "MICROSOFT_CLIENT_SECRET"),
+    (lambda: ms_auth.refresh(CID, SECRET, ""), "MICROSOFT_REFRESH_TOKEN"),
+    (lambda: GraphClient(None), "MICROSOFT_ACCESS_TOKEN"),
 ])
-def test_credential_manquant_nomme(args, nom):
+def test_credential_manquant_nomme(fn, nom):
     with pytest.raises(MissingCredential) as exc:
-        GraphClient(*args)
+        fn()
     assert exc.value.name == nom
 
 
-def test_secret_dans_le_corps_jamais_dans_l_url(token_calls):
-    assert ms_auth.get_access_token(TENANT, CID, SECRET) == "AT1"
-    call = token_calls[0]
-    assert call["url"] == f"https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/token"
-    assert SECRET not in call["url"] and "params" not in call
-    assert call["data"] == {"grant_type": "client_credentials", "client_id": CID,
-                            "client_secret": SECRET,
-                            "scope": "https://graph.microsoft.com/.default"}
+# --- client : le jeton de la personne --------------------------------------------
 
-
-def test_cache_process_wide_keye_par_credential(token_calls):
-    ms_auth.get_access_token(TENANT, CID, SECRET)
-    ms_auth.get_access_token(TENANT, CID, SECRET)
-    assert len(token_calls) == 1
-    ms_auth.get_access_token(TENANT, CID, "autre-secret")
-    assert len(token_calls) == 2
-    assert all(SECRET not in k for k in ms_auth._TOKEN_CACHE)
-
-
-def test_refus_entra_nomme_sans_secret(monkeypatch):
-    desc = ("AADSTS7000215: Invalid client secret provided.\r\n"
-            "Trace ID: x Correlation ID: y Timestamp: z")
-    monkeypatch.setattr(ms_auth.requests, "post", lambda url, **kw: _Resp(
-        {"error": "invalid_client", "error_description": desc}, status_code=401))
-    with pytest.raises(MicrosoftAuthError) as exc:
-        ms_auth.get_access_token(TENANT, CID, SECRET)
-    assert exc.value.status_code == 401
-    assert exc.value.code == "AADSTS7000215"
-    assert "Invalid client secret" in str(exc.value)
-    assert "Trace ID" not in str(exc.value) and SECRET not in str(exc.value)
-
-
-def test_bearer_et_rejeu_unique_sur_401(calls, client, token_calls):
-    calls.responses.extend([_Resp({"error": {}}, status_code=401), _Resp({"id": "s1"})])
-    assert client.get_site("s1") == {"id": "s1"}
-    assert [c["headers"]["Authorization"] for c in calls] == ["Bearer AT1", "Bearer AT2"]
-    assert len(token_calls) == 2
+def test_bearer_de_la_personne(calls, client):
+    client.get_me()
+    client.get_my_drive()
+    assert [c["url"] for c in calls] == [f"{G}/me", f"{G}/me/drive"]
+    assert calls[0]["headers"]["Authorization"] == "Bearer AT-personne"
 
 
 def test_refus_amont_type(calls, client):
-    calls.responses.append(_Resp({"error": {"code": "accessDenied"}}, status_code=403))
+    calls.responses.append(_Resp({"error": {"code": "InvalidAuthenticationToken"}},
+                                 status_code=401))
     with pytest.raises(UpstreamHTTPError) as exc:
         client.get_site("s1")
-    assert exc.value.status_code == 403 and exc.value.service == "microsoft"
+    assert exc.value.status_code == 401 and exc.value.service == "microsoft"
+    assert len(calls) == 1
 
 
 # --- sites & drives ------------------------------------------------------------
