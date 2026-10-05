@@ -33,7 +33,7 @@ INDEX = {"name": "Blog", "namespaces": ["wp/v2"]}
 
 
 def _client(mode="pretty"):
-    return WordPressClient("https://blog.example.com", "julien", "abcd efgh",
+    return WordPressClient("https://blog.example.com", "editor", "abcd efgh",
                            rest_mode=mode)
 
 
@@ -55,10 +55,27 @@ def calls(monkeypatch):
     ("https://blog.example.com/", "https://blog.example.com"),
     ("https://example.com/blog/wp-admin/", "https://example.com/blog"),
     ("https://example.com/wp-json/wp/v2/posts", "https://example.com"),
-    ("http://localhost:8080", "http://localhost:8080"),
 ])
 def test_normalize_site_url(raw, expected):
     assert normalize_site_url(raw) == expected
+
+
+def test_http_refused_unless_explicitly_allowed():
+    with pytest.raises(ValueError, match="en clair"):
+        normalize_site_url("http://blog.example.com")
+    with pytest.raises(ValueError, match="en clair"):
+        WordPressClient("http://blog.example.com", "u", "p")
+    assert normalize_site_url("http://localhost:8080", allow_http=True) == "http://localhost:8080"
+    assert WordPressClient("http://localhost:8080", "u", "p", allow_http=True,
+                           rest_mode="pretty").site_url == "http://localhost:8080"
+
+
+@pytest.mark.parametrize("raw", ["https://user:secret@blog.example.com",
+                                 "https://user@blog.example.com"])
+def test_credentials_in_url_refused_and_not_echoed(raw):
+    with pytest.raises(ValueError) as e:
+        normalize_site_url(raw)
+    assert "secret" not in str(e.value) and "identifiants" in str(e.value)
 
 
 def test_normalize_rejects_empty_and_bad_scheme():
@@ -74,7 +91,7 @@ def test_pretty_url_basic_auth_and_no_redirects(calls):
     out = _client().list("wp/v2/posts", page=2, per_page=2, status="draft", search=None)
     call = captured[0]
     assert call["url"] == "https://blog.example.com/wp-json/wp/v2/posts"
-    assert call["auth"] == ("julien", "abcd efgh")
+    assert call["auth"] == ("editor", "abcd efgh")
     assert call["allow_redirects"] is False
     assert call["params"] == {"page": 2, "per_page": 2, "status": "draft"}
     assert out == {"items": [{"id": 1}], "total": 7, "total_pages": 4, "page": 2}
@@ -89,7 +106,8 @@ def test_query_mode_uses_rest_route(calls):
 
 
 def test_per_page_capped_at_100(calls):
-    captured, _ = calls
+    captured, replies = calls
+    replies.append(_Resp([]))
     _client().list("wp/v2/posts", per_page=500)
     assert captured[0]["params"]["per_page"] == 100
 
@@ -115,8 +133,54 @@ def test_upstream_error_keeps_wp_code(calls):
 def test_non_json_200_is_an_error(calls):
     _, replies = calls
     replies.append(_Resp(ValueError("nope"), raw=b"<html>cache page</html>"))
-    with pytest.raises(UpstreamHTTPError):
+    with pytest.raises(UpstreamHTTPError) as e:
         _client().me()
+    assert e.value.status_code == 502 and e.value.is_server_error
+
+
+@pytest.mark.parametrize("status", [300, 304, 305])
+def test_other_3xx_is_an_error_not_an_empty_success(calls, status):
+    _, replies = calls
+    replies.append(_Resp({}, status_code=status, raw=b""))
+    with pytest.raises(UpstreamHTTPError) as e:
+        _client().me()
+    assert e.value.status_code == 502
+
+
+@pytest.mark.parametrize("call", [
+    lambda c: c.create("wp/v2/posts", {"title": "x"}),
+    lambda c: c.upload_media(b"PNG", "a.png", "image/png"),
+])
+def test_redirect_on_write_is_raised(calls, call):
+    captured, replies = calls
+    replies.append(_Resp({}, status_code=307, headers={"Location": "https://evil.example.net/"}))
+    with pytest.raises(WordPressRedirect, match="evil.example.net"):
+        call(_client())
+    assert len(captured) == 1 and captured[0]["allow_redirects"] is False
+
+
+def test_list_of_a_non_collection_is_an_error(calls):
+    _, replies = calls
+    replies.append(_Resp({"code": "x", "data": {}}))
+    with pytest.raises(UpstreamHTTPError, match="liste"):
+        _client().list("wp/v2/settings")
+
+
+@pytest.mark.parametrize("route", ["wp/v2/posts/../users", "wp/v2/posts?x=1",
+                                   "wp/v2/posts#a", "wp/v2/po%2Fsts"])
+def test_route_is_validated(calls, route):
+    captured, _ = calls
+    with pytest.raises(ValueError, match="route"):
+        _client().list(route)
+    assert captured == []
+
+
+@pytest.mark.parametrize("item_id", ["7?force=true", "7", 0, -1, True, 1.5])
+def test_item_id_must_be_a_positive_int(calls, item_id):
+    captured, _ = calls
+    with pytest.raises(ValueError, match="identifiant"):
+        _client().delete("wp/v2/posts", item_id)
+    assert captured == []
 
 
 def test_delete_trash_by_default_force_explicit(calls):
@@ -148,6 +212,33 @@ def test_upload_media_raw_body_then_fields(calls):
     assert out["alt_text"] == "A"
 
 
+@pytest.mark.parametrize("name,sent", [
+    ("photo €.png", "photo .png"),
+    ("café.png", "cafe.png"),
+    ("a;b.png", "ab.png"),
+    ("a\\b.png", "ab.png"),
+    ("€€€", "upload"),
+])
+def test_upload_filename_is_ascii_and_safe(calls, name, sent):
+    captured, _ = calls
+    _client().upload_media(b"x", name, "image/png")
+    header = captured[0]["headers"]["Content-Disposition"]
+    header.encode("ascii")
+    assert header == f'attachment; filename="{sent}"'
+
+
+def test_upload_fields_failure_carries_media_id(calls):
+    from oto.tools.wordpress import WordPressMediaFieldsError
+
+    _, replies = calls
+    replies.extend([_Resp({"id": 42}),
+                    _Resp({"code": "rest_invalid_param"}, status_code=400)])
+    with pytest.raises(WordPressMediaFieldsError) as e:
+        _client().upload_media(b"PNG", "a.png", "image/png", alt_text="A")
+    assert e.value.media_id == 42 and "42" in str(e.value)
+    assert e.value.status_code == 400
+
+
 def test_probe_prefers_pretty_then_falls_back_to_query(monkeypatch):
     seen = []
 
@@ -164,6 +255,19 @@ def test_probe_prefers_pretty_then_falls_back_to_query(monkeypatch):
                     ("https://blog.example.com/", {"rest_route": "/"})]
 
 
+def test_probe_sends_no_credentials(monkeypatch):
+    seen = []
+
+    def fake_get(url, params=None, **kw):
+        seen.append(kw)
+        return _Resp(INDEX)
+
+    monkeypatch.setattr(wp_client.requests, "get", fake_get)
+    assert WordPressClient("https://blog.example.com", "u", "p").rest_mode == "pretty"
+    assert "auth" not in seen[0] and "Authorization" not in seen[0]["headers"]
+    assert seen[0]["allow_redirects"] is False
+
+
 def test_probe_rejects_non_wordpress(monkeypatch):
     monkeypatch.setattr(wp_client.requests, "get",
                         lambda url, params=None, **kw: _Resp({"hello": 1}))
@@ -177,6 +281,51 @@ def test_retry_on_429(calls, monkeypatch):
     replies.extend([_Resp({}, status_code=429, headers={"Retry-After": "1"}),
                     _Resp({"id": 1})])
     assert _client().me() == {"id": 1}
+
+
+def test_retry_after_http_date_is_read(calls, monkeypatch):
+    from email.utils import format_datetime
+    from datetime import datetime, timedelta, timezone
+
+    _, replies = calls
+    slept = []
+    monkeypatch.setattr(wp_client.time, "sleep", slept.append)
+    soon = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=3), usegmt=True)
+    replies.extend([_Resp({}, status_code=429, headers={"Retry-After": soon}),
+                    _Resp({"id": 1})])
+    assert _client().me() == {"id": 1}
+    assert len(slept) == 1 and 0 <= slept[0] <= 3
+
+
+@pytest.mark.parametrize("retry_after", ["120", "Wed, 21 Oct 2099 07:28:00 GMT"])
+def test_long_retry_after_is_raised_not_slept(calls, monkeypatch, retry_after):
+    from oto.tools.wordpress import WordPressRateLimited
+
+    _, replies = calls
+    monkeypatch.setattr(wp_client.time, "sleep", lambda s: pytest.fail("slept"))
+    replies.append(_Resp({}, status_code=429, headers={"Retry-After": retry_after}))
+    with pytest.raises(WordPressRateLimited) as e:
+        _client().me()
+    assert e.value.status_code == 429 and e.value.retry_after > 10
+
+
+def test_unreadable_retry_after_backs_off_then_raises(calls, monkeypatch):
+    from oto.tools.wordpress import WordPressRateLimited
+
+    _, replies = calls
+    slept = []
+    monkeypatch.setattr(wp_client.time, "sleep", slept.append)
+    replies.extend([_Resp({}, status_code=429, headers={"Retry-After": "soon"})] * 3)
+    with pytest.raises(WordPressRateLimited):
+        _client().me()
+    assert slept == [1.0, 2.0]
+
+
+def test_public_index_redirect_is_raised(monkeypatch):
+    monkeypatch.setattr(wp_client.requests, "get", lambda url, params=None, **kw: _Resp(
+        {}, status_code=302, headers={"Location": "https://other.example.net/"}))
+    with pytest.raises(WordPressRedirect, match="other.example.net"):
+        WordPressClient("https://blog.example.com", "-", "-", rest_mode="pretty").public_index()
 
 
 def test_probe_redirect_on_wp_json_falls_back_to_query(monkeypatch):
@@ -213,4 +362,8 @@ def test_missing_credential_is_named():
     from oto.tools.common.credentials import MissingCredential
 
     with pytest.raises(MissingCredential, match="WORDPRESS_APPLICATION_PASSWORD"):
-        WordPressClient("https://blog.example.com", "julien", "")
+        WordPressClient("https://blog.example.com", "editor", "")
+    with pytest.raises(MissingCredential, match="WORDPRESS_APPLICATION_PASSWORD"):
+        WordPressClient("https://blog.example.com", "editor", "   ")
+    with pytest.raises(MissingCredential, match="WORDPRESS_USERNAME"):
+        WordPressClient("https://blog.example.com", " ", "pw")
