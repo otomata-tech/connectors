@@ -23,7 +23,7 @@ connector:
   credential:
     - { name: api_key, label: Workspace API key, secret: true }
   modes: [byo_user, byo_org]
-  timeout_s: 60
+  timeout_s: 40
   errors:
     - { status: 400, code: invalid_request, retryable: false,
         message: "Mailpool rejected the request as invalid: check the arguments (list calls need limit and offset)." }
