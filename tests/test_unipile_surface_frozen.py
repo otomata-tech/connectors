@@ -1,6 +1,6 @@
 """La surface de `UnipileClient` est un CONTRAT, pas un détail.
 
-oto-backend et oto-cli épinglent oto-core par tag et importent
+oto-backend épingle oto-core par tag et importe
 `oto.tools.unipile[.client]` : renommer une méthode, changer un défaut ou
 déplacer un symbole hors de `client.py` casse un consommateur **au bump du
 pin**, loin d'ici. Ce test fige donc la liste des membres AVEC leurs signatures,

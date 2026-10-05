@@ -15,7 +15,6 @@ dependencies = [
     # (cert verification bypass), CVE-2023-32681 (Proxy-Authorization leak).
     "requests>=2.33.0",
     "france-opendata>=0.7.0",
-    "python-dotenv>=1.2.2",  # CVE-2026-28684
     "pyyaml>=6.0",
     "defusedxml>=0.7.1",
 ]
@@ -30,7 +29,7 @@ anthropic = ["anthropic>=0.40.0"]
 # `duckdb` est le moteur de lecture des parquets (bilans INPI, stock SIRENE,
 # BOAMP) : sans lui, `oto fr get`/`fr bilans` échouent — et l'extra qui prétend
 # couvrir ce besoin ne l'embarquait pas, si bien que le remède conseillé à
-# l'utilisateur (`pipx install 'oto-cli[all]'`) ne réparait rien.
+# l'utilisateur ne réparait rien.
 stock = ["duckdb>=1.0", "pyarrow>=23.0.1", "pandas>=1.5.0"]
 anonymize = ["faker>=20.0.0"]
 # `planity` : le seul client ASYNCHRONE de la lib — l'amont l'impose, et ni son

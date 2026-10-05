@@ -99,7 +99,7 @@ d'appels** rangés dans `<svc>/_api/*.py` (un module = un domaine de l'API amont
 les types d'erreur et le parsing lourd sortent en modules frères (`const.py`, `errors.py`, `feed.py`),
 et `client.py` les **réexporte** via `__all__`.
 
-Pourquoi ce soin : le backend et oto-cli épinglent oto-core **par tag** — un symbole qui déménage ne
+Pourquoi ce soin : le backend d'oto 1 épingle oto-core **par tag** — un symbole qui déménage ne
 casse pas ici, il casse **au bump du pin**, ailleurs, plus tard. Fait sur unipile (1 702 L → 13
 modules) et google/slides (1 516 L → 9 modules) ; le contrat est verrouillé par
 `tests/test_unipile_surface_frozen.py` et `tests/test_slides_surface_frozen.py`, qui figent membres

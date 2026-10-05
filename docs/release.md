@@ -20,5 +20,5 @@ Rejouer une version : `gh workflow run publish.yml --ref main -f tag=vX.Y.Z`.
   `pip show oto-core` : la prod affiche l'ancienne version malgré le bon code, et on part en fausse
   piste « bump non appliqué ».
 - ⚠️ PyPI reconnaît le workflow par son **nom de fichier** : le renommer coupe la publication.
-- Les installs **editable** (box, oto-cli local) ne sont PAS affectées par un publish — `git pull`
+- Les installs **editable** (box, checkout local) ne sont PAS affectées par un publish — `git pull`
   reste requis.

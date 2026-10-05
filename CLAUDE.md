@@ -15,13 +15,21 @@ Namespace package `oto` (PEP 420, **pas d'`oto/__init__.py`**) :
 - `oto.tools.common.local_dirs` — répertoires locaux (caches, sessions navigateur) et blocs non secrets de
   `~/.otomata/config.yaml` (`field_filters`).
 
-**Source unique des clients connecteurs**, consommée par **oto-backend** (serveur MCP, qui importe
-`oto.tools.*` directement et injecte les secrets de son coffre).
+**Source unique des clients connecteurs**. Consommateurs : le **backend d'oto 1** (serveur MCP, qui épingle une
+version git, importe `oto.tools.*` directement et injecte les secrets de son coffre) et, à venir, le **paquet npm
+d'oto 2**, qui recevra les connecteurs partagés par la fabrique.
+
+## Connecteurs partagés et fabrique
+
+- Un connecteur partagé se décrit dans `connectors/<nom>/connector.yaml`, validé par
+  `connectors/connector.schema.json` ; la fabrique en tirera un client Python et des fonctions TypeScript.
+- Lire le document du sujet **avant** de toucher `connectors/` ou la fabrique : `docs/conception/README.md`
+  (règle de vie, index), `docs/conception/format-de-description.md`, `docs/conception/fabrique.md`.
 
 ## Stack
 
 - Python ≥3.10, setuptools (namespace package). Version dans `pyproject.toml`, nulle part ailleurs.
-- Deps cœur : requests, france-opendata, python-dotenv, pyyaml, defusedxml. **Pas de typer**.
+- Deps cœur : requests, france-opendata, pyyaml, defusedxml. **Pas de typer**.
 - Extras : `google`, `browser` (o-browser), `planity` (async), `vivatech`, `anthropic`, `stock`, `anonymize`.
   `all` les tire tous.
 - **`uv.lock` est commité et ne gouverne aucune install** — il sert à rendre le dépôt observable par le graphe
@@ -72,6 +80,7 @@ Une règle par ligne ; l'incident qui l'a produite et ses cas limites vivent dan
 
 ## Docs
 
+- `docs/conception/` — format de description des connecteurs partagés et fabrique (voir plus haut)
 - `docs/conventions.md` — le pourquoi de chaque règle ci-dessus, avec ses incidents et ses cliquets
 - `docs/packaging.md` — `uv.lock`, `MANIFEST.in`, ce que publient la roue et le sdist
 - `docs/release.md` — bump + tag → publication PyPI automatique, et le pin d'oto-backend

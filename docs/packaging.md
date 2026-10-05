@@ -13,7 +13,7 @@ Le lock donne au graphe des versions exactes, rien de plus :
 
 - il est **absent de la wheel ET du sdist** (donc invisible à `pip install oto-core`) ;
 - un consommateur `uv` **ignore le lock de sa dépendance** (mesuré, y compris sur une dép `path`) —
-  oto-backend et oto-cli continuent de résoudre oto-core depuis son `pyproject.toml`, à l'identique.
+  oto-backend continue de résoudre oto-core depuis son `pyproject.toml`, à l'identique.
 
 Le régénérer par `uv lock` quand une dépendance bouge.
 

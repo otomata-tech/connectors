@@ -51,20 +51,18 @@ class SlidesClient(
         """
         Initialize Slides client.
 
-        Resolution order (premier qui répond gagne) :
-        1. `credentials` — objet credentials Google fourni par le consommateur
-           (OAuth utilisateur, pour manipuler le Drive personnel d'un utilisateur)
-        2. `credentials_json` (path or JSON string) — service account
-        3. `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` env var — service account
-        Aucun des trois → `MissingCredential`.
+        Les credentials sont fournis par le consommateur, l'un ou l'autre :
+        1. `credentials` — objet credentials Google (OAuth utilisateur, pour
+           manipuler le Drive personnel d'un utilisateur) ; prioritaire.
+        2. `credentials_json` (chemin ou chaîne JSON) — service account.
+        Aucun des deux → `MissingCredential('GOOGLE_CREDENTIALS')`. La lib ne
+        lit aucune variable d'environnement.
 
         Args:
             credentials_json: Path to service account JSON or JSON string
             credentials: Google credentials object provided by the consumer
         """
         if credentials is None:
-            if credentials_json is None:
-                credentials_json = os.getenv('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON')
             require(credentials_json, 'GOOGLE_CREDENTIALS')
             if os.path.isfile(credentials_json):
                 credentials = service_account.Credentials.from_service_account_file(
