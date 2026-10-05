@@ -273,7 +273,7 @@
     "function": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "class", "description", "input", "examples", "output"],
+      "required": ["name", "class", "description", "input", "examples"],
       "properties": {
         "name": { "description": "A verb and its object.", "$ref": "#/$defs/identifier" },
         "class": { "enum": ["read", "write", "sensitive"] },
