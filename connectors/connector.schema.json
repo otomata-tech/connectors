@@ -342,7 +342,6 @@
         "output": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["schema"],
           "properties": {
             "schema": { "description": "Shape of one record, after items/strip/projection are applied.", "$ref": "#/$defs/output_schema" },
             "items": { "description": "Dotted path of the list in the response.", "$ref": "#/$defs/text" },
