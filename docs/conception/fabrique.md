@@ -80,7 +80,7 @@ Le code généré ne lit aucun secret. En Python, le constructeur du client reç
 
 ## Écart avec le code
 
-- Aucune fabrique : ni générateur, ni runtime commun dans l'un ou l'autre langage, ni paquet npm de connecteurs, ni test de contrat entre les deux langages. Seuls existent le schéma, onze descriptions et leur test de validation ([format de description](format-de-description.md), « Les connecteurs décrits »).
+- Aucune fabrique : ni générateur, ni runtime commun dans l'un ou l'autre langage, ni paquet npm de connecteurs, ni test de contrat entre les deux langages. Seuls existent le schéma, douze descriptions et leur test de validation ([format de description](format-de-description.md), « Les connecteurs décrits »).
 - Les deux règles hors schéma JSON ne sont vérifiées nulle part.
 - Le client Python Sellsy est écrit à la main, sur des verbes génériques (`list_records`, `search_records`) ; il n'est pas généré.
 - Côté paquet d'oto 2, au 05/10 (version 1.4.0), la sortie TypeScript n'a pas encore où se brancher : la fonction de connecteur n'est exportée que pour les sources du paquet, son origine porte encore le nom du service abandonné, le contexte d'appel ne porte pas de secret (oto-pkg : docs/conception/connecteurs-et-comptes.md, « Écart avec le code »).

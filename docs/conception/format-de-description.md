@@ -5,7 +5,7 @@
 
 ## Résumé
 
-Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; onze connecteurs ont leur description, et tout client ajouté à la lib entre au format.
+Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; douze connecteurs ont leur description, et tout client ajouté à la lib entre au format.
 
 ## Contexte
 
@@ -102,7 +102,7 @@ functions:
 
 ### Les connecteurs décrits
 
-Onze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée.
+Douze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `mailpool` (21), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée : ainsi `mailpool.update_domain_dns`, dont le corps est un tableau d'enregistrements.
 
 Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur).
 
@@ -131,7 +131,7 @@ Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descripti
 
 ## Écart avec le code
 
-- Écrits : le schéma, son test et onze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, les dix autres depuis le 2026-10-05. Aucun test n'impose encore qu'un client ait sa description.
+- Écrits : le schéma, son test et douze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite. Aucun test n'impose encore qu'un client ait sa description.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
 - Deux règles échappent au schéma JSON et ne sont vérifiées nulle part : un argument va à un seul endroit (et chaque `{param}` du chemin nomme un argument) ; une référence de `auth` désigne un champ de `credential` existant. La fabrique doit les vérifier.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
