@@ -153,7 +153,9 @@ Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descripti
   - une constante ou un tableau en corps (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
   - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
   - une signature par requête (`boondmanager`) ;
-  - `handwritten` exige un fichier TypeScript, qui n'existe pour aucun connecteur.
+  - `handwritten` exige un fichier TypeScript, qui n'existe pour aucun connecteur ;
+  - un coût par élément d'un lot, ou relu dans la réponse de l'amont : `cost` ne connaît que `per: request` et `per: page`, alors qu'un lot payant se facture au contact soumis, ou seulement à la donnée trouvée, chiffrée dans la réponse ;
+  - une sonde déclarée : quelle fonction vérifie la connexion, et ce qu'elle couvre (l'authentification seule, ou l'authentification et le quota), sans rien facturer.
 - Un test doit-il refuser un client sans description, avec une liste nommée d'exceptions ?
 
 ## Historique
