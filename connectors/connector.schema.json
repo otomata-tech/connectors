@@ -255,10 +255,25 @@
         }
       ]
     },
+    "output_schema": {
+      "description": "JSON Schema of one output record: a strict object, closed on the keys this connector promises — not every key is present on every call (a caller may narrow with its own `fields`/`embed`-style argument), but no key outside this set ever appears.",
+      "allOf": [
+        { "$ref": "https://json-schema.org/draft/2020-12/schema" },
+        {
+          "type": "object",
+          "required": ["type", "additionalProperties", "properties"],
+          "properties": {
+            "type": { "const": "object" },
+            "additionalProperties": { "const": false },
+            "properties": { "type": "object", "minProperties": 1 }
+          }
+        }
+      ]
+    },
     "function": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "class", "description", "input", "examples"],
+      "required": ["name", "class", "description", "input", "examples", "output"],
       "properties": {
         "name": { "description": "A verb and its object.", "$ref": "#/$defs/identifier" },
         "class": { "enum": ["read", "write", "sensitive"] },
@@ -327,7 +342,9 @@
         "output": {
           "type": "object",
           "additionalProperties": false,
+          "required": ["schema"],
           "properties": {
+            "schema": { "description": "Shape of one record, after items/strip/projection are applied.", "$ref": "#/$defs/output_schema" },
             "items": { "description": "Dotted path of the list in the response.", "$ref": "#/$defs/text" },
             "strip": { "description": "Keys removed.", "type": "array", "items": { "$ref": "#/$defs/text" } },
             "projection": { "description": "Keys kept.", "type": "array", "items": { "$ref": "#/$defs/text" } }

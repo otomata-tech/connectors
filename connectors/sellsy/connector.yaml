@@ -87,6 +87,16 @@ functions:
       max_pages: 10
     output:
       items: data
+      schema: &estimate
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          number: { type: string }
+          created: { type: string, format: date-time }
+          date: { type: string, format: date }
+          expiry_date: { type: string, format: date }
+          amount: { type: number }
     cost: { per: request }
 
   - name: get_estimate
@@ -122,6 +132,8 @@ functions:
       method: GET
       path: /estimates/{id}
       query: { field: fields, embed: embed }
+    output:
+      schema: *estimate
     cost: { per: request }
 
 exposure:

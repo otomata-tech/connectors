@@ -115,11 +115,28 @@ def _bad_exposure(d):
     d["exposure"]["mode"] = "per_tool"
 
 
+def _no_output(d):
+    del d["functions"][0]["output"]
+
+
+def _output_without_schema(d):
+    del d["functions"][0]["output"]["schema"]
+
+
+def _output_schema_not_strict(d):
+    d["functions"][0]["output"]["schema"]["additionalProperties"] = True
+
+
+def _output_schema_no_properties(d):
+    del d["functions"][0]["output"]["schema"]["properties"]
+
+
 @pytest.mark.parametrize("mutate", [
     _drop_class, _unknown_key, _call_and_handwritten, _neither_call_nor_handwritten,
     _sensitive_without_confirm, _input_not_strict, _no_examples, _example_outside_input,
     _example_unknown_argument, _embed_not_documented, _auth_missing_token_url,
     _credential_missing, _quota_without_platform, _bad_version, _bad_exposure,
+    _no_output, _output_without_schema, _output_schema_not_strict, _output_schema_no_properties,
 ], ids=lambda f: f.__name__.lstrip("_"))
 def test_invalid_description_is_rejected(mutate):
     description = _sellsy()
