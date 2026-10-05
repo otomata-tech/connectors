@@ -5,7 +5,7 @@
 
 ## Résumé
 
-Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; Sellsy est le premier connecteur au format.
+Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; onze connecteurs ont leur description, et tout client ajouté à la lib entre au format.
 
 ## Contexte
 
@@ -100,6 +100,12 @@ functions:
 
 (Extrait raccourci : le fichier déclare aussi `fields` et `embed` dans `input`.)
 
+### Les connecteurs décrits
+
+Onze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `meta_ads` (8), `microsoft` (11), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée.
+
+Trois clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur).
+
 ### Contrôles
 
 `tests/test_connector_descriptions.py` vérifie que le schéma est un JSON Schema valide, que chaque description le respecte et porte le nom de son dossier, et que chaque exemple respecte l'entrée de sa fonction. Quinze variantes invalides du fichier Sellsy doivent être refusées : classe absente, clé inconnue, `call` et `handwritten` ensemble ou aucun des deux, fonction sensible sans `confirm`, entrée non stricte, aucun exemple, exemple hors bornes ou à argument inconnu, `embed` non documenté, `token_url` absent, `credential` absent, `quota` sans `platform`, version hors semver, `exposure.mode` inconnu. `jsonschema` est un outil de test, pas une dépendance de la lib.
@@ -109,6 +115,7 @@ functions:
 - **Du code source dans l'un des deux langages** : écarté le 29/09. L'autre langage n'en serait qu'une traduction ; un fichier déclaratif se lit des deux côtés.
 - **TOML** : écarté, illisible dès trois niveaux d'imbrication, qu'un schéma d'entrée dépasse souvent. **JSON seul** : écarté, sans commentaires et pénible pour une description sur plusieurs lignes.
 - **Référencer la spec OpenAPI de l'éditeur** (`operation: getEstimates`) et n'ajouter que classe, refus, exemples et projection : non retenu à ce jour. Moins à écrire, mais chaque connecteur dépendrait de la qualité d'une spec tierce.
+- **Un client ajouté à la lib sans description** : écarté le 2026-10-05. Tout client entre au format ; une fonction ou un client que le format ne sait pas dire est nommé, avec sa raison, dans « Les connecteurs décrits ».
 - **L'outil MCP comme unité** (le modèle d'oto 1, où le nom de l'outil est le contrat et où Sellsy est servi par `sellsy_document(kind, op)`, quatre documents de vente fusionnés) : écarté. L'unité est la fonction ; l'outil, une projection. Cela répond au point « verbe `oto_call` ou outils dédiés » d'ADR 0070 §7.8 : les deux, par projection.
 - **Refus en texte libre** : écarté. Une table structurée (`code`, `when`, `message`) que la fabrique traduit en erreurs typées dans les deux langages.
 - **Une seule version** : écarté. La version du fichier (semver) et celle de l'API tierce (en clair) sont deux champs.
@@ -124,14 +131,15 @@ functions:
 
 ## Écart avec le code
 
-- Écrits : le schéma, le fichier Sellsy et leur test, présents dans le dépôt depuis la version 1.149.0 de la lib. Aucun autre connecteur n'a de description.
+- Écrits : le schéma, son test et onze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, les dix autres depuis le 2026-10-05. Aucun test n'impose encore qu'un client ait sa description.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
 - Deux règles échappent au schéma JSON et ne sont vérifiées nulle part : un argument va à un seul endroit (et chaque `{param}` du chemin nomme un argument) ; une référence de `auth` désigne un champ de `credential` existant. La fabrique doit les vérifier.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
 - `quota` n'a pas de forme : le schéma n'exige qu'un objet non vide.
 - Le format se déclare YAML 1.2, mais le test lit avec PyYAML, qui suit YAML 1.1.
 - Le client Python Sellsy de la lib reste écrit à la main, sur des verbes génériques ; rien n'est généré.
-- Du 29/09 au 04/10, douze clients nouveaux sont entrés dans la lib en Python, écrits à la main, hors format, tous servis par le backend d'oto 1. Aucun n'a été demandé par oto 2.
+- Les clients Python restent écrits à la main ; leurs descriptions, écrites après eux, n'en sont pas encore la source.
+- La description `microsoft` suit l'accès applicatif (`oauth2_client_credentials`) ; l'accès délégué, au nom de chaque personne, le remplace côté client : elle passera en `bearer` sur un jeton fourni par l'hôte, `modes: [byo_user]`, quand ce client sera sur la branche principale.
 
 ## Questions ouvertes
 
@@ -140,7 +148,14 @@ functions:
 - YAML 1.2 déclaré, lecteur 1.1 : changer de lecteur, ou se limiter au sous-ensemble commun et le dire ?
 - Référencer la spec OpenAPI de l'éditeur quand elle existe ?
 - Le défaut `per_connector` vaut-il pour un hôte d'oto 2, dont les fonctions ne passent que par `call` ?
-- Un nouveau client ajouté à la lib pour oto 1 doit-il entrer au format ?
+- Ce que le format ne sait pas encore dire, relevé en décrivant dix connecteurs le 2026-10-05 :
+  - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe, `token_url` par locataire pour `microsoft`) ;
+  - un en-tête constant (`Notion-Version`, `X-Affinity-Api-Version`) ;
+  - une constante ou un tableau en corps (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
+  - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
+  - une signature par requête (`boondmanager`) ;
+  - `handwritten` exige un fichier TypeScript, qui n'existe pour aucun connecteur.
+- Un test doit-il refuser un client sans description, avec une liste nommée d'exceptions ?
 
 ## Historique
 
@@ -148,3 +163,4 @@ functions:
 - 2026-09-29 : YAML validé par un schéma JSON ; trois blocs ; refus en table structurée ; version du fichier et version de l'API séparées ; projection par défaut `per_connector` ; existants non convertis, Sellsy d'abord — décidé par le mainteneur (source : séance du 29/09, « Le fichier de description »).
 - 2026-09-30 : schéma `connector.schema.json` et fichier Sellsy vérifié contre la référence publique de l'API ; ajouts : le champ de `auth` qui nomme le secret (`key`, `token`, `username`, `password`), `scope` en OAuth2, l'erreur 400 `invalid_request` — choix du projet (source : lot 2 du 30/09).
 - 2026-10-05 : reprise en document de conception vivant depuis la conception connecteurs d'oto 2 (oto-enterprise, archivé) — décidé par le mainteneur.
+- 2026-10-05 : tout client ajouté à la lib entre au format ; dix connecteurs décrits, trois non descriptibles en l'état, et la liste de ce que le format ne sait pas encore dire — décidé par le mainteneur (source : séance du 05/10).
