@@ -6,7 +6,7 @@
 #
 # Mailbox payloads carry the mailbox, IMAP/SMTP and admin passwords and the
 # admin secret; the Python client removes them (strip_secrets) and every
-# function returning a mailbox strips them below. Billed endpoints (domain
+# function returning a mailbox strips them below, with a closed output schema. Billed endpoints (domain
 # registration, transfer, renewal, mailbox creation, subscription slots,
 # warmup enrolment, inbox placement) are deliberately absent.
 connector:
@@ -57,7 +57,22 @@ functions:
       - title: First page of domains
         input: { limit: 50, offset: 0 }
     call: { method: GET, path: /domains/, query: { limit: limit, offset: offset } }
-    output: { items: data }
+    output:
+      items: data
+      schema: &domain_out
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          createdAt: { type: string, format: date-time }
+          expireAt: { type: string, format: date-time }
+          domain: { type: string }
+          domainOwner: { type: object, description: "Registrant contact." }
+          redirectUrl: { type: [string, "null"] }
+          type: { enum: [google, shared, private, outlook, unassigned] }
+          status: { enum: [active, pending, inactive] }
+          nameservers: { type: [array, "null"], items: { type: string } }
+          error: { type: [object, "null"] }
     cost: { per: request }
 
   - name: get_domain
@@ -74,6 +89,7 @@ functions:
       - title: One domain
         input: { domain_id: 1201 }
     call: { method: GET, path: "/domains/{domain_id}" }
+    output: { schema: *domain_out }
     cost: { per: request }
 
   - name: get_domain_dns
@@ -93,6 +109,17 @@ functions:
       - title: DNS records of one domain
         input: { domain_id: 1201 }
     call: { method: GET, path: "/domains/{domain_id}/dns" }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          type: { enum: [A, AAAA, CNAME, MX, TXT, SRV] }
+          key: { type: [string, "null"], description: "Host label, null for the apex." }
+          value: { type: string }
+          priority: { type: integer }
+          port: { type: integer }
+          weight: { type: integer }
     cost: { per: request }
 
   - name: set_dmarc_email
@@ -111,6 +138,7 @@ functions:
       - title: Send DMARC reports to one address
         input: { domain_id: 1201, email: "dmarc@example.com" }
     call: { method: POST, path: "/domains/{domain_id}/dmarc-email", body: { email: email } }
+    output: { schema: *domain_out }
     cost: { per: request }
 
   - name: set_dmarc_policy
@@ -128,6 +156,7 @@ functions:
       - title: Quarantine failing mail
         input: { domain_id: 1201, policy: quarantine }
     call: { method: POST, path: "/domains/{domain_id}/dmarc-policy", body: { policy: policy } }
+    output: { schema: *domain_out }
     cost: { per: request }
 
   - name: set_redirect_url
@@ -145,6 +174,7 @@ functions:
       - title: Redirect to the main site
         input: { domain_id: 1201, url: "example.com" }
     call: { method: POST, path: "/domains/{domain_id}/redirect-url", body: { url: url } }
+    output: { schema: *domain_out }
     cost: { per: request }
 
   - name: get_domain_info
@@ -162,6 +192,13 @@ functions:
       - title: Availability of one name
         input: { domain: "example-outreach.com" }
     call: { method: GET, path: /domains/info, query: { domain: domain } }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          available: { type: boolean }
+          price: { type: number }
     cost: { per: request }
 
   - name: get_domain_suggestions
@@ -181,6 +218,14 @@ functions:
       - title: Five variants of a brand
         input: { domain: "example", limit: 5, offset: 0 }
     call: { method: GET, path: /domains/suggestions, query: { domain: domain, limit: limit, offset: offset } }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          domain: { type: string }
+          available: { type: boolean }
+          price: { type: number }
     cost: { per: request }
 
   - name: check_google_workspace_availability
@@ -198,6 +243,7 @@ functions:
       - title: Google Workspace check
         input: { domain: "example-outreach.com" }
     call: { method: POST, path: /domains/google-workspace-availability, body: { domain: domain } }
+    output: { schema: &availability_out { type: object, additionalProperties: false, properties: { isAvailable: { type: boolean } } } }
     cost: { per: request }
 
   - name: check_microsoft_365_availability
@@ -215,6 +261,7 @@ functions:
       - title: Microsoft 365 check
         input: { domain: "example-outreach.com" }
     call: { method: POST, path: /domains/microsoft-365-availability, body: { domain: domain } }
+    output: { schema: *availability_out }
     cost: { per: request }
 
   - name: list_domain_owners
@@ -226,6 +273,24 @@ functions:
       - title: Saved owners
         input: {}
     call: { method: GET, path: /domains/owners }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: [integer, string] }
+          company: { type: string }
+          firstName: { type: string }
+          lastName: { type: string }
+          email: { type: string }
+          streetAddress1: { type: string }
+          streetAddress2: { type: string }
+          city: { type: string }
+          state: { type: string }
+          postalCode: { type: string }
+          country: { type: string }
+          phone: { type: [string, "null"] }
+          gtldVerified: { type: [boolean, "null"] }
     cost: { per: request }
 
   # --- mailboxes -------------------------------------------------------------
@@ -249,7 +314,32 @@ functions:
     call: { method: GET, path: /mailboxes, query: { limit: limit, offset: offset, domainId: domain_id } }
     output:
       items: data
-      strip: &secrets [password, imapPassword, smtpPassword, secret, admin]
+      strip: &secrets [password, imapPassword, smtpPassword, secret, authCode, admin]
+      schema: &mailbox_out
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          email: { type: string }
+          firstName: { type: string }
+          lastName: { type: string }
+          signature: { type: string }
+          forwardTo: { type: string }
+          status: { enum: [active, pending, inactive] }
+          avatar: { type: string }
+          type: { enum: [google, shared, private, outlook] }
+          isAdmin: { type: boolean }
+          domain: *domain_out
+          imapHost: { type: string }
+          imapPort: { type: integer }
+          imapTLS: { type: boolean }
+          imapUsername: { type: string }
+          smtpHost: { type: string }
+          smtpPort: { type: integer }
+          smtpTLS: { type: boolean }
+          smtpUsername: { type: string }
+          scheduledDeletionAt: { type: [string, "null"] }
+          error: { type: [object, "null"] }
     cost: { per: request }
 
   - name: get_mailbox
@@ -266,7 +356,7 @@ functions:
       - title: One mailbox
         input: { mailbox_id: 5301 }
     call: { method: GET, path: "/mailboxes/{mailbox_id}" }
-    output: { strip: *secrets }
+    output: { strip: *secrets, schema: *mailbox_out }
     cost: { per: request }
 
   # --- spam checks -----------------------------------------------------------
@@ -286,7 +376,19 @@ functions:
       - title: Recent spam checks
         input: { limit: 20, offset: 0 }
     call: { method: GET, path: /spam-checks/, query: { limit: limit, offset: offset } }
-    output: { items: data, strip: [mailbox] }
+    output:
+      items: data
+      strip: [mailbox]
+      schema: &spam_check_out
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          createdAt: { type: string, format: date-time }
+          email: { type: string, description: "Mailpool's test address the email was sent to." }
+          fromEmail: { type: string }
+          state: { enum: [pending, completed] }
+          result: { type: [object, "null"], description: "score, and SPF, DKIM, DMARK, domainAge, reverseDNS, ipBlackList, domainBlackList, spamAssassin, shortUrls, brokenLinks, each with a status." }
     cost: { per: request }
 
   - name: create_spam_check
@@ -306,7 +408,7 @@ functions:
       - title: Check one mailbox
         input: { mailbox_id: 5301 }
     call: { method: POST, path: /spam-checks/, body: { mailboxId: mailbox_id } }
-    output: { strip: [mailbox] }
+    output: { strip: [mailbox], schema: *spam_check_out }
     cost: { per: request }
 
   - name: get_spam_check
@@ -323,7 +425,7 @@ functions:
       - title: One spam check
         input: { spam_check_id: 880011 }
     call: { method: GET, path: "/spam-checks/{spam_check_id}" }
-    output: { strip: [mailbox] }
+    output: { strip: [mailbox], schema: *spam_check_out }
     cost: { per: request }
 
   - name: delete_spam_check
@@ -340,6 +442,7 @@ functions:
       - title: Delete one spam check
         input: { spam_check_id: 880011 }
     call: { method: DELETE, path: "/spam-checks/{spam_check_id}" }
+    output: { strip: [mailbox], schema: *spam_check_out }
     cost: { per: request }
 
   # --- warmup ----------------------------------------------------------------
@@ -358,7 +461,20 @@ functions:
       - title: Warmup inboxes
         input: { limit: 50, offset: 0 }
     call: { method: GET, path: /warmup, query: { limit: limit, offset: offset } }
-    output: { items: data }
+    output:
+      items: data
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          mailboxId: { type: integer }
+          email: { type: string }
+          fullName: { type: string }
+          type: { type: string }
+          status: { type: string }
+          warmboxId: { type: [integer, string, "null"] }
+          createdAt: { type: string, format: date-time }
     cost: { per: request }
 
   - name: get_warmup_inbox
@@ -375,6 +491,20 @@ functions:
       - title: One warmup inbox
         input: { warmup_id: 77 }
     call: { method: GET, path: "/warmup/{warmup_id}" }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          mailboxId: { type: integer }
+          email: { type: string }
+          status: { type: string }
+          dailyTarget: { type: number }
+          replyRate: { type: number }
+          duration: { type: [number, "null"] }
+          counters: { type: [object, array, "null"] }
+          createdAt: { type: string, format: date-time }
     cost: { per: request }
 
   - name: list_available_warmup_inboxes
@@ -392,7 +522,16 @@ functions:
       - title: Mailboxes that could be warmed up
         input: { limit: 50, offset: 0 }
     call: { method: GET, path: /warmup/available-inboxes, query: { limit: limit, offset: offset } }
-    output: { items: data }
+    output:
+      items: data
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          id: { type: integer }
+          email: { type: string }
+          fullName: { type: string }
+          type: { type: string }
     cost: { per: request }
 
   # --- subscription ----------------------------------------------------------
@@ -406,4 +545,12 @@ functions:
       - title: Slots in use
         input: {}
     call: { method: GET, path: /subscriptions/slots }
+    output:
+      schema:
+        type: object
+        additionalProperties: false
+        properties:
+          mailboxes: { type: object, description: "Mailboxes in use, per type." }
+          slots: { type: object, description: "Slots paid, per type." }
+          warmup: { type: object, description: "Warmup slots: used and paid." }
     cost: { per: request }
