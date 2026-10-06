@@ -266,6 +266,8 @@ class PappersClient(BrowserClient):
                 for (const item of items) {
                     const text = item.textContent;
 
+                    // 'fermé' / 'En activité' are the labels pappers.fr itself renders (the site
+                    // is French-only): they must stay French or nothing matches.
                     if (text.toLowerCase().includes('fermé')) continue;
                     if (!text.includes('En activité')) continue;
 
@@ -283,7 +285,7 @@ class PappersClient(BrowserClient):
                     etabs.push({
                         siret: siret,
                         adresse: adresse,
-                        statut: 'En activité'
+                        statut: 'active'
                     });
                 }
 

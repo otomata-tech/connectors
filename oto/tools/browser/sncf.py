@@ -49,7 +49,9 @@ class SNCFClient(BrowserClient):
         await self.wait(2)
 
         text = await self.get_text()
-        # Parse trip blocks from page text
+        # Parse trip blocks from page text. The markers below ("Voyage à", "Voir le
+        # détail", "Tout sélectionner") are the labels SNCF Connect itself renders (the
+        # site is French-only): they must stay French or nothing matches.
         import re
         trips = []
         for block in re.split(r"Voyage à ", text):
