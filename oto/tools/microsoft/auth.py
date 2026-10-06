@@ -1,22 +1,22 @@
-"""Auth Microsoft Entra — connexion d'une PERSONNE (OAuth 2.0, code d'autorisation),
-source unique de TOUS les clients Microsoft de la lib.
+"""Microsoft Entra auth — signing in a PERSON (OAuth 2.0, authorization code),
+single source for ALL of the lib's Microsoft clients.
 
-L'application est celle de l'éditeur qui consomme la lib, enregistrée une fois en
-« multilocataire » dans son propre annuaire Entra : `client_id` + `client_secret`,
-passés en argument. Chaque personne l'autorise depuis SON compte Microsoft 365 ;
-le jeton rendu agit avec SES droits (permissions DÉLÉGUÉES), ni plus ni moins.
+The application is the one of the publisher that consumes the lib, registered once as
+"multi-tenant" in its own Entra directory: `client_id` + `client_secret`,
+passed as arguments. Each person authorizes it from THEIR OWN Microsoft 365 account;
+the token returned acts with THEIR rights (DELEGATED permissions), no more, no less.
 
-Trois gestes, un par endpoint du serveur d'autorisation :
-- `authorize_url` — l'URL où envoyer le navigateur ;
-- `exchange_code` — le code de retour contre un `Grant` ;
-- `refresh` — un `refresh_token` contre un `Grant` neuf. ⚠️ Entra fait TOURNER le
-  refresh token : celui rendu remplace l'ancien, l'appelant doit le ranger.
+Three operations, one per authorization-server endpoint:
+- `authorize_url` — the URL to send the browser to;
+- `exchange_code` — the returned code in exchange for a `Grant`;
+- `refresh` — a `refresh_token` in exchange for a fresh `Grant`. ⚠️ Entra ROTATES the
+  refresh token: the one returned replaces the old one, the caller must store it.
 
-Point de terminaison `organizations` : comptes professionnels et scolaires seulement
-(SharePoint et OneDrive Entreprise), pas les comptes Microsoft personnels.
+`organizations` endpoint: work and school accounts only
+(SharePoint and OneDrive for Business), not personal Microsoft accounts.
 
-Mêmes gardes que les autres auth de la lib : le secret part en **`data=`**, jamais en
-`params=`, et pas de `raise_for_status()` (son message embarque l'URL).
+Same guards as the lib's other auth modules: the secret goes in **`data=`**, never in
+`params=`, and no `raise_for_status()` (its message embeds the URL).
 """
 from __future__ import annotations
 
@@ -33,20 +33,20 @@ _AUTHORITY = "https://login.microsoftonline.com/organizations/oauth2/v2.0"
 AUTHORIZE_URL = f"{_AUTHORITY}/authorize"
 TOKEN_URL = f"{_AUTHORITY}/token"
 
-#: Fichiers SharePoint et OneDrive en lecture-écriture, au nom de la personne, et
-#: `offline_access` pour obtenir un refresh token. `User.Read` donne son identité.
+#: SharePoint and OneDrive files, read-write, on behalf of the person, and
+#: `offline_access` to obtain a refresh token. `User.Read` gives their identity.
 FILES_SCOPES = ("offline_access", "User.Read",
                 "https://graph.microsoft.com/Files.ReadWrite.All",
                 "https://graph.microsoft.com/Sites.ReadWrite.All")
 
-# Codes AADSTS qui veulent dire « l'autorisation est morte, reconnecter ».
+# AADSTS codes meaning "the authorization is dead, reconnect".
 _GRANT_MORT = ("invalid_grant", "interaction_required")
 
 
 class MicrosoftAuthError(ValueError):
-    """Refus du serveur d'autorisation Entra. Porte un `status_code` (contrat
-    `UpstreamHTTPError`). `code` = le code AADSTS quand il est lisible
-    (ex. `AADSTS7000215`, secret de l'application invalide), sinon `None`."""
+    """Refusal by the Entra authorization server. Carries a `status_code` (the
+    `UpstreamHTTPError` contract). `code` = the AADSTS code when readable
+    (e.g. `AADSTS7000215`, invalid application secret), otherwise `None`."""
 
     def __init__(self, message: str, *, status_code: int = 401, code: Optional[str] = None):
         super().__init__(message)
@@ -55,9 +55,9 @@ class MicrosoftAuthError(ValueError):
 
 
 class MicrosoftGrantExpired(MicrosoftAuthError):
-    """L'autorisation de la personne n'est plus valable (révoquée, expirée, mot de
-    passe changé, MFA redemandée…) : elle doit se reconnecter. La configuration de
-    l'application, elle, n'est pas en cause."""
+    """The person's authorization is no longer valid (revoked, expired, password
+    changed, MFA required again…): they must reconnect. The application's
+    configuration is not at fault."""
 
 
 @dataclass(frozen=True)
@@ -77,9 +77,9 @@ def _aadsts(description: str) -> Optional[str]:
 def authorize_url(client_id: str, redirect_uri: str, state: str, *,
                   scopes: tuple[str, ...] = FILES_SCOPES,
                   login_hint: Optional[str] = None) -> str:
-    """L'URL du dialogue de connexion Microsoft. `prompt=select_account` : une
-    personne qui a plusieurs comptes choisit le bon au lieu d'être connectée
-    d'office avec celui de son navigateur."""
+    """The URL of the Microsoft sign-in dialog. `prompt=select_account`: a
+    person with several accounts picks the right one instead of being signed
+    in automatically with the one from their browser."""
     params = {
         "client_id": require(client_id, "MICROSOFT_CLIENT_ID"),
         "response_type": "code",
@@ -102,13 +102,13 @@ def _token(data: dict) -> Grant:
         payload = {}
     if resp.status_code >= 400 or "access_token" not in payload:
         description = str(payload.get("error_description") or "")
-        # Seule la 1re ligne : la suite porte un Trace ID et un horodatage.
+        # First line only: the rest carries a Trace ID and a timestamp.
         first_line = description.splitlines()[0] if description else ""
         error = str(payload.get("error") or "")
-        detail = first_line or error or "réponse sans jeton"
+        detail = first_line or error or "response without a token"
         status = resp.status_code if resp.status_code >= 400 else 401
         cls = MicrosoftGrantExpired if error in _GRANT_MORT else MicrosoftAuthError
-        raise cls(f"Entra refuse la demande de jeton (HTTP {resp.status_code}) : {detail}",
+        raise cls(f"Entra refused the token request (HTTP {resp.status_code}): {detail}",
                   status_code=status, code=_aadsts(description))
     return Grant(access_token=payload["access_token"],
                  refresh_token=payload.get("refresh_token") or data.get("refresh_token") or "",
@@ -118,7 +118,7 @@ def _token(data: dict) -> Grant:
 
 def exchange_code(client_id: str, client_secret: str, code: str, redirect_uri: str, *,
                   scopes: tuple[str, ...] = FILES_SCOPES) -> Grant:
-    """Le code ramené par le navigateur contre un `Grant` (avec refresh token)."""
+    """The code brought back by the browser in exchange for a `Grant` (with refresh token)."""
     return _token({  # ⚠️ `data=`, JAMAIS `params=`
         "grant_type": "authorization_code",
         "client_id": require(client_id, "MICROSOFT_CLIENT_ID"),
@@ -131,7 +131,7 @@ def exchange_code(client_id: str, client_secret: str, code: str, redirect_uri: s
 
 def refresh(client_id: str, client_secret: str, refresh_token: str, *,
             scopes: tuple[str, ...] = FILES_SCOPES) -> Grant:
-    """Un `Grant` neuf. ⚠️ Son `refresh_token` remplace celui passé : le ranger."""
+    """A fresh `Grant`. ⚠️ Its `refresh_token` replaces the one passed in: store it."""
     return _token({  # ⚠️ `data=`, JAMAIS `params=`
         "grant_type": "refresh_token",
         "client_id": require(client_id, "MICROSOFT_CLIENT_ID"),

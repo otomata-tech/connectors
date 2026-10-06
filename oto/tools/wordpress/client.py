@@ -44,12 +44,12 @@ from ..common import raise_for_upstream
 from ..common.credentials import require
 from ..common.errors import UpstreamHTTPError
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 _USER_AGENT = "oto-wordpress/1 (+https://oto.cx)"
 _REDIRECTS = (301, 302, 303, 307, 308)
-_MAX_RETRY_WAIT = 10  # s — au-delà, le 429 remonte avec son délai au lieu d'être dormi
-# Une route = segments `[A-Za-z0-9_-]` séparés par `/` (`wp/v2/posts`, `wc/v3/products`) :
-# ni `..`, ni query, ni fragment — rien qui sorte de la route demandée.
+_MAX_RETRY_WAIT = 10  # s — beyond that, the 429 is raised with its delay instead of slept through
+# A route = segments `[A-Za-z0-9_-]` separated by `/` (`wp/v2/posts`, `wc/v3/products`):
+# no `..`, no query, no fragment — nothing that escapes the requested route.
 _ROUTE_RE = re.compile(r"^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$")
 
 
@@ -60,9 +60,9 @@ class WordPressRedirect(ValueError):
     def __init__(self, location: str):
         self.location = location
         super().__init__(
-            f"le site WordPress redirige vers {location or '(cible absente)'} — "
-            "enregistre plutôt cette adresse comme URL du site (https, avec ou "
-            "sans www selon ce que le site sert).")
+            f"the WordPress site redirects to {location or '(target missing)'} — "
+            "store that address as the site URL instead (https, with or "
+            "without www depending on what the site serves).")
 
 
 class WordPressRateLimited(UpstreamHTTPError):
@@ -71,8 +71,8 @@ class WordPressRateLimited(UpstreamHTTPError):
 
     def __init__(self, retry_after: Optional[float]):
         self.retry_after = retry_after
-        wait = f"réessaie dans {int(retry_after)} s" if retry_after is not None else "réessaie plus tard"
-        super().__init__(429, f"limite de débit WordPress atteinte — {wait}.",
+        wait = f"retry in {int(retry_after)} s" if retry_after is not None else "retry later"
+        super().__init__(429, f"WordPress rate limit reached — {wait}.",
                          service="wordpress")
 
 
@@ -86,9 +86,9 @@ class WordPressMediaFieldsError(UpstreamHTTPError):
         self.cause = cause
         super().__init__(
             cause.status_code,
-            f"média {media_id} créé, mais ses champs n'ont pas été posés "
-            f"({cause.body!r}) — mets à jour le média {media_id} plutôt que de "
-            "le téléverser à nouveau.",
+            f"media {media_id} created, but its fields were not set "
+            f"({cause.body!r}) — update media {media_id} instead of "
+            "uploading it again.",
             service="wordpress")
 
 
@@ -103,20 +103,20 @@ def normalize_site_url(site_url: str, *, allow_http: bool = False) -> str:
     stored URL and in error messages."""
     raw = (site_url or "").strip()
     if not raw:
-        raise ValueError("URL du site WordPress manquante.")
+        raise ValueError("WordPress site URL missing.")
     if "://" not in raw:
         raw = "https://" + raw
     parts = urlsplit(raw)
     if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise ValueError("URL de site WordPress invalide : schéma http(s) et nom d'hôte attendus.")
+        raise ValueError("Invalid WordPress site URL: http(s) scheme and host name expected.")
     if parts.username is not None or parts.password is not None:
         raise ValueError(
-            "URL de site WordPress invalide : elle ne doit pas contenir d'identifiants "
-            "(user:mot-de-passe@). Le mot de passe d'application se saisit à part.")
+            "Invalid WordPress site URL: it must not contain credentials "
+            "(user:password@). The application password is entered separately.")
     if parts.scheme == "http" and not allow_http:
         raise ValueError(
-            "URL de site WordPress en http:// refusée : le mot de passe d'application "
-            "partirait en clair. Utilise l'adresse https:// du site.")
+            "WordPress site URL over http:// refused: the application password "
+            "would be sent in clear. Use the site's https:// address.")
     path = parts.path.rstrip("/")
     # Pasting the admin or the API URL is common — keep the site root.
     for suffix in ("/wp-admin", "/wp-json", "/wp-login.php"):
@@ -195,9 +195,9 @@ class WordPressClient:
         if redirect is not None:
             raise WordPressRedirect(redirect)
         raise ValueError(
-            f"{self.site_url} ne répond pas comme un site WordPress : ni "
-            "/wp-json/ ni ?rest_route=/ ne servent l'API REST. Vérifie l'URL, ou "
-            "qu'une extension de sécurité ne désactive pas l'API REST.")
+            f"{self.site_url} does not answer like a WordPress site: neither "
+            "/wp-json/ nor ?rest_route=/ serves the REST API. Check the URL, or "
+            "that a security plugin is not disabling the REST API.")
 
     def request(self, method: str, route: str, *, params: Optional[dict] = None,
                 json: Any = None, data: Optional[bytes] = None,
@@ -279,7 +279,7 @@ class WordPressClient:
             # An object here = a route that is not a collection, or a plugin
             # answering its own shape — never read it as an empty page.
             raise UpstreamHTTPError(
-                502, f"{route} n'a pas renvoyé une liste (reçu : {type(body).__name__}).",
+                502, f"{route} did not return a list (received: {type(body).__name__}).",
                 service="wordpress")
         lower = {k.lower(): v for k, v in headers.items()}
         def _int(name):
@@ -324,7 +324,7 @@ class WordPressClient:
         if extra:
             media_id = media.get("id") if isinstance(media, dict) else None
             if not isinstance(media_id, int):
-                raise UpstreamHTTPError(502, "téléversement sans identifiant de média en retour.",
+                raise UpstreamHTTPError(502, "upload returned no media id.",
                                         service="wordpress")
             try:
                 media = self.update("wp/v2/media", media_id, extra)
@@ -371,7 +371,7 @@ def _parse(resp: Any) -> Any:
     if status in _REDIRECTS:
         raise WordPressRedirect(resp.headers.get("Location", ""))
     if 300 <= status < 400:
-        raise UpstreamHTTPError(502, f"réponse HTTP {status} inattendue.", service="wordpress")
+        raise UpstreamHTTPError(502, f"unexpected HTTP {status} response.", service="wordpress")
     raise_for_upstream(resp, service="wordpress")
     if not resp.content:
         return {}
@@ -379,4 +379,4 @@ def _parse(resp: Any) -> Any:
         return resp.json()
     except ValueError:
         raise UpstreamHTTPError(
-            502, f"réponse non-JSON (début : {resp.text[:200]!r})", service="wordpress")
+            502, f"non-JSON response (start: {resp.text[:200]!r})", service="wordpress")

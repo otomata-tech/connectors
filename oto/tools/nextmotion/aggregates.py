@@ -70,11 +70,11 @@ def _age_from_birth_date(birth_date: str, *, as_of: date) -> int:
         y, m, d = (int(p) for p in birth_date.split("-"))
     except (ValueError, AttributeError) as exc:
         raise ValueError(
-            f"birth_date {birth_date!r} n'est pas au format YYYY-MM-DD."
+            f"birth_date {birth_date!r} is not in YYYY-MM-DD format."
         ) from exc
     age = as_of.year - y - ((as_of.month, as_of.day) < (m, d))
     if not 0 <= age <= 130:
-        raise ValueError(f"birth_date {birth_date!r} donne un âge incohérent ({age}).")
+        raise ValueError(f"birth_date {birth_date!r} gives an inconsistent age ({age}).")
     return age
 
 
@@ -86,7 +86,7 @@ def _department_from_zip(zip_code: str) -> str:
     not for naming an individual commune."""
     z = (zip_code or "").strip()
     if not z.isdigit() or len(z) != 5:
-        raise ValueError(f"zip_code {zip_code!r} n'est pas un code postal français à 5 chiffres.")
+        raise ValueError(f"zip_code {zip_code!r} is not a 5-digit French zip code.")
     if z[:2] in ("97", "98"):
         return z[:3]
     if z[:2] == "20":
@@ -105,7 +105,7 @@ def _period_key(row: Dict[str, Any], period_field: Optional[str], prefix_len: in
         value = row[period_field]
     except KeyError as exc:
         raise ValueError(
-            f"period_field={period_field!r} absent d'une rangée patient."
+            f"period_field={period_field!r} missing from a patient row."
         ) from exc
     return str(value)[:prefix_len]
 
@@ -159,11 +159,11 @@ def aggregate_patients(
             zip_code = row["zip_code"]
         except KeyError as exc:
             raise ValueError(
-                f"Rangée patient sans champ {exc} (attendu birth_date/gender/zip_code "
-                "— voir list_patients)."
+                f"Patient row without field {exc} (expected birth_date/gender/zip_code "
+                "— see list_patients)."
             ) from exc
         if gender_code not in _GENDER_LABELS:
-            raise ValueError(f"gender {gender_code!r} inattendu (attendu 0, 1 ou 2).")
+            raise ValueError(f"gender {gender_code!r} unexpected (expected 0, 1 or 2).")
 
         gender = _GENDER_LABELS[gender_code]
         age = _age_from_birth_date(birth_date, as_of=as_of)
@@ -198,11 +198,11 @@ def aggregate_patients(
                 if count >= min_group_size
             ][:top_geography],
             "suppressed_note": (
-                "Tout groupe (tranche d'âge x sexe, zone géographique, ou le total "
-                f"de ce groupe) de moins de {min_group_size} patients est retiré de "
-                "cette réponse — jamais de ligne patient individuelle. Seuil par "
-                "défaut, pas une norme imposée : à ajuster au risque de "
-                "ré-identification propre à chaque clinique."
+                "Any group (age band x sex, geographic area, or the total "
+                f"of that group) with fewer than {min_group_size} patients is removed from "
+                "this response — never an individual patient row. Default "
+                "threshold, not an imposed standard: adjust it to each "
+                "clinic's own re-identification risk."
             ),
         }
 
@@ -214,7 +214,7 @@ def aggregate_patients(
         "gender_distribution": {},
         "age_gender_distribution": [],
         "top_geography": [],
-        "suppressed_note": f"Aucun patient en entrée — rien à agréger (seuil {min_group_size}).",
+        "suppressed_note": f"No patient in input — nothing to aggregate (threshold {min_group_size}).",
     }
     if period_field is None:
         return results.get(None, _empty)
