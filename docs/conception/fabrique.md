@@ -5,7 +5,7 @@
 
 ## Résumé
 
-La fabrique lit les [fichiers de description](format-de-description.md) et génère, pour chaque connecteur partagé, un client Python dans la lib et des fonctions TypeScript au contrat du paquet d'oto 2, livrées dans un paquet npm que le paquet déclare et inscrit. Elle vit dans ce dépôt, à côté des descriptions, écrite en Python. Elle traduit la table des erreurs en refus typés et génère les tests qui prouvent que les deux sorties servent le même contrat. Rien n'en est encore écrit.
+La fabrique lit les [fichiers de description](format-de-description.md) et génère, pour chaque connecteur partagé, des définitions TypeScript structurelles et typées, que le paquet d'oto 2 adapte à son contrat de fonction et exécute ; puis, dans un second temps, un client Python dans la lib. Elle vit dans ce dépôt, à côté des descriptions, écrite en Python (`fabrique/`) ; sa sortie TypeScript est commitée sous `ts/`, et sera publiée en paquet npm. La sortie TypeScript existe ; la sortie Python, pas encore.
 
 ## Contexte
 
@@ -37,10 +37,14 @@ Chaque `connectors/<nom>/connector.yaml`, validé contre `connectors/connector.s
 | Sortie | Contenu |
 |---|---|
 | Python, dans la lib | Une méthode par fonction sur le client du connecteur, au-dessus d'un runtime commun : transport, authentification par `auth.kind`, encodage des listes (`query_arrays`), pagination. |
-| TypeScript, en paquet npm | Une fonction par entrée de `functions`, au contrat du paquet : nom, connecteur, classe, schéma d'entrée, exemples, refus, exécution, résumé de confirmation ; et la liste que le paquet inscrit à son catalogue. |
-| Les deux | La table des erreurs et les `refusals` traduits en erreurs typées ; les tests de contrat. |
+| TypeScript, sous `ts/src/` | Un module par connecteur : sa définition (authentification, `baseUrl`, table d'erreurs, délai en millisecondes, exposition) et une définition par fonction (nom qualifié `<connecteur>.<fonction>`, classe, description, schéma d'entrée en `zod` strict, exemples avec leur titre, refus en table `code`/`when`/`message`, spécification de requête, pagination, sortie, coût, résumé de confirmation) ; un index qui les liste. Le contrat de ces définitions est un module écrit à la main, `ts/src/types.ts`. |
+| Les deux | La table des erreurs et les `refusals`, en table ; les tests de contrat. |
 
-- La pagination ajoute `all_pages` et `max_pages` au schéma servi ; `max_pages` borne le parcours.
+- La sortie TypeScript ne dépend pas du paquet d'oto 2, seulement de `zod` (dépendance paire, import `zod/v4`) : pas de cycle. Le paquet l'adapte à son contrat (refus en chaînes, exemples sans titre, codes d'erreur à lui) et l'exécute avec son client HTTP, son coffre et son journal.
+- La spécification de requête dit la méthode, le chemin et ses `{param}`, et pour `query`, `body` et `headers` le nom côté API de chaque argument ; la sortie ne contient aucun code qui envoie une requête.
+- Le schéma `zod` ne dit que ce que `zod` dit sans raffinement, pour que le schéma servi et le schéma validé restent le même : types, `null`, `enum` et `const`, bornes, `pattern`, objets stricts ou ouverts, `anyOf`, et `oneOf` quand ses branches s'excluent à coup sûr. Les annotations (`description`, `default`, `format`…) passent par `.meta()`. Une fonction dont l'entrée demande plus (`oneOf`, `not`, `minProperties` ou `dependentRequired` à la racine, `not` ou `uniqueItems` plus bas, `oneOf` aux branches qui se recouvrent) n'est pas générée : elle est nommée, avec sa raison, en tête du module et à la sortie de la commande.
+- La pagination ajoute `all_pages` et `max_pages` au schéma servi ; `max_pages` borne le parcours, que l'hôte mène.
+- `python -m fabrique` régénère `ts/src/` ; `python -m fabrique --check` échoue si la sortie commitée n'est pas à jour. On la lance à la main ; la CI vérifie, par `tests/test_fabrique.py`, que la sortie commitée est à jour, et compile et teste `ts/`.
 - La projection suit `exposure.mode` : en `per_action`, un outil `<namespace>_<name>` par fonction, schéma tel quel ; en `per_connector`, un outil qui reçoit `action` (l'énumération des noms) et un schéma en `oneOf` des entrées ; en `via_call`, rien n'est exposé et le verbe d'appel lit le registre.
 - Tests de contrat : le schéma d'entrée servi est le même des deux côtés ; chaque exemple est joué contre le schéma et contre un serveur simulé.
 
@@ -49,7 +53,7 @@ Chaque `connectors/<nom>/connector.yaml`, validé contre `connectors/connector.s
 - Le corps d'une entrée `handwritten` et l'authentification `oauth2_user`.
 - Le runtime commun, écrit une fois par langage : cache de jeton (au niveau du processus, indexé par une empreinte du credential, jamais par le secret en clair), rejeu unique sur 401, limiteur de débit partagé.
 - La fusion de plusieurs appels, les refus locaux avant l'appel, la construction d'un mail, l'identité opérée.
-- Le texte d'un résultat, tant que la question de qui l'écrit reste ouverte.
+- Le texte d'un résultat : le paquet le compose, dans son adaptateur.
 
 ### Le secret
 
@@ -62,7 +66,7 @@ Le code généré ne lit aucun secret. En Python, le constructeur du client reç
 ### Livraison
 
 - La lib se publie sur PyPI, sur un tag posé à la main (`docs/release.md`).
-- Le paquet npm des connecteurs partagés se publie de même, sur un tag posé à la main avec l'accord du mainteneur. Le paquet d'oto 2 le déclare en dépendance et inscrit ses fonctions ; la source de vérité reste ici.
+- Le paquet npm des connecteurs partagés (`ts/`, nom provisoire `@otomata_tech/connectors`, privé à ce jour) se publiera de même, sur un tag posé à la main avec l'accord du mainteneur. Le paquet d'oto 2 le déclarera en dépendance et adaptera ses définitions ; la source de vérité reste ici.
 
 ### Oto 1, connecteur par connecteur
 
@@ -83,6 +87,9 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - **Partir de zéro, sans la lib** : écarté le 30/09. La lib est gardée pour les connecteurs partagés, au secret fourni par le consommateur.
 - **TypeScript seul, la lib Python gelée jusqu'à l'extinction d'oto 1** : écarté le 06/10. Une seule version des connecteurs passe par la description et la fabrique, pas par l'abandon d'un des deux langages ; la description devient la source du client Python comme du TypeScript, et un client Python écrit à la main à côté d'elle est un doublon à résorber.
 - **Python seul, appelé à distance par oto 2** : écarté de nouveau le 06/10, pour les raisons du service connecteurs abandonné le 29/09.
+- **Une sortie TypeScript au contrat du paquet** (fonctions `defineFunction` prêtes à inscrire) : écarté le 06/10. Elle dépendrait du paquet, qui dépendrait d'elle ; la sortie porte des définitions structurelles, que le paquet adapte.
+- **Une sortie produite à la publication, non commitée** : écarté le 06/10. Commitée, elle se relit dans une revue et un test prouve qu'elle suit les descriptions.
+- **Un schéma `zod` approché par des raffinements** pour les contraintes que `zod` ne dit pas : non retenu à ce jour ; un raffinement ne se voit pas dans le schéma servi.
 - **La fabrique avant la prise du paquet** : écarté le 06/10. Le paquet d'oto 2 reçoit d'abord sa prise (contrat de connecteur, secret à l'appel, comptes réels), prouvée par un connecteur témoin écrit à la main au contrat du paquet, `notion` ; la fabrique génère ensuite ce même contrat et remplace le témoin.
 
 ## Sécurité et confidentialité
@@ -94,21 +101,18 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 
 ## Écart avec le code
 
-- Aucune fabrique : ni générateur, ni runtime commun dans l'un ou l'autre langage, ni paquet npm de connecteurs, ni test de contrat entre les deux langages. Seuls existent le schéma, douze descriptions et leur test de validation ([format de description](format-de-description.md), « Les connecteurs décrits »).
-- Les deux règles hors schéma JSON ne sont vérifiées nulle part.
+- Écrits : le générateur (`fabrique/`), la sortie TypeScript commitée (`ts/src/`, treize connecteurs) et son contrat (`ts/src/types.ts`), leurs tests (`tests/test_fabrique.py`, `ts/test/`) et le contrôle en CI. Les deux règles hors schéma JSON sont vérifiées.
+- 303 fonctions sur 340 sont générées ; 37 ne le sont pas, leur entrée demandant un raffinement (liste en tête de chaque module).
+- Pas de sortie Python, ni de runtime commun, ni de test de contrat entre les deux langages. Le client Python Sellsy reste écrit à la main, sur des verbes génériques.
+- Un en-tête constant (`Notion-Version`) ne se décrit pas : la définition générée de `notion.search_workspace` porte la requête du témoin écrit à la main dans le paquet, pas cet en-tête.
+- Le paquet d'oto 2 n'adapte pas encore la sortie : son client HTTP ne connaît ni `PUT`, ni la query, ni un autre mode d'authentification que le jeton porteur.
 - Le backend d'oto 1 n'a pas de lecteur de la description : tous ses outils restent déclarés à la main.
-- Le client Python Sellsy est écrit à la main, sur des verbes génériques (`list_records`, `search_records`) ; il n'est pas généré.
-- Côté paquet d'oto 2, au 05/10 (version 1.4.0), la sortie TypeScript n'a pas encore où se brancher : la fonction de connecteur n'est exportée que pour les sources du paquet, son origine porte encore le nom du service abandonné, le contexte d'appel ne porte pas de secret (oto-pkg : docs/conception/connecteurs-et-comptes.md, « Écart avec le code »).
-- Trois formes diffèrent entre la description et le contrat du paquet : les refus sont une table structurée ici, une liste de chaînes là-bas ; un exemple porte un titre ici, pas là-bas ; le schéma d'entrée est un JSON Schema ici, un objet `zod` strict là-bas.
 
 ## Questions ouvertes
 
-- Qui fait tourner la fabrique, et quand : à la main, en CI, au tag ?
-- La sortie générée est-elle commitée, ou produite à la publication ?
-- Le nom et la portée du paquet npm des connecteurs partagés.
-- Qui écrit le texte d'un résultat, que le client Python rend en dictionnaire brut et que le paquet exige ?
-- Le schéma servi au paquet : `zod` généré depuis le JSON Schema, ou un JSON Schema accepté par le paquet ?
-- Les refus nommés côté paquet : des chaînes, ou la table structurée (`code`, `when`, `message`) ?
+- Le nom définitif et la portée du paquet npm des connecteurs partagés.
+- Les fonctions non générées : raffinement `zod` doublé de l'annotation JSON Schema, ou entrée réécrite dans la description ?
+- Un en-tête constant par connecteur, dans le format.
 - Pendant la bascule d'oto 1 vers oto 2, un connecteur utile sans description passe-t-il par un doublage à la main ?
 
 ## Historique
@@ -120,3 +124,4 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - 2026-10-05 : reprise en document de conception vivant depuis la conception connecteurs d'oto 2 (oto-enterprise, archivé) — décidé par le mainteneur.
 - 2026-10-06 : une seule version des connecteurs, par la description et la fabrique ; TypeScript seul et Python à distance écartés ; la prise du paquet d'abord, avec un témoin `notion` écrit à la main — décidé par le mainteneur.
 - 2026-10-06 : le backend d'oto 1 bascule connecteur par connecteur sur la description, par un lecteur générique ; ses noms d'outils changent connecteur par connecteur — décidé par le mainteneur.
+- 2026-10-06 : la sortie TypeScript est commitée dans ce dépôt (`ts/`), en définitions structurelles qui ne dépendent pas du paquet ; schéma d'entrée en `zod` strict généré, refus en table, texte du résultat composé par le paquet ; première version du générateur — décidé par le mainteneur.

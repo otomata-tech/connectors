@@ -51,3 +51,7 @@ namespaces = true
 [tool.setuptools.package-data]
 "oto.tools.sirene" = ["data/*.txt"]
 "oto.tools.pdf" = ["templates/*.css"]
+
+# `fabrique/` (le générateur, outil du dépôt et pas de la lib) s'importe depuis la racine dans les tests.
+[tool.pytest.ini_options]
+pythonpath = ["."]

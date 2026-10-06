@@ -37,3 +37,21 @@ jobs:
         run: pip install -e ".[anonymize,google,planity]" pytest "jsonschema>=4.18"
       - name: Tests
         run: pytest -q
+
+  # Sortie TypeScript de la fabrique (`ts/`) : elle compile et ses définitions tiennent leurs exemples et la requête
+  # du témoin Notion. Que la sortie commitée soit à jour se vérifie dans `test` (`tests/test_fabrique.py`).
+  fabrique-ts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ts
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ts/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run

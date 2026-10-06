@@ -20,7 +20,7 @@ Les documents de conception de ce dépôt : pour chaque sujet, **comment** c'est
 | Document | La question à laquelle il répond | Statut |
 |---|---|---|
 | [Format de description](format-de-description.md) | Comment décrit-on un connecteur partagé, et que doit contenir son fichier ? | validé avec Alexis le 29/09/2026 |
-| [La fabrique](fabrique.md) | Comment un fichier de description devient-il un client Python et des fonctions TypeScript au contrat du paquet d'oto 2 ? | proposé |
+| [La fabrique](fabrique.md) | Comment un fichier de description devient-il des définitions TypeScript que le paquet d'oto 2 adapte, puis un client Python ? | proposé |
 
 ## Anciens identifiants → document
 
