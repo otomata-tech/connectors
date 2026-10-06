@@ -41,6 +41,50 @@
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/identifier" }
     },
+    "constant_headers": {
+      "description": "Header name to a constant value. Never a secret: the file is public.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[A-Za-z0-9-]+$" },
+      "additionalProperties": { "type": "string" }
+    },
+    "check": {
+      "description": "A check of the input before the call: when it fails, nothing is sent and the named refusal is returned.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "refusal", "items", "fields"],
+          "properties": {
+            "kind": {
+              "description": "Over the items of a list argument, the sum of the first field equals the sum of the second; decimal strings are summed exactly.",
+              "const": "equal_sums"
+            },
+            "refusal": { "$ref": "#/$defs/identifier" },
+            "items": { "description": "Input argument holding the list.", "$ref": "#/$defs/identifier" },
+            "fields": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/identifier" } }
+          }
+        }
+      ]
+    },
+    "expectation": {
+      "description": "A check of the response: when it fails, the named refusal is returned instead of the response.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "refusal", "path"],
+          "properties": {
+            "kind": {
+              "description": "The value at path is present and is not null, nor an empty string, list or object.",
+              "const": "non_empty"
+            },
+            "refusal": { "$ref": "#/$defs/identifier" },
+            "path": { "description": "Dotted path in the response.", "$ref": "#/$defs/text" }
+          }
+        }
+      ]
+    },
     "handwritten": {
       "description": "Code written by hand, referenced from the file. The rest of the entry stays declarative.",
       "type": "object",
@@ -132,6 +176,35 @@
         "query_arrays": {
           "description": "Encoding of lists in the query string.",
           "enum": ["repeat", "brackets", "comma"]
+        },
+        "headers": {
+          "description": "Constant headers sent with every request of every function.",
+          "$ref": "#/$defs/constant_headers"
+        },
+        "rate_limit": {
+          "description": "Highest rate the third party accepts, per credential: at most `requests` requests every `seconds` seconds.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requests", "seconds"],
+          "properties": {
+            "requests": { "type": "integer", "minimum": 1 },
+            "seconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "probe": {
+          "description": "The function that checks a connection: a read function without required argument, never counted against a quota.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["function"],
+          "properties": {
+            "function": { "$ref": "#/$defs/identifier" },
+            "non_empty": {
+              "description": "Dotted paths that must be present and non-empty in its response.",
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/text" }
+            }
+          }
         },
         "errors": {
           "description": "Error table shared by every function.",
@@ -310,6 +383,18 @@
             }
           }
         },
+        "checks": {
+          "description": "Checks of the input before the call; each names one of the function's refusals.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/check" }
+        },
+        "expect": {
+          "description": "Checks of the response; each names one of the function's refusals.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/expectation" }
+        },
         "call": {
           "type": "object",
           "additionalProperties": false,
@@ -322,8 +407,30 @@
               "pattern": "^/[^\\s?#]*$"
             },
             "query": { "$ref": "#/$defs/argument_map" },
-            "body": { "$ref": "#/$defs/argument_map" },
-            "headers": { "$ref": "#/$defs/argument_map" }
+            "body": { "description": "JSON body, whatever the method: a DELETE may carry one.", "$ref": "#/$defs/argument_map" },
+            "headers": { "$ref": "#/$defs/argument_map" },
+            "constants": {
+              "description": "Values sent with every call of this function. They are not arguments: the agent neither sees nor sets them.",
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "query": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": { "type": ["string", "number", "boolean"] }
+                },
+                "body": { "type": "object", "minProperties": 1 },
+                "headers": { "$ref": "#/$defs/constant_headers" }
+              }
+            },
+            "encode": {
+              "description": "Argument name to its encoding before it is placed: json serialises a structured argument into one string.",
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": { "$ref": "#/$defs/identifier" },
+              "additionalProperties": { "enum": ["json"] }
+            }
           }
         },
         "pagination": {
@@ -336,6 +443,10 @@
             "request_param": { "description": "Input argument carrying the cursor or page number.", "$ref": "#/$defs/identifier" },
             "next": { "description": "Dotted path of the next cursor or page number in the response.", "$ref": "#/$defs/text" },
             "total": { "description": "Dotted path of the total count in the response.", "$ref": "#/$defs/text" },
+            "more": {
+              "description": "Dotted path of a boolean in the response: false means this page is the last, whatever next holds.",
+              "$ref": "#/$defs/text"
+            },
             "max_pages": { "type": "integer", "minimum": 1 }
           }
         },

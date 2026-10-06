@@ -123,12 +123,42 @@ def _output_schema_no_properties(d):
     del d["functions"][0]["output"]["schema"]["properties"]
 
 
+def _rate_limit_without_window(d):
+    d["connector"]["rate_limit"] = {"requests": 4}
+
+
+def _constant_header_not_a_string(d):
+    d["connector"]["headers"] = {"X-Api-Version": 2}
+
+
+def _unknown_encoding(d):
+    d["functions"][0]["call"]["encode"] = {"limit": "csv"}
+
+
+def _unknown_check_kind(d):
+    d["functions"][0]["checks"] = [{"kind": "positive", "refusal": "invalid_request", "items": "limit", "fields": ["a", "b"]}]
+
+
+def _expectation_without_path(d):
+    d["functions"][1]["expect"] = [{"kind": "non_empty", "refusal": "estimate_not_found"}]
+
+
+def _probe_extra_key(d):
+    d["connector"]["probe"] = {"function": "get_estimate", "covers": "quota"}
+
+
+def _empty_stop_flag(d):
+    d["functions"][0]["pagination"]["more"] = ""
+
+
 @pytest.mark.parametrize("mutate", [
     _drop_class, _unknown_key, _call_and_handwritten, _neither_call_nor_handwritten,
     _sensitive_without_confirm, _input_not_strict, _no_examples, _example_outside_input,
     _example_unknown_argument, _embed_not_documented, _auth_missing_token_url,
     _credential_missing, _quota_without_platform, _bad_version, _bad_exposure,
     _output_schema_not_strict, _output_schema_no_properties,
+    _rate_limit_without_window, _constant_header_not_a_string, _unknown_encoding, _unknown_check_kind,
+    _expectation_without_path, _probe_extra_key, _empty_stop_flag,
 ], ids=lambda f: f.__name__.lstrip("_"))
 def test_invalid_description_is_rejected(mutate):
     description = _sellsy()

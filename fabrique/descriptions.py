@@ -1,8 +1,8 @@
 """Lecture et contrôle des fichiers de description.
 
 Un fichier est lu, validé contre `connectors/connector.schema.json` (chaque exemple
-contre l'entrée de sa fonction), puis contre les deux règles que le schéma JSON ne
-sait pas dire :
+contre l'entrée de sa fonction), puis contre les règles que le schéma JSON ne sait
+pas dire :
 
 1. chaque argument d'entrée va à un seul endroit de `call` (chemin, query, corps ou
    en-tête), chaque `{param}` du chemin et chaque valeur de `query`, `body` et
@@ -10,7 +10,16 @@ sait pas dire :
    argument n'est sans place, et le `request_param` d'une pagination est un
    argument ;
 2. chaque référence de `auth` (`key`, `token`, `username`, `password`, `client_id`,
-   `client_secret`) nomme un champ de `credential`.
+   `client_secret`) nomme un champ de `credential` ;
+3. un nom côté API reçoit une seule valeur : une constante de `call.constants` ne
+   reprend pas un nom de la même place, un en-tête constant (du connecteur ou de la
+   fonction) ni celui de l'authentification ni un autre en-tête, à la casse près ;
+   chaque clé de `call.encode` nomme un argument placé en query, en corps ou en
+   en-tête ;
+4. chaque contrôle (`checks`, `expect`) nomme un refus de sa fonction ; `equal_sums`
+   porte sur un argument liste dont les éléments déclarent les deux champs ;
+5. la sonde nomme une fonction de lecture du connecteur, appelée par `call`, sans
+   argument requis.
 
 Un fichier fautif lève `DescriptionError`, qui nomme le fichier, la fonction et la
 règle : la fabrique ne génère alors rien.
@@ -113,6 +122,11 @@ def check_arguments(function: dict, where: str) -> None:
         raise DescriptionError(
             f"{where}: function {name}: pagination request_param {pagination['request_param']!r} is not an input argument"
         )
+    for argument in call.get("encode") or {}:
+        if argument not in placed or placed[argument] == "the path":
+            raise DescriptionError(
+                f"{where}: function {name}: encode names {argument!r}, which is not placed in query, body or headers"
+            )
 
 
 def check_auth(connector: dict, where: str) -> None:
@@ -127,6 +141,79 @@ def check_auth(connector: dict, where: str) -> None:
             )
 
 
+def _auth_header(auth: dict) -> str | None:
+    if auth["kind"] == "api_key":
+        return auth["header"]
+    if auth["kind"] in ("bearer", "basic", "oauth2_client_credentials"):
+        return "Authorization"
+    return None
+
+
+def check_constants(connector: dict, function: dict, where: str) -> None:
+    """Règle 3 : un nom côté API, une seule valeur."""
+    call = function.get("call")
+    if call is None:
+        return
+    name = function["name"]
+    constants = call.get("constants") or {}
+    for kind in ("query", "body"):
+        for api_name in constants.get(kind) or {}:
+            if api_name in (call.get(kind) or {}):
+                raise DescriptionError(
+                    f"{where}: function {name}: {kind} {api_name!r} is both a constant and an argument"
+                )
+    seen: dict[str, str] = {}
+    auth_header = _auth_header(connector["auth"])
+    if auth_header:
+        seen[auth_header.lower()] = "the authentication"
+    sources = [
+        ("the connector headers", connector.get("headers") or {}),
+        ("the function constant headers", constants.get("headers") or {}),
+        ("the function headers", call.get("headers") or {}),
+    ]
+    for source, headers in sources:
+        for header in headers:
+            if header.lower() in seen:
+                raise DescriptionError(
+                    f"{where}: function {name}: header {header!r} is set twice ({seen[header.lower()]} and {source})"
+                )
+            seen[header.lower()] = source
+
+
+def check_checks(function: dict, where: str) -> None:
+    """Règle 4 : un contrôle nomme un refus de sa fonction, et `equal_sums` une liste qui a ses deux champs."""
+    name = function["name"]
+    refusals = {refusal["code"] for refusal in function.get("refusals", [])}
+    for check in function.get("checks", []) + function.get("expect", []):
+        if check["refusal"] not in refusals:
+            raise DescriptionError(
+                f"{where}: function {name}: {check['kind']} names refusal {check['refusal']!r}, which the function does not declare"
+            )
+        if check["kind"] == "equal_sums":
+            argument = function["input"]["properties"].get(check["items"])
+            item = (argument or {}).get("items") if (argument or {}).get("type") == "array" else None
+            missing = [f for f in check["fields"] if f not in ((item or {}).get("properties") or {})]
+            if item is None or missing:
+                raise DescriptionError(
+                    f"{where}: function {name}: equal_sums needs {check['items']!r} to be a list argument whose items "
+                    f"declare {', '.join(check['fields'])}"
+                )
+
+
+def check_probe(data: dict, where: str) -> None:
+    """Règle 5 : la sonde est une lecture par `call`, appelable sans argument."""
+    probe = data["connector"].get("probe")
+    if probe is None:
+        return
+    function = next((f for f in data["functions"] if f["name"] == probe["function"]), None)
+    if function is None:
+        raise DescriptionError(f"{where}: probe names {probe['function']!r}, which is not a function of the connector")
+    if function["class"] != "read" or "call" not in function or function["input"].get("required"):
+        raise DescriptionError(
+            f"{where}: probe {probe['function']!r} must be a read function with a call and no required argument"
+        )
+
+
 def check(data: dict, path: pathlib.Path) -> Description:
     where = _relative(path)
     if not isinstance(data, dict):
@@ -137,10 +224,13 @@ def check(data: dict, path: pathlib.Path) -> Description:
     check_auth(data["connector"], where)
     for function in data["functions"]:
         check_arguments(function, where)
+        check_constants(data["connector"], function, where)
+        check_checks(function, where)
     names = [function["name"] for function in data["functions"]]
     twice = sorted({n for n in names if names.count(n) > 1})
     if twice:
         raise DescriptionError(f"{where}: function name(s) declared twice: {', '.join(twice)}")
+    check_probe(data, where)
     return Description(path=path, data=data)
 
 

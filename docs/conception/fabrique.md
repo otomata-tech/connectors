@@ -11,7 +11,7 @@ La fabrique lit les [fichiers de description](format-de-description.md) et gén�
 
 - Oto 2 connaît deux sortes de connecteurs. Un connecteur propre à un hôte s'écrit dans l'hôte, à la main, au contrat de fonction du paquet. Un connecteur partagé a sa source ici et passe par la fabrique. Le contrat côté hôte (fonction du catalogue, comptes, secret fourni à l'appel, coffre) est décrit dans oto-pkg : docs/conception/connecteurs-et-comptes.md ; ce document ne le répète pas.
 - Le langage servi dépend du consommateur, pas du connecteur : Python pour tout consommateur écrit en Python, TypeScript pour le paquet d'oto 2.
-- Côté paquet, au relevé du 29/09 : les fonctions s'inscrivent par une liste statique d'imports, la source TypeScript est transpilée par l'hôte, les dépendances sont épinglées, `zod` est une dépendance paire.
+- Côté paquet, au relevé du 29/09 : les fonctions s'inscrivent par une liste statique d'imports, la source TypeScript est transpilée par l'hôte, les dépendances sont épinglées. Pour une fonction de connecteur, le paquet reçoit le JSON Schema d'entrée et le valide lui-même, avec un validateur JSON Schema standard.
 - Côté lib : depuis la version 1.148.0, aucun client ne lit de secret ; il le reçoit en paramètre et l'exige par `require`, qui lève `MissingCredential`.
 - Le backend d'oto 1 consomme la lib en Python et déclare à la main, pour chaque connecteur, ses outils (nom, description, schéma) et une logique propre (avertissements, bornes, messages d'erreur) : une deuxième version de ce que dit la description.
 
@@ -30,20 +30,28 @@ La fabrique lit les [fichiers de description](format-de-description.md) et gén�
 
 ### Ce qu'elle lit et vérifie
 
-Chaque `connectors/<nom>/connector.yaml`, validé contre `connectors/connector.schema.json`, puis les deux règles que le schéma JSON ne sait pas dire : chaque argument d'`input` va à un seul endroit de `call` (chemin, query, corps ou en-tête), et chaque référence de `auth` nomme un champ de `credential`. Un argument sans place, ou une référence morte, fait refuser le fichier.
+Chaque `connectors/<nom>/connector.yaml`, validé contre `connectors/connector.schema.json`, puis les règles que le schéma JSON ne sait pas dire :
+1. chaque argument d'`input` va à un seul endroit de `call` (chemin, query, corps ou en-tête) ;
+2. chaque référence de `auth` nomme un champ de `credential` ;
+3. un nom côté API reçoit une seule valeur : une constante ne reprend pas le nom d'un argument de la même place, un en-tête n'est posé qu'une fois (authentification, en-têtes du connecteur, de la fonction, à la casse près), et `encode` ne nomme qu'un argument placé en query, en corps ou en en-tête ;
+4. un contrôle (`checks`, `expect`) nomme un refus de sa fonction, et `equal_sums` une liste dont les éléments déclarent les deux champs ;
+5. la sonde nomme une fonction de lecture, appelée par `call`, sans argument requis.
+
+Une règle violée fait refuser le fichier, et rien n'est généré.
 
 ### Ce qu'elle génère
 
 | Sortie | Contenu |
 |---|---|
 | Python, dans la lib | Une méthode par fonction sur le client du connecteur, au-dessus d'un runtime commun : transport, authentification par `auth.kind`, encodage des listes (`query_arrays`), pagination. |
-| TypeScript, sous `ts/src/` | Un module par connecteur : sa définition (authentification, `baseUrl`, table d'erreurs, délai en millisecondes, exposition) et une définition par fonction (nom qualifié `<connecteur>.<fonction>`, classe, description, schéma d'entrée en `zod` strict, exemples avec leur titre, refus en table `code`/`when`/`message`, spécification de requête, pagination, sortie, coût, résumé de confirmation) ; un index qui les liste. Le contrat de ces définitions est un module écrit à la main, `ts/src/types.ts`. |
+| TypeScript, sous `ts/src/` | Un module par connecteur : sa définition (authentification, `baseUrl`, table d'erreurs, délai en millisecondes, exposition, en-têtes constants, rythme maximal, sonde) et une définition par fonction (nom qualifié `<connecteur>.<fonction>`, classe, description, schéma d'entrée en JSON Schema, exemples avec leur titre, refus en table `code`/`when`/`message`, contrôles avant l'appel et sur la réponse, spécification de requête avec constantes et encodages, pagination, sortie, coût, résumé de confirmation) ; un index qui les liste. Le contrat de ces définitions est un module écrit à la main, `ts/src/types.ts`. |
 | Les deux | La table des erreurs et les `refusals`, en table ; les tests de contrat. |
 
-- La sortie TypeScript ne dépend pas du paquet d'oto 2, seulement de `zod` (dépendance paire, import `zod/v4`) : pas de cycle. Le paquet l'adapte à son contrat (refus en chaînes, exemples sans titre, codes d'erreur à lui) et l'exécute avec son client HTTP, son coffre et son journal.
+- La sortie TypeScript ne dépend ni du paquet d'oto 2 ni d'aucune bibliothèque : pas de cycle. Le paquet l'adapte à son contrat (refus en chaînes, exemples sans titre, codes d'erreur à lui) et l'exécute avec son client HTTP, son coffre et son journal.
 - La spécification de requête dit la méthode, le chemin et ses `{param}`, et pour `query`, `body` et `headers` le nom côté API de chaque argument ; la sortie ne contient aucun code qui envoie une requête.
-- Le schéma `zod` ne dit que ce que `zod` dit sans raffinement, pour que le schéma servi et le schéma validé restent le même : types, `null`, `enum` et `const`, bornes, `pattern`, objets stricts ou ouverts, `anyOf`, et `oneOf` quand ses branches s'excluent à coup sûr. Les annotations (`description`, `default`, `format`…) passent par `.meta()`. Une fonction dont l'entrée demande plus (`oneOf`, `not`, `minProperties` ou `dependentRequired` à la racine, `not` ou `uniqueItems` plus bas, `oneOf` aux branches qui se recouvrent) n'est pas générée : elle est nommée, avec sa raison, en tête du module et à la sortie de la commande.
+- Le schéma d'entrée est le JSON Schema 2020-12 de la description, recopié tel quel une fois les ancres YAML résolues : le schéma servi et le schéma validé sont le même objet. L'hôte le valide avec un validateur standard ; le test de la sortie le fait avec Ajv 2020, `format` restant une annotation comme dans le test des descriptions. La fabrique n'en vérifie qu'une chose, que la racine est un objet strict (`type: object`, `additionalProperties: false`) ; une fonction qui y manque, ou écrite à la main, n'est pas générée : elle est nommée, avec sa raison, en tête du module et à la sortie de la commande.
 - La pagination ajoute `all_pages` et `max_pages` au schéma servi ; `max_pages` borne le parcours, que l'hôte mène.
+- La sortie décrit, l'hôte exécute : il valide l'entrée contre le schéma ; pose les en-têtes constants du connecteur et de la fonction, puis les constantes de query et de corps ; sérialise en JSON les arguments que nomme `encode` ; envoie le corps quelle que soit la méthode, `DELETE` compris ; tient le rythme maximal par credential ; suit la pagination jusqu'à `next` vide ou `more` faux ; joue les `checks` avant l'appel et les `expect` sur la réponse, en rendant le refus nommé ; appelle la sonde avec `{}`, sans la décompter d'un quota, et exige non vides les chemins de `nonEmpty`.
 - `python -m fabrique` régénère `ts/src/` ; `python -m fabrique --check` échoue si la sortie commitée n'est pas à jour. On la lance à la main ; la CI vérifie, par `tests/test_fabrique.py`, que la sortie commitée est à jour, et compile et teste `ts/`.
 - La projection suit `exposure.mode` : en `per_action`, un outil `<namespace>_<name>` par fonction, schéma tel quel ; en `per_connector`, un outil qui reçoit `action` (l'énumération des noms) et un schéma en `oneOf` des entrées ; en `via_call`, rien n'est exposé et le verbe d'appel lit le registre.
 - Tests de contrat : le schéma d'entrée servi est le même des deux côtés ; chaque exemple est joué contre le schéma et contre un serveur simulé.
@@ -52,7 +60,7 @@ Chaque `connectors/<nom>/connector.yaml`, validé contre `connectors/connector.s
 
 - Le corps d'une entrée `handwritten` et l'authentification `oauth2_user`.
 - Le runtime commun, écrit une fois par langage : cache de jeton (au niveau du processus, indexé par une empreinte du credential, jamais par le secret en clair), rejeu unique sur 401, limiteur de débit partagé.
-- La fusion de plusieurs appels, les refus locaux avant l'appel, la construction d'un mail, l'identité opérée.
+- La fusion de plusieurs appels, un refus local que les contrôles déclarés ne disent pas, la construction d'un mail, l'identité opérée.
 - Le texte d'un résultat : le paquet le compose, dans son adaptateur.
 
 ### Le secret
@@ -89,30 +97,28 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - **Python seul, appelé à distance par oto 2** : écarté de nouveau le 06/10, pour les raisons du service connecteurs abandonné le 29/09.
 - **Une sortie TypeScript au contrat du paquet** (fonctions `defineFunction` prêtes à inscrire) : écarté le 06/10. Elle dépendrait du paquet, qui dépendrait d'elle ; la sortie porte des définitions structurelles, que le paquet adapte.
 - **Une sortie produite à la publication, non commitée** : écarté le 06/10. Commitée, elle se relit dans une revue et un test prouve qu'elle suit les descriptions.
-- **Un schéma `zod` approché par des raffinements** pour les contraintes que `zod` ne dit pas : non retenu à ce jour ; un raffinement ne se voit pas dans le schéma servi.
+- **Traduire le schéma d'entrée en `zod` strict** : écarté le 06/10. Trente-sept fonctions sur 340 ne se traduisaient pas (`minProperties`, `oneOf`, `anyOf` ou `not` à la racine, `dependentRequired`, `not` sur un identifiant, `uniqueItems`) ; un raffinement ne se voit pas dans le schéma servi, et deux langages de schéma devaient rester égaux. Le JSON Schema passe tel quel, validé par l'hôte.
 - **La fabrique avant la prise du paquet** : écarté le 06/10. Le paquet d'oto 2 reçoit d'abord sa prise (contrat de connecteur, secret à l'appel, comptes réels), prouvée par un connecteur témoin écrit à la main au contrat du paquet, `notion` ; la fabrique génère ensuite ce même contrat et remplace le témoin.
 
 ## Sécurité et confidentialité
 
 - Le code généré ne lit aucun secret, ni dans l'environnement ni dans un fichier. Le Python généré vit sous `oto/` et tombe sous la garde `tests/test_no_secret_read_guard.py`.
 - Un secret ne part jamais dans la query d'une URL : il finirait dans les messages d'erreur et les journaux. La fabrique le place en en-tête ou dans le corps de la requête de jeton, comme `auth` le décrit.
+- Une constante ou un en-tête constant est écrit en clair dans un fichier public : jamais un secret, et jamais l'en-tête d'authentification, que la règle 3 refuse de poser deux fois.
 - Un refus généré dit le fait, au plus une condition, jamais le nom d'un outil (`docs/conventions.md`).
 - Le dépôt et ses sorties sont publics : aucune description, aucun code généré ne nomme un client.
 
 ## Écart avec le code
 
-- Écrits : le générateur (`fabrique/`), la sortie TypeScript commitée (`ts/src/`, treize connecteurs) et son contrat (`ts/src/types.ts`), leurs tests (`tests/test_fabrique.py`, `ts/test/`) et le contrôle en CI. Les deux règles hors schéma JSON sont vérifiées.
-- 303 fonctions sur 340 sont générées ; 37 ne le sont pas, leur entrée demandant un raffinement (liste en tête de chaque module).
+- Écrits : le générateur (`fabrique/`), la sortie TypeScript commitée (`ts/src/`, treize connecteurs) et son contrat (`ts/src/types.ts`), leurs tests (`tests/test_fabrique.py`, `ts/test/`) et le contrôle en CI. Les cinq règles hors schéma JSON sont vérifiées.
+- Les 340 fonctions sont générées.
 - Pas de sortie Python, ni de runtime commun, ni de test de contrat entre les deux langages. Le client Python Sellsy reste écrit à la main, sur des verbes génériques.
-- Un en-tête constant (`Notion-Version`) ne se décrit pas : la définition générée de `notion.search_workspace` porte la requête du témoin écrit à la main dans le paquet, pas cet en-tête.
-- Le paquet d'oto 2 n'adapte pas encore la sortie : son client HTTP ne connaît ni `PUT`, ni la query, ni un autre mode d'authentification que le jeton porteur.
+- Le paquet d'oto 2 n'adapte pas encore la sortie : son client HTTP ne connaît ni `PUT`, ni la query, ni un autre mode d'authentification que le jeton porteur ; il n'exécute encore ni la validation JSON Schema, ni les constantes, l'encodage, le rythme, la sonde ou les contrôles.
 - Le backend d'oto 1 n'a pas de lecteur de la description : tous ses outils restent déclarés à la main.
 
 ## Questions ouvertes
 
 - Le nom définitif et la portée du paquet npm des connecteurs partagés.
-- Les fonctions non générées : raffinement `zod` doublé de l'annotation JSON Schema, ou entrée réécrite dans la description ?
-- Un en-tête constant par connecteur, dans le format.
 - Pendant la bascule d'oto 1 vers oto 2, un connecteur utile sans description passe-t-il par un doublage à la main ?
 
 ## Historique
@@ -125,3 +131,4 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - 2026-10-06 : une seule version des connecteurs, par la description et la fabrique ; TypeScript seul et Python à distance écartés ; la prise du paquet d'abord, avec un témoin `notion` écrit à la main — décidé par le mainteneur.
 - 2026-10-06 : le backend d'oto 1 bascule connecteur par connecteur sur la description, par un lecteur générique ; ses noms d'outils changent connecteur par connecteur — décidé par le mainteneur.
 - 2026-10-06 : la sortie TypeScript est commitée dans ce dépôt (`ts/`), en définitions structurelles qui ne dépendent pas du paquet ; schéma d'entrée en `zod` strict généré, refus en table, texte du résultat composé par le paquet ; première version du générateur — décidé par le mainteneur.
+- 2026-10-06 : plus de `zod` dans la sortie : le JSON Schema d'entrée est transmis tel quel et validé par l'hôte avec un validateur standard ; la fabrique n'exige qu'une racine stricte, et génère les 340 fonctions ; la sortie porte en-têtes constants, constantes, encodage JSON, arrêt de pagination, rythme, sonde et contrôles — décidé par le mainteneur.

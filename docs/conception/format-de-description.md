@@ -13,7 +13,7 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 - Le paquet d'oto 2 sert des fonctions qui déclarent classe, exemples, refus et résumé de confirmation. Elles ne sont pas des outils MCP : elles se trouvent, se lisent et s'appellent par les six outils figés du paquet (oto-pkg : docs/conception/connecteurs-et-comptes.md).
 - Un connecteur partagé sert deux langages : Python pour la lib, TypeScript pour le paquet. Écrit deux fois à la main, il divergerait ; d'où une description unique.
 - Relevé du 29/09 sur 114 connecteurs de la lib, par lecture du code et à seuil arbitraire : 54 enveloppes d'API REST, 44 REST avec logique, 16 hors format (3 navigateur, 7 données ouvertes ou base embarquée, 3 SDK, 2 traitement local, 1 asynchrone).
-- Se décrit : authentification simple, URL de base, verbe et chemin, répartition des arguments, schéma, table des erreurs et leur caractère rejouable, projection de sortie, règle de coût, pagination. Reste à la main : rafraîchissement OAuth d'un utilisateur, limiteur de débit partagé, fusion de plusieurs appels, refus locaux avant l'appel, construction d'un mail, identité opérée.
+- Se décrit : authentification simple, URL de base, verbe et chemin, répartition des arguments, constantes et en-têtes constants, encodage JSON d'un argument, schéma, table des erreurs et leur caractère rejouable, contrôles simples avant l'appel et sur la réponse, projection de sortie, règle de coût, pagination, rythme maximal du tiers, sonde. Reste à la main : rafraîchissement OAuth d'un utilisateur, fusion de plusieurs appels, refus locaux que les contrôles déclarés ne disent pas, construction d'un mail, identité opérée.
 
 ## Objectifs et non-objectifs
 
@@ -49,6 +49,9 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 | `timeout_s` | non (30) | Délai d'un appel, en secondes. |
 | `quota` | non | Quota par défaut sur une clé de la plateforme ; n'existe que si `modes` contient `platform`. |
 | `query_arrays` | non | Encodage des listes en query : `repeat`, `brackets`, `comma`. |
+| `headers` | non | En-têtes constants de toute requête : `{ Notion-Version: "2025-09-03" }`. Jamais un secret ni l'en-tête d'authentification. |
+| `rate_limit` | non | Rythme maximal du tiers, par credential : `{ requests: 4, seconds: 1 }`. |
+| `probe` | non | Sonde de la connexion : `{ function: get_company, non_empty: [scopes] }`, une lecture sans argument requis, jamais décomptée d'un quota ; chaque chemin de `non_empty` doit être non vide dans sa réponse. |
 | `errors` | oui | Table commune à toutes les fonctions : `status` (un ou plusieurs codes HTTP), `code` (refus nommé), `message` (anglais), `retryable`. |
 
 `auth.kind` vaut `api_key` (`header`, `prefix` facultatif, `key`), `bearer` (`token`), `basic` (`username`, `password`), `oauth2_client_credentials` (`token_url`, `token_request` `json` ou `form`, `client_id`, `client_secret`, `scope` et `expires_in_default` facultatifs), `oauth2_user` (renvoie à `handwritten`) ou `none`. Chaque valeur qui désigne un secret nomme un champ de `credential`, jamais une valeur.
@@ -60,12 +63,14 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 | `name` | oui | Un verbe et son objet : `list_estimates`. |
 | `class` | oui | `read`, `write` ou `sensitive`. |
 | `description` | oui | En anglais : ce que l'agent lit. |
-| `input` | oui | JSON Schema d'un objet strict (`type: object`, `additionalProperties: false`, `properties`). |
+| `input` | oui | JSON Schema 2020-12 d'un objet strict (`type: object`, `additionalProperties: false`, `properties`), servi et validé tel quel. |
 | `examples` | oui, au moins un | `title` et `input`, chaque `input` validé contre `input`. |
 | `refusals` | non | `code`, `when` (statut HTTP ou condition), `message` : surcharge ou complète la table commune. |
-| `call` | sauf `handwritten` | `method`, `path` relatif avec `{param}`, puis `query`, `body`, `headers` qui associent un nom côté API à un argument. Chaque argument va à un seul endroit. |
+| `checks` | non | Contrôles de l'entrée avant l'appel, chacun nomme un refus : `{ kind: equal_sums, refusal: entry_unbalanced, items: ledger_entry_lines, fields: [debit, credit] }` (sommes égales, chaînes décimales sommées exactement). |
+| `expect` | non | Contrôles de la réponse, chacun nomme un refus : `{ kind: non_empty, refusal: pdf_missing, path: public_file_url }`. |
+| `call` | sauf `handwritten` | `method`, `path` relatif avec `{param}`, puis `query`, `body` (envoyé quelle que soit la méthode, `DELETE` compris), `headers` qui associent un nom côté API à un argument ; `constants` (`query`, `body`, `headers`) : des valeurs envoyées à chaque appel, hors du schéma, comme `{ body: { draft: true } }` ; `encode` : `{ filter: json }` sérialise un argument structuré en une chaîne. Chaque argument va à un seul endroit, chaque nom côté API reçoit une seule valeur. |
 | `handwritten` | exclusif de `call` | `python` (`module`, `function`) et `typescript` (`file`, `export`). |
-| `pagination` | non | `kind` (`cursor` ou `page`), `request_param`, `next`, `total` facultatif, `max_pages`. Présente, elle ajoute `all_pages` et `max_pages` au schéma servi. |
+| `pagination` | non | `kind` (`cursor` ou `page`), `request_param`, `next`, `more` facultatif (booléen de la réponse, `false` à la dernière page : `has_more`), `total` facultatif, `max_pages`. Présente, elle ajoute `all_pages` et `max_pages` au schéma servi. |
 | `output` | non | `items` (chemin de la liste), `strip` (clés retirées), `projection` (clés gardées). |
 | `cost` | non | Unité décomptée : `per: request` ou `per: page`. |
 | `confirm` | si `sensitive` | `summary`, gabarit du résumé montré avant exécution (`Validate invoice {id}: irreversible.`). |
@@ -104,13 +109,13 @@ functions:
 
 Treize connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `mailpool` (21), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `pennylane` (48), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée : ainsi `mailpool.update_domain_dns`, dont le corps est un tableau d'enregistrements.
 
-`pennylane` (API v2, une clé par société) couvre ce que couvre le client : référentiels, clients, fournisseurs, factures clients et avoirs, devis, factures d'achat (lecture, correction, validation), grand livre et lettrage, transactions, balance, rapprochement ; 26 lectures, 13 écritures, 9 fonctions sensibles. Valeurs vérifiées le 2026-10-06 contre l'OpenAPI publique « Company V2 ». Restent hors du fichier : le téléversement de pièce (multipart) et l'import de facture d'achat qui en dépend, les deux recherches anti-doublon par `external_reference` du client (servies par le `filter` des listes), l'agrégat `fetch_complete_data` (plusieurs appels) et l'option `only_outstanding` des transactions (filtre local). Trois gestes du client s'écrivent autrement, fidèles à l'API : le `filter` est une chaîne JSON que l'agent écrit ; `draft` est un argument requis de valeur constante `true` ; un avoir prend des quantités négatives, imposées par le schéma, là où le client inverse le signe.
+`pennylane` (API v2, une clé par société) couvre ce que couvre le client : référentiels, clients, fournisseurs, factures clients et avoirs, devis, factures d'achat (lecture, correction, validation), grand livre et lettrage, transactions, balance, rapprochement ; 26 lectures, 13 écritures, 9 fonctions sensibles. Valeurs vérifiées le 2026-10-06 contre l'OpenAPI publique « Company V2 ». Restent hors du fichier : le téléversement de pièce (multipart) et l'import de facture d'achat qui en dépend, les deux recherches anti-doublon par `external_reference` du client (servies par le `filter` des listes), l'agrégat `fetch_complete_data` (plusieurs appels) et l'option `only_outstanding` des transactions (filtre local). Le `filter` est une liste de clauses `{field, operator, value}` (champs énumérés par fonction, liste exigée pour `in` et `not_in`), sérialisée en JSON dans la query par `encode` ; `draft: true` est une constante de corps ; le rythme (4 requêtes par seconde), l'arrêt sur `has_more`, la sonde (`get_company`, `scopes` non vide), l'équilibre d'une écriture et le lien PDF d'un devis sont déclarés. Un avoir prend des quantités négatives, imposées par le schéma, là où le client inverse le signe.
 
 Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur), `wordpress` (adresse propre à chaque site, fournie par le credential ; racine REST découverte à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire).
 
 ### Contrôles
 
-`tests/test_connector_descriptions.py` vérifie que le schéma est un JSON Schema valide, que chaque description le respecte et porte le nom de son dossier, et que chaque exemple respecte l'entrée de sa fonction. Quinze variantes invalides du fichier Sellsy doivent être refusées : classe absente, clé inconnue, `call` et `handwritten` ensemble ou aucun des deux, fonction sensible sans `confirm`, entrée non stricte, aucun exemple, exemple hors bornes ou à argument inconnu, `embed` non documenté, `token_url` absent, `credential` absent, `quota` sans `platform`, version hors semver, `exposure.mode` inconnu. `jsonschema` est un outil de test, pas une dépendance de la lib.
+`tests/test_connector_descriptions.py` vérifie que le schéma est un JSON Schema valide, que chaque description le respecte et porte le nom de son dossier, et que chaque exemple respecte l'entrée de sa fonction. Vingt-quatre variantes invalides du fichier Sellsy doivent être refusées : classe absente, clé inconnue, `call` et `handwritten` ensemble ou aucun des deux, fonction sensible sans `confirm`, entrée non stricte, aucun exemple, exemple hors bornes ou à argument inconnu, `embed` non documenté, `token_url` absent, `credential` absent, `quota` sans `platform`, version hors semver, `exposure.mode` inconnu, schéma de sortie ouvert ou sans propriétés, `rate_limit` incomplet, en-tête constant non textuel, encodage inconnu, contrôle d'un genre inconnu, attente sans chemin, sonde à clé inconnue, `more` vide. Les règles hors schéma sont vérifiées par la fabrique ([fabrique](fabrique.md)). `jsonschema` est un outil de test, pas une dépendance de la lib.
 
 ## Décisions et alternatives écartées
 
@@ -119,6 +124,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - **Référencer la spec OpenAPI de l'éditeur** (`operation: getEstimates`) et n'ajouter que classe, refus, exemples et projection : non retenu à ce jour. Moins à écrire, mais chaque connecteur dépendrait de la qualité d'une spec tierce.
 - **Un client ajouté à la lib sans description** : écarté le 2026-10-05. Tout client entre au format ; une fonction ou un client que le format ne sait pas dire est nommé, avec sa raison, dans « Les connecteurs décrits ».
 - **L'outil MCP comme unité** (le modèle d'oto 1, où le nom de l'outil est le contrat et où Sellsy est servi par `sellsy_document(kind, op)`, quatre documents de vente fusionnés) : écarté. L'unité est la fonction ; l'outil, une projection. Cela répond au point « verbe `oto_call` ou outils dédiés » d'ADR 0070 §7.8 : les deux, par projection.
+- **Un langage d'expressions pour les contrôles** (une formule « débits = crédits ») : écarté le 06/10. Des genres fermés et nommés (`equal_sums`, `non_empty`), chacun lié à un refus de la table, se lisent et s'exécutent pareil dans les deux langages ; un genre s'ajoute quand une description en a besoin.
 - **Refus en texte libre** : écarté. Une table structurée (`code`, `when`, `message`) que la fabrique traduit en erreurs typées dans les deux langages.
 - **Une seule version** : écarté. La version du fichier (semver) et celle de l'API tierce (en clair) sont deux champs.
 - **Convertir les 713 outils existants, ou leur attribuer une classe** : écarté. La classe s'écrit à l'entrée d'un connecteur dans le format.
@@ -135,13 +141,13 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 
 - Écrits : le schéma, son test et treize descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite, `pennylane` le 2026-10-06. Aucun test n'impose encore qu'un client ait sa description, et le client `wordpress`, ajouté en 1.156.0, n'en a pas.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
-- Deux règles échappent au schéma JSON et ne sont vérifiées nulle part : un argument va à un seul endroit (et chaque `{param}` du chemin nomme un argument) ; une référence de `auth` désigne un champ de `credential` existant. La fabrique doit les vérifier.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
 - `quota` n'a pas de forme : le schéma n'exige qu'un objet non vide.
 - Le format se déclare YAML 1.2, mais le test lit avec PyYAML, qui suit YAML 1.1.
 - Le client Python Sellsy de la lib reste écrit à la main, sur des verbes génériques ; rien n'est généré.
 - Les clients Python restent écrits à la main ; leurs descriptions, écrites après eux, n'en sont pas encore la source.
-- `pennylane` s'écarte du client là où le client lit une seule page d'une liste paginée (exercices, catégories, lignes de facture et de devis) : le fichier les décrit paginées, comme l'OpenAPI. Un `DELETE` y porte un corps (délettrage) : le schéma l'accepte, la fabrique devra l'envoyer.
+- `pennylane` s'écarte du client là où le client lit une seule page d'une liste paginée (exercices, catégories, lignes de facture et de devis) : le fichier les décrit paginées, comme l'OpenAPI. Un `DELETE` y porte un corps (délettrage) : la sortie le porte dans la requête, l'hôte l'envoie.
+- Les ajouts du 2026-10-06 (en-têtes constants, constantes, `encode`, `more`, `rate_limit`, `probe`, `checks`, `expect`) ne servent qu'à `notion` et `pennylane` ; les autres descriptions ne s'en servent pas encore.
 
 ## Questions ouvertes
 
@@ -152,19 +158,13 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - Le défaut `per_connector` vaut-il pour un hôte d'oto 2, dont les fonctions ne passent que par `call` ?
 - Ce que le format ne sait pas encore dire, relevé en décrivant dix connecteurs le 2026-10-05 :
   - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe) ;
-  - un en-tête constant (`Notion-Version`, `X-Affinity-Api-Version`) ;
-  - une constante ou un tableau en corps (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
+  - un corps qui est un tableau (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
   - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
   - une signature par requête (`boondmanager`) ;
   - `handwritten` exige un fichier TypeScript, qui n'existe pour aucun connecteur ;
   - un coût par élément d'un lot, ou relu dans la réponse de l'amont : `cost` ne connaît que `per: request` et `per: page`, alors qu'un lot payant se facture au contact soumis, ou seulement à la donnée trouvée, chiffrée dans la réponse ;
-  - une sonde déclarée : quelle fonction vérifie la connexion, et ce qu'elle couvre (l'authentification seule, ou l'authentification et le quota), sans rien facturer.
-- Relevé en décrivant `pennylane` le 2026-10-06 :
-  - un argument structuré encodé en JSON dans la query (`filter=[{"field","operator","value"}]`), et des clauses de filtre bâties depuis des arguments nommés (bornes de date, statut, `external_reference`) ;
-  - un débit maximal à respecter (environ quatre requêtes par seconde) : la fabrique prévoit un limiteur partagé, le fichier ne sait pas en donner le rythme ;
-  - un drapeau d'arrêt de pagination distinct du curseur (`has_more`) ;
-  - un contrôle local avant l'appel qui porte sur une somme (débits égaux aux crédits d'une écriture) ;
-  - une sonde qui vérifie aussi les droits : `GET /me` authentifie, mais une clé sans aucun `scopes` ne peut rien faire.
+  - ce que couvre une sonde au-delà de l'authentification et des champs non vides : le quota restant ?
+- Relevé en décrivant `pennylane` le 2026-10-06 : des clauses de filtre bâties depuis des arguments nommés (bornes de date, statut, `external_reference`), plutôt qu'une liste de clauses écrite par l'agent.
 - Un test doit-il refuser un client sans description, avec une liste nommée d'exceptions ?
 
 ## Historique
@@ -176,3 +176,4 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - 2026-10-05 : tout client ajouté à la lib entre au format ; dix connecteurs décrits, trois non descriptibles en l'état, et la liste de ce que le format ne sait pas encore dire — décidé par le mainteneur (source : séance du 05/10).
 - 2026-10-06 : description `pennylane`, 48 fonctions, et cinq trous du format relevés — choix du projet.
 - 2026-10-05 : la description microsoft passe à l'accès délégué (jeton d'une personne, fourni par l'hôte), version 2.0.0 — choix du projet (source : refonte du client, v1.155.0).
+- 2026-10-06 : le format dit en-têtes constants, constantes de requête, encodage JSON d'un argument, arrêt de pagination (`more`), rythme maximal, sonde, contrôles avant l'appel (`checks`) et sur la réponse (`expect`) ; `notion` et `pennylane` (2.0.0) s'en servent ; l'entrée est servie en JSON Schema tel quel ; `nextmotion` (1.0.1) corrigé : un `oneOf` aux branches qui se recouvrent devient un `anyOf` de types disjoints (six fonctions), et onze branches `enum: []`, qui n'acceptaient rien, sont retirées — décidé par le mainteneur.

@@ -7,7 +7,7 @@ connector:
   name: nextmotion
   label: Nextmotion
   namespace: nextmotion
-  version: 1.0.0
+  version: 1.0.1
   api_version: v4
   base_url: https://api.nextmotion.net/open_api
   auth: {kind: bearer, token: api_key}
@@ -494,7 +494,6 @@ functions:
         - enum: [0, 1, 2]
           type: integer
           description: '* `0` - FEMALE * `1` - MALE * `2` - OTHER (0 = female, 1 = male, 2 = other).'
-        - enum: []
         description: Patient's gender (0 = female, 1 = male, 2 = other).
   examples:
   - title: Create an appointment request
@@ -962,7 +961,6 @@ functions:
             - enum: [day, week, month, year]
               type: string
               description: '* `day` - DAY * `week` - WEEK * `month` - MONTH * `year` - YEAR'
-            - enum: []
             - {type: 'null'}
             description: Time unit for custom recurrence step; required when recurrence is custom
           custom_recurrence_week_days:
@@ -1088,7 +1086,6 @@ functions:
             - enum: [day, week, month, year]
               type: string
               description: '* `day` - DAY * `week` - WEEK * `month` - MONTH * `year` - YEAR'
-            - enum: []
             - {type: 'null'}
             description: Time unit for custom recurrence step; required when recurrence is custom
           custom_recurrence_week_days:
@@ -1234,7 +1231,6 @@ functions:
             - enum: [day, week, month, year]
               type: string
               description: '* `day` - DAY * `week` - WEEK * `month` - MONTH * `year` - YEAR'
-            - enum: []
             - {type: 'null'}
             description: Time unit for custom recurrence step; required when recurrence is custom
           custom_recurrence_week_days:
@@ -1405,7 +1401,6 @@ functions:
             - enum: [day, week, month, year]
               type: string
               description: '* `day` - DAY * `week` - WEEK * `month` - MONTH * `year` - YEAR'
-            - enum: []
             - {type: 'null'}
             description: Time unit for custom recurrence step; required when recurrence is custom
           custom_recurrence_week_days:
@@ -2689,7 +2684,6 @@ functions:
             - MARKETING_DOCTOR_OR_CLINIC * `teaching_school` - TEACHING_SCHOOL * `journalist` - JOURNALIST
             * `beautician` - BEAUTICIAN * `kinesitherapist` - KINESITHERAPIST * `dietician` - DIETICIAN
             * `epilation` - EPILATION * `anesthesiologist` - ANESTHESIOLOGIST
-        - enum: []
         description: Medical speciality
   examples:
   - title: Create a visit type category
@@ -2757,7 +2751,6 @@ functions:
             - MARKETING_DOCTOR_OR_CLINIC * `teaching_school` - TEACHING_SCHOOL * `journalist` - JOURNALIST
             * `beautician` - BEAUTICIAN * `kinesitherapist` - KINESITHERAPIST * `dietician` - DIETICIAN
             * `epilation` - EPILATION * `anesthesiologist` - ANESTHESIOLOGIST
-        - enum: []
         description: Medical speciality
   examples:
   - title: Update a visit type category
@@ -2949,7 +2942,6 @@ functions:
               - enum: [0, 1]
                 type: integer
                 description: '* `0` - CLINIC * `1` - PROVIDER (0 = clinic, 1 = provider).'
-              - enum: []
               - {type: 'null'}
               description: >-
                 Distribution target for sub-payments; cannot be provided if accounting_distribution is
@@ -3161,7 +3153,6 @@ functions:
               - enum: [0, 1]
                 type: integer
                 description: '* `0` - CLINIC * `1` - PROVIDER (0 = clinic, 1 = provider).'
-              - enum: []
               - {type: 'null'}
               description: >-
                 Distribution target for sub-payments; cannot be provided if accounting_distribution is
@@ -3411,7 +3402,6 @@ functions:
         - enum: [0, 1]
           type: integer
           description: '* `0` - CLINIC * `1` - PROVIDER (0 = clinic, 1 = provider).'
-        - enum: []
         description: >-
           Distribution target for sub-payments; cannot be provided if accounting_distribution is set (0
           = clinic, 1 = provider).
@@ -3466,7 +3456,6 @@ functions:
         - enum: [0, 1]
           type: integer
           description: '* `0` - CLINIC * `1` - PROVIDER (0 = clinic, 1 = provider).'
-        - enum: []
         description: >-
           Distribution target for sub-payments; cannot be provided if accounting_distribution is set (0
           = clinic, 1 = provider).
@@ -5854,19 +5843,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false
@@ -6007,19 +5993,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false
@@ -6148,19 +6131,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false
@@ -6346,19 +6326,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false
@@ -6496,19 +6473,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false
@@ -7007,19 +6981,16 @@ functions:
               properties:
                 q_id: {type: string, description: Question ID related to this answer}
                 val:
-                  oneOf:
-                  - {type: string}
+                  anyOf:
+                  - {type: string, description: 'Free text, an id (UUID) or an ISO 8601 date-time'}
                   - {type: boolean}
-                  - type: string
-                    format: uuid
-                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  - {type: number}
                   - type: array
                     items:
                       type: string
                       format: uuid
                       pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
-                  - {type: number}
-                  - {type: string, format: date-time}
+                  description: The answer, of the type the question asks for
               additionalProperties: false
               required: [q_id, val]
         additionalProperties: false

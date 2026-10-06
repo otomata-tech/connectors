@@ -10,18 +10,16 @@
 #
 # Not described here: uploading a file (multipart POST /file_attachments) and
 # importing a supplier invoice from it (POST /supplier_invoices/import), which
-# depend on that upload. The client paces calls at about 4 requests per second;
-# the format cannot declare a rate.
+# depend on that upload.
 #
 # The filter query parameter is a JSON array serialised as a string:
-# [{"field": "date", "operator": "gteq", "value": "2026-01-01"}]. The format
-# cannot encode a structured argument as JSON in the query, so it is served as a
-# string the agent writes.
+# [{"field": "date", "operator": "gteq", "value": "2026-01-01"}]. The agent passes
+# the clauses as a list; encode: json serialises them into the query.
 connector:
   name: pennylane
   label: Pennylane
   namespace: pennylane
-  version: 1.0.0
+  version: 2.0.0
   api_version: v2
   base_url: https://app.pennylane.com/api/external/v2
   auth:
@@ -31,6 +29,8 @@ connector:
     - { name: api_key, label: API key, secret: true }
   modes: [byo_user, byo_org]
   timeout_s: 30
+  rate_limit: { requests: 4, seconds: 1 }
+  probe: { function: get_company, non_empty: [scopes] }
   errors:
     - { status: 400, code: invalid_request, retryable: false,
         message: "Pennylane rejected the request as invalid: check the arguments. An invoice line that matches neither line shape comes back as NotAnyOf." }
@@ -93,6 +93,7 @@ functions:
       kind: cursor
       request_param: cursor
       next: next_cursor
+      more: has_more
       max_pages: 10
     output: &list_output
       items: items
@@ -109,21 +110,35 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, number, enabled] }
+              operator: &operator { enum: [lt, lteq, gt, gteq, eq, not_eq, in, not_in, start_with] }
+              value: &clause_value { type: [string, number, boolean, array], items: { type: [string, number] } }
+            allOf:
+              - &in_takes_a_list
+                if: { properties: { operator: { enum: [in, not_in] } } }
+                then: { properties: { value: { type: array, minItems: 1 } } }
+                else: { properties: { value: { type: [string, number, boolean] } } }
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id (lt, lteq, gt, gteq, eq, not_eq, in, not_in),
-            number (start_with, eq, in), enabled (eq).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id (lt, lteq, gt, gteq, eq,
+            not_eq, in, not_in), number (start_with, eq, in), enabled (eq).
         limit: { type: integer, minimum: 1, maximum: 1000, default: 1000 }
         cursor: *cursor
     examples:
       - title: Accounts whose number starts with 411
-        input: { filter: "[{\"field\":\"number\",\"operator\":\"start_with\",\"value\":\"411\"}]" }
+        input: { filter: [{ field: number, operator: start_with, value: "411" }] }
     call:
       method: GET
       path: /ledger_accounts
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -141,11 +156,20 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [type] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Field: type (eq, not_eq, in, not_in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Field: type (eq, not_eq, in, not_in).
         limit: *limit
         cursor: *cursor
     examples:
@@ -155,6 +179,7 @@ functions:
       method: GET
       path: /journals
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -168,13 +193,22 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, category_group_id, label, analytical_code] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id and category_group_id (lt, lteq, gt, gteq, eq,
-            not_eq, in, not_in), label (start_with, eq, in), analytical_code
-            (eq, not_eq, in, not_in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id and category_group_id (lt,
+            lteq, gt, gteq, eq, not_eq, in, not_in), label (start_with, eq,
+            in), analytical_code (eq, not_eq, in, not_in).
         limit: *limit
         cursor: *cursor
     examples:
@@ -184,6 +218,7 @@ functions:
       method: GET
       path: /categories
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -225,13 +260,22 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, label, reference, external_reference] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id (lt, lteq, gt, gteq, eq, not_eq, in, not_in),
-            label and reference (eq, in), external_reference (eq, not_eq, in,
-            not_in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id (lt, lteq, gt, gteq, eq,
+            not_eq, in, not_in), label and reference (eq, in),
+            external_reference (eq, not_eq, in, not_in).
         limit: *limit
         cursor: *cursor
     examples:
@@ -241,6 +285,7 @@ functions:
       method: GET
       path: /products
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -320,25 +365,36 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, customer_type, ledger_account_id, name, external_reference, reg_no, emails] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id (lt, lteq, gt, gteq, eq, not_eq, in, not_in),
-            customer_type and ledger_account_id (eq, not_eq), name
-            (start_with, eq), external_reference (start_with, eq, not_eq, in,
-            not_in), reg_no (eq, not_eq, in, not_in), emails (in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id (lt, lteq, gt, gteq, eq,
+            not_eq, in, not_in), customer_type and ledger_account_id (eq,
+            not_eq), name (start_with, eq), external_reference (start_with,
+            eq, not_eq, in, not_in), reg_no (eq, not_eq, in, not_in), emails
+            (in).
         limit: *limit
         cursor: *cursor
     examples:
       - title: The customer carrying an external reference
-        input: { filter: "[{\"field\":\"external_reference\",\"operator\":\"eq\",\"value\":\"CRM-12345\"}]" }
+        input: { filter: [{ field: external_reference, operator: eq, value: "CRM-12345" }] }
       - title: Customers whose name starts with Acme
-        input: { filter: "[{\"field\":\"name\",\"operator\":\"start_with\",\"value\":\"Acme\"}]" }
+        input: { filter: [{ field: name, operator: start_with, value: "Acme" }] }
     call:
       method: GET
       path: /customers
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -448,22 +504,33 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, ledger_account_id, name, external_reference, emails] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id (lt, lteq, gt, gteq, eq, not_eq, in, not_in),
-            ledger_account_id (eq, not_eq), name (start_with),
-            external_reference (eq, not_eq, in, not_in), emails (in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id (lt, lteq, gt, gteq, eq,
+            not_eq, in, not_in), ledger_account_id (eq, not_eq), name
+            (start_with), external_reference (eq, not_eq, in, not_in),
+            emails (in).
         limit: *limit
         cursor: *cursor
     examples:
       - title: Suppliers whose name starts with Office
-        input: { filter: "[{\"field\":\"name\",\"operator\":\"start_with\",\"value\":\"Office\"}]" }
+        input: { filter: [{ field: name, operator: start_with, value: "Office" }] }
     call:
       method: GET
       path: /suppliers
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -543,31 +610,42 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, date, customer_id, quote_id, invoice_number, draft, credit_note, external_reference, category_id] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id, date, customer_id, quote_id (lt, lteq, gt,
-            gteq, eq, not_eq, in, not_in), invoice_number (eq, not_eq, in,
-            not_in), draft and credit_note (eq, boolean), external_reference
-            (eq), category_id (in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id, date, customer_id, quote_id
+            (lt, lteq, gt, gteq, eq, not_eq, in, not_in), invoice_number
+            (eq, not_eq, in, not_in), draft and credit_note (eq, boolean),
+            external_reference (eq), category_id (in).
         limit: *limit
         cursor: *cursor
     examples:
       - title: The invoice carrying an external reference
-        input: { filter: "[{\"field\":\"external_reference\",\"operator\":\"eq\",\"value\":\"PM0001AAAA\"}]" }
+        input: { filter: [{ field: external_reference, operator: eq, value: "PM0001AAAA" }] }
       - title: Invoices of one customer since January
         input:
-          filter: "[{\"field\":\"customer_id\",\"operator\":\"eq\",\"value\":\"3001\"},{\"field\":\"date\",\"operator\":\"gteq\",\"value\":\"2026-01-01\"}]"
+          filter: [{ field: customer_id, operator: eq, value: "3001" }, { field: date, operator: gteq, value: "2026-01-01" }]
           limit: 50
     call:
       method: GET
       path: /customer_invoices
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: &pagination_long
       kind: cursor
       request_param: cursor
       next: next_cursor
+      more: has_more
       max_pages: 5
     output: *list_output
     cost: { per: request }
@@ -599,7 +677,7 @@ functions:
   - name: create_customer_invoice
     class: write
     description: >-
-      Create a customer invoice as a draft (draft must be true). The customer
+      Create a customer invoice, always as a draft. The customer
       must exist (list_customers, create_customer). Finalizing and sending
       are separate functions, called only after explicit human validation.
       Each line takes exactly one of two shapes, with no other key (any
@@ -614,7 +692,7 @@ functions:
     input:
       type: object
       additionalProperties: false
-      required: [customer_id, date, deadline, invoice_lines, draft]
+      required: [customer_id, date, deadline, invoice_lines]
       properties:
         customer_id: *id
         date: &date { type: string, format: date, description: "YYYY-MM-DD." }
@@ -645,7 +723,6 @@ functions:
                   raw_currency_unit_price: *decimal
                   vat_rate: *vat_rate
                   description: { type: string }
-        draft: &draft { const: true, description: "Always true: the invoice is created as a draft." }
         external_reference: { type: string, description: "Trace of the source, unique; look it up before creating again." }
         pdf_invoice_free_text: &free_text
           type: string
@@ -664,32 +741,31 @@ functions:
           customer_id: 3001
           date: "2026-10-06"
           deadline: "2026-11-05"
-          draft: true
           invoice_lines: [{ product_id: 1201, quantity: 3 }]
       - title: A draft invoice with one free line
         input:
           customer_id: 3001
           date: "2026-10-06"
           deadline: "2026-11-05"
-          draft: true
           invoice_lines:
             - { label: Workshop, quantity: 1, unit: day, raw_currency_unit_price: "1200.00", vat_rate: FR_200 }
     call:
       method: POST
       path: /customer_invoices
       body: { customer_id: customer_id, date: date, deadline: deadline,
-              invoice_lines: invoice_lines, draft: draft,
+              invoice_lines: invoice_lines,
               external_reference: external_reference,
               pdf_invoice_free_text: pdf_invoice_free_text,
               pdf_invoice_subject: pdf_invoice_subject,
               customer_invoice_template_id: customer_invoice_template_id,
               label: label, currency: currency, language: language }
+      constants: { body: { draft: true } }
     cost: { per: request }
 
   - name: create_credit_note
     class: write
     description: >-
-      Create a standalone credit note as a draft (draft must be true). In
+      Create a standalone credit note, always as a draft. In
       Pennylane v2 a credit note is a customer invoice with negative
       amounts: give every line a NEGATIVE quantity (crediting 195 credits at
       1.45 is quantity -195, unit price "1.45"). Lines follow the invoice
@@ -703,7 +779,7 @@ functions:
     input:
       type: object
       additionalProperties: false
-      required: [customer_id, date, deadline, invoice_lines, draft]
+      required: [customer_id, date, deadline, invoice_lines]
       properties:
         customer_id: *id
         date: *date
@@ -734,7 +810,6 @@ functions:
                   raw_currency_unit_price: *decimal
                   vat_rate: *vat_rate
                   description: { type: string }
-        draft: *draft
         external_reference: { type: string, description: "Source event, e.g. a failed payment id; keeps one credit note per event." }
         pdf_invoice_free_text: *free_text
         customer_invoice_template_id: *template_id
@@ -745,7 +820,6 @@ functions:
           customer_id: 3001
           date: "2026-10-06"
           deadline: "2026-10-06"
-          draft: true
           invoice_lines: [{ product_id: 1202, quantity: -195 }]
           external_reference: PM0001AAAA
           pdf_invoice_free_text: Credit note on invoice F-2026-0042 after a failed payment.
@@ -753,11 +827,12 @@ functions:
       method: POST
       path: /customer_invoices
       body: { customer_id: customer_id, date: date, deadline: deadline,
-              invoice_lines: invoice_lines, draft: draft,
+              invoice_lines: invoice_lines,
               external_reference: external_reference,
               pdf_invoice_free_text: pdf_invoice_free_text,
               customer_invoice_template_id: customer_invoice_template_id,
               currency: currency }
+      constants: { body: { draft: true } }
     cost: { per: request }
 
   - name: link_credit_note
@@ -935,21 +1010,32 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, customer_id, status] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id and customer_id (lt, lteq, gt, gteq, eq,
-            not_eq, in, not_in), status (eq, not_eq, in, not_in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id and customer_id (lt, lteq,
+            gt, gteq, eq, not_eq, in, not_in), status (eq, not_eq, in,
+            not_in).
         limit: *limit
         cursor: *cursor
     examples:
       - title: Pending quotes
-        input: { filter: "[{\"field\":\"status\",\"operator\":\"eq\",\"value\":\"pending\"}]" }
+        input: { filter: [{ field: status, operator: eq, value: "pending" }] }
     call:
       method: GET
       path: /quotes
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination_long
     output: *list_output
     cost: { per: request }
@@ -990,6 +1076,8 @@ functions:
     refusals:
       - *quote_not_found
       - { code: pdf_missing, when: "public_file_url is empty in the response", message: "Pennylane returned no PDF link for this quote." }
+    expect:
+      - { kind: non_empty, refusal: pdf_missing, path: public_file_url }
     call: { method: GET, path: "/quotes/{quote_id}" }
     output:
       projection: [id, quote_number, public_file_url, filename]
@@ -1087,26 +1175,26 @@ functions:
     class: write
     description: >-
       Create a draft customer invoice from a quote, taking over its customer
-      and lines (draft must be true). Finalizing and sending it remain
+      and lines. Finalizing and sending it remain
       separate steps after human validation. Needs the scope
       customer_invoices:all on top of quotes.
     input:
       type: object
       additionalProperties: false
-      required: [quote_id, draft]
+      required: [quote_id]
       properties:
         quote_id: *id
-        draft: *draft
         external_reference: { type: string, description: "Reference of the invoice created." }
         customer_invoice_template_id: *template_id
     examples:
       - title: Invoice an accepted quote
-        input: { quote_id: 6001, draft: true }
+        input: { quote_id: 6001 }
     call:
       method: POST
       path: /customer_invoices/create_from_quote
-      body: { quote_id: quote_id, draft: draft, external_reference: external_reference,
+      body: { quote_id: quote_id, external_reference: external_reference,
               customer_invoice_template_id: customer_invoice_template_id }
+      constants: { body: { draft: true } }
     cost: { per: request }
 
   # --- Supplier invoices --------------------------------------------------
@@ -1122,24 +1210,35 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, supplier_id, date, invoice_number, external_reference, payment_status, category_id] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id, supplier_id, date (lt, lteq, gt, gteq, eq,
-            not_eq, in, not_in), invoice_number, external_reference,
-            payment_status (eq, not_eq, in, not_in), category_id (in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id, supplier_id, date (lt, lteq,
+            gt, gteq, eq, not_eq, in, not_in), invoice_number,
+            external_reference, payment_status (eq, not_eq, in, not_in),
+            category_id (in).
         sort: { enum: [id, -id, date, -date], description: "Prefix with - for descending order." }
         limit: *limit
         cursor: *cursor
     examples:
       - title: Supplier invoices of the third quarter
         input:
-          filter: "[{\"field\":\"date\",\"operator\":\"gteq\",\"value\":\"2026-07-01\"},{\"field\":\"date\",\"operator\":\"lteq\",\"value\":\"2026-09-30\"}]"
+          filter: [{ field: date, operator: gteq, value: "2026-07-01" }, { field: date, operator: lteq, value: "2026-09-30" }]
     call:
       method: GET
       path: /supplier_invoices
       query: { filter: filter, sort: sort, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination_long
     output: *list_output
     cost: { per: request }
@@ -1313,24 +1412,35 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, journal_id, date] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id and journal_id (lt, lteq, gt, gteq, eq,
-            not_eq, in, not_in), date (lt, lteq, gt, gteq, eq, not_eq).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id and journal_id (lt, lteq, gt,
+            gteq, eq, not_eq, in, not_in), date (lt, lteq, gt, gteq, eq,
+            not_eq).
         sort: { enum: [id, -id, date, -date], description: "Prefix with - for descending order." }
         limit: *limit
         cursor: *cursor
     examples:
       - title: Entries of one journal since January
         input:
-          filter: "[{\"field\":\"journal_id\",\"operator\":\"eq\",\"value\":\"12\"},{\"field\":\"date\",\"operator\":\"gteq\",\"value\":\"2026-01-01\"}]"
+          filter: [{ field: journal_id, operator: eq, value: "12" }, { field: date, operator: gteq, value: "2026-01-01" }]
           sort: -date
     call:
       method: GET
       path: /ledger_entries
       query: { filter: filter, sort: sort, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination_long
     output: *list_output
     cost: { per: request }
@@ -1365,12 +1475,21 @@ functions:
       properties:
         entry_id: *id
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [ledger_account_id] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Field: ledger_account_id (lt, lteq, gt, gteq, eq, not_eq,
-            in, not_in).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Field: ledger_account_id (lt, lteq, gt,
+            gteq, eq, not_eq, in, not_in).
         limit: *limit
         cursor: *cursor
     examples:
@@ -1382,6 +1501,7 @@ functions:
       method: GET
       path: /ledger_entries/{entry_id}/ledger_entry_lines
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination
     output: *list_output
     cost: { per: request }
@@ -1459,6 +1579,8 @@ functions:
             - { debit: "0.00", credit: "15.00", ledger_account_id: 4102 }
     refusals:
       - { code: entry_unbalanced, when: "total debits differ from total credits", message: "The entry is not balanced: total debits must equal total credits." }
+    checks:
+      - { kind: equal_sums, refusal: entry_unbalanced, items: ledger_entry_lines, fields: [debit, credit] }
     confirm:
       summary: "Post ledger entry \"{label}\" dated {date} in journal {journal_id}: no draft, and the API cannot delete it."
     call:
@@ -1611,22 +1733,32 @@ functions:
       additionalProperties: false
       properties:
         filter:
-          type: string
-          pattern: "^\\[.*\\]$"
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, operator, value]
+            properties:
+              field: { enum: [id, bank_account_id, journal_id, date] }
+              operator: *operator
+              value: *clause_value
+            allOf: [*in_takes_a_list]
           description: >-
-            JSON array, as a string, of {"field", "operator", "value"}
-            clauses. Fields: id, bank_account_id, journal_id (eq, not_eq, in,
-            not_in), date (eq, not_eq, gt, lt, lteq, gteq).
+            Clauses that must all hold, each {field, operator, value}; in
+            and not_in take a list. Fields: id, bank_account_id, journal_id
+            (eq, not_eq, in, not_in), date (eq, not_eq, gt, lt, lteq, gteq).
         limit: *limit
         cursor: *cursor
     examples:
       - title: Transactions of September
         input:
-          filter: "[{\"field\":\"date\",\"operator\":\"gteq\",\"value\":\"2026-09-01\"},{\"field\":\"date\",\"operator\":\"lteq\",\"value\":\"2026-09-30\"}]"
+          filter: [{ field: date, operator: gteq, value: "2026-09-01" }, { field: date, operator: lteq, value: "2026-09-30" }]
     call:
       method: GET
       path: /transactions
       query: { filter: filter, limit: limit, cursor: cursor }
+      encode: { filter: json }
     pagination: *pagination_long
     output: *list_output
     cost: { per: request }

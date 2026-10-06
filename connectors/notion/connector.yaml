@@ -1,11 +1,10 @@
 # yaml-language-server: $schema=../connector.schema.json
 # Notion API reference: https://developers.notion.com/reference
-# Every request carries the header Notion-Version: <api_version>.
 connector:
   name: notion
   label: Notion
   namespace: notion
-  version: 1.0.0
+  version: 1.1.0
   api_version: "2025-09-03"
   base_url: https://api.notion.com/v1
   auth:
@@ -15,6 +14,7 @@ connector:
     - { name: token, label: Integration token, secret: true }
   modes: [byo_user, byo_org]
   timeout_s: 60
+  headers: { Notion-Version: "2025-09-03" }
   errors:
     - { status: 400, code: invalid_request, retryable: false,
         message: "Notion rejected the request as invalid: check the arguments." }
@@ -79,6 +79,7 @@ functions:
       kind: cursor
       request_param: start_cursor
       next: next_cursor
+      more: has_more
       max_pages: 10
     output:
       items: results
@@ -131,6 +132,7 @@ functions:
       kind: cursor
       request_param: start_cursor
       next: next_cursor
+      more: has_more
       max_pages: 50
     output:
       items: results

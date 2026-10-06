@@ -12,6 +12,7 @@ import * as pennylane from "./pennylane"
 import * as sellsy from "./sellsy"
 import * as typeform from "./typeform"
 import * as wttjAts from "./wttj_ats"
+import type { Connector } from "./types"
 
 export { affinity }
 export { aircall }
@@ -28,8 +29,8 @@ export { typeform }
 export { wttjAts }
 export type * from "./types"
 
-/** Every generated connector, in name order. */
-export const connectors = [
+/** Every generated connector, in name order; each module keeps its precise types. */
+export const connectors: readonly Connector[] = [
   affinity.connector,
   aircall.connector,
   amplitude.connector,
@@ -43,4 +44,4 @@ export const connectors = [
   sellsy.connector,
   typeform.connector,
   wttjAts.connector,
-] as const
+]

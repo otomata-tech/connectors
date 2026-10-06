@@ -1,4 +1,4 @@
-"""La fabrique : règles hors schéma, traduction JSON Schema → `zod`, refus, sortie à jour.
+"""La fabrique : règles hors schéma, JSON Schema d'entrée recopié, ajouts du format, refus, sortie à jour.
 
 La sortie TypeScript commitée (`ts/src/`) doit être celle que la fabrique produit des
 descriptions : sinon `test_committed_output_is_current` échoue et dit de lancer
@@ -8,17 +8,18 @@ from __future__ import annotations
 
 import copy
 import pathlib
+import re
 
 import pytest
 import yaml
 
 from fabrique.build import generate, stale
 from fabrique.descriptions import CONNECTORS, DescriptionError, check
-from fabrique.typescript import connector_module, function_source
-from fabrique.zod import Untranslatable, translate, translate_input
+from fabrique.typescript import NotGenerated, connector_module, function_source, js_block
 
 SELLSY = CONNECTORS / "sellsy" / "connector.yaml"
 NOTION = CONNECTORS / "notion" / "connector.yaml"
+PENNYLANE = CONNECTORS / "pennylane" / "connector.yaml"
 
 
 def _load(path: pathlib.Path) -> dict:
@@ -36,6 +37,11 @@ def test_every_description_generates_a_module():
     result = generate()
     assert {m.connector for m in result.modules} == {p.parent.name for p in CONNECTORS.glob("*/connector.yaml")}
     assert all(m.generated for m in result.modules)
+
+
+def test_every_function_is_generated():
+    result = generate()
+    assert [s.function for m in result.modules for s in m.skipped] == []
 
 
 # --- Règle 1 : un argument, un seul endroit ---------------------------------------
@@ -83,87 +89,30 @@ def test_valid_descriptions_pass():
         check(_load(path), path)
 
 
-# --- Traduction JSON Schema → zod --------------------------------------------------
-
-
-@pytest.mark.parametrize("schema, expected", [
-    ({"type": "string", "minLength": 1, "maxLength": 9, "pattern": "^a"}, 'z.string().min(1).max(9).regex(new RegExp("^a"))'),
-    ({"type": "integer", "minimum": 1, "maximum": 100}, "z.int().gte(1).lte(100)"),
-    ({"type": "number", "exclusiveMinimum": 0}, "z.number().gt(0)"),
-    ({"type": ["string", "null"]}, "z.string().nullable()"),
-    ({"type": ["integer", "string"]}, "z.union([z.int(), z.string()])"),
-    ({"enum": ["a", "b"]}, 'z.enum(["a", "b"])'),
-    ({"enum": [0, 1, 2], "type": "integer"}, "z.literal([0, 1, 2])"),
-    ({"enum": ["a", None]}, 'z.literal("a").nullable()'),
-    ({"enum": []}, "z.never()"),
-    ({"const": "object"}, 'z.literal("object")'),
-    ({"enum": ["", "a"], "type": "string", "minLength": 1}, 'z.literal("a")'),
-    ({"type": "array", "items": {"type": "integer"}, "minItems": 1}, "z.array(z.int()).min(1)"),
-    ({"type": "object"}, "z.looseObject({})"),
-    ({"type": "object", "additionalProperties": {"type": "string"}}, "z.record(z.string(), z.string())"),
-    ({"anyOf": [{"type": "string"}, {"type": "integer", "minimum": 0}]}, "z.union([z.string(), z.int().gte(0)])"),
-    ({"oneOf": [{"type": "string"}, {"type": "null"}]}, "z.union([z.string(), z.null()])"),
-    ({"type": "string", "description": "Text."}, 'z.string().describe("Text.")'),
-    ({"type": "string", "format": "uuid", "default": "x"}, 'z.string().meta({"default": "x", "format": "uuid"})'),
-    ({"description": "Anything."}, 'z.unknown().describe("Anything.")'),
-])
-def test_translate(schema, expected):
-    assert translate(schema) == expected
-
-
-def test_translate_strict_object_with_optional_keys():
-    schema = {
-        "type": "object", "additionalProperties": False, "required": ["id"],
-        "properties": {"id": {"type": "integer"}, "q": {"type": "string"}},
-    }
-    assert translate_input(schema, "input") == 'z.strictObject({\n  "id": z.int(),\n  "q": z.string().optional(),\n})'
-
-
-def test_translate_one_of_exclusive_objects():
-    page = {"type": "object", "additionalProperties": False, "required": ["page_id"], "properties": {"page_id": {"type": "string"}}}
-    base = {"type": "object", "additionalProperties": False, "required": ["database_id"], "properties": {"database_id": {"type": "string"}}}
-    assert translate({"oneOf": [page, base]}).startswith("z.union([z.strictObject(")
-
-
-@pytest.mark.parametrize("schema, reason", [
-    ({"oneOf": [{"type": "string"}, {"type": "string", "format": "uuid"}]}, "oneOf with branches that may overlap"),
-    ({"type": "array", "items": {"type": "string"}, "uniqueItems": True}, "uniqueItems needs a refinement"),
-    ({"type": "string", "not": {"enum": ["."]}}, "not needs a refinement"),
-    ({"type": "object", "properties": {"a": {"type": "string"}}, "required": ["b"]}, "required key"),
-    ({"type": "string", "oneOf": [{"minLength": 1}]}, "oneOf with sibling constraints"),
-    ({"minLength": 1}, "constraints without a type"),
-    ({"const": {"a": 1}}, "object or array value"),
-])
-def test_translate_refuses(schema, reason):
-    with pytest.raises(Untranslatable, match=reason):
-        translate(schema)
-
-
-@pytest.mark.parametrize("keyword, value", [
-    ("oneOf", [{"required": ["a"]}, {"required": ["b"]}]),
-    ("not", {"required": ["a", "b"]}),
-    ("minProperties", 1),
-    ("dependentRequired", {"a": ["b"]}),
-])
-def test_root_constraints_are_refused(keyword, value):
-    schema = {
-        "type": "object", "additionalProperties": False,
-        "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, keyword: value,
-    }
-    with pytest.raises(Untranslatable, match=f"{keyword} at the root needs a refinement"):
-        translate_input(schema, "input")
-
-
 # --- Génération : refus nommés, pagination -----------------------------------------
 
 
-def test_untranslatable_function_is_skipped_and_named():
-    description = _load(NOTION)
-    description["functions"][0]["input"]["minProperties"] = 1
-    module = connector_module(check(description, NOTION))
-    assert "notion.search_workspace" not in module.generated
-    assert [s.function for s in module.skipped][0] == "notion.search_workspace"
-    assert "// - notion.search_workspace: input: minProperties at the root needs a refinement" in module.source
+def test_input_schema_is_copied_as_is():
+    """Aucune traduction : le schéma servi est celui de la description, ancres YAML résolues, quels que soient ses mots-clés."""
+    function = next(f for f in _load(NOTION)["functions"] if f["name"] == "edit_page_markdown")
+    source = function_source("notion", function)
+    assert "  schema: " + js_block(function["input"], 1) + ",\n" in source
+    assert '"oneOf": [' in source and '"not": {' in source
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda i: i.update(additionalProperties=True),
+    lambda i: i.pop("additionalProperties"),
+    lambda i: i.update(type="array"),
+], ids=["open", "no_additional_properties", "not_an_object"])
+def test_root_not_strict_is_skipped_and_named(mutate):
+    """La seule exigence que la fabrique vérifie encore elle-même, au cas où le schéma du format la laisserait passer."""
+    description = check(_load(NOTION), NOTION)
+    mutate(description.data["functions"][0]["input"])
+    module = connector_module(description)
+    reason = "input: the root must be a strict object (type: object, additionalProperties: false)"
+    assert [(s.function, s.reason) for s in module.skipped] == [("notion.search_workspace", reason)]
+    assert f"// - notion.search_workspace: {reason}" in module.source
     assert "export const searchWorkspace" not in module.source
     assert "export const getPage" in module.source
 
@@ -171,9 +120,9 @@ def test_untranslatable_function_is_skipped_and_named():
 def test_pagination_adds_its_arguments_and_refuses_a_clash():
     function = _load(NOTION)["functions"][0]
     source = function_source("notion", function)
-    assert '"all_pages": z.boolean()' in source and '"max_pages": z.int().gte(1).lte(10)' in source
+    assert '"all_pages": {"type": "boolean"' in source and '"maximum": 10' in source
     function["input"]["properties"]["all_pages"] = {"type": "boolean"}
-    with pytest.raises(Untranslatable, match="pagination adds"):
+    with pytest.raises(NotGenerated, match="pagination adds"):
         function_source("notion", function)
 
 
@@ -181,5 +130,80 @@ def test_handwritten_function_is_not_generated():
     function = _load(NOTION)["functions"][0]
     del function["call"]
     function["handwritten"] = {"python": {"module": "m", "function": "f"}, "typescript": {"file": "f.ts", "export": "f"}}
-    with pytest.raises(Untranslatable, match="handwritten"):
+    with pytest.raises(NotGenerated, match="handwritten"):
         function_source("notion", function)
+
+
+# --- Ajouts du format : sortie ----------------------------------------------------
+
+
+def _pennylane(name: str) -> dict:
+    return next(f for f in _load(PENNYLANE)["functions"] if f["name"] == name)
+
+
+def test_connector_carries_headers_rate_and_probe():
+    notion = connector_module(check(_load(NOTION), NOTION)).source
+    assert 'headers: {"Notion-Version": "2025-09-03"},' in notion
+    pennylane = connector_module(check(_load(PENNYLANE), PENNYLANE)).source
+    assert "rateLimit: { requests: 4, intervalMs: 1000 }," in pennylane
+    assert 'probe: { function: "pennylane.get_company", nonEmpty: ["scopes"] },' in pennylane
+
+
+def test_request_carries_constants_encoding_and_stop_flag():
+    source = function_source("pennylane", _pennylane("list_customers"))
+    assert 'encode: {"filter": "json"},' in source
+    assert 'more: "has_more"' in source
+    source = function_source("pennylane", _pennylane("create_customer_invoice"))
+    assert 'constants: {"body": {"draft": true}},' in source
+
+
+def test_checks_and_expectations_are_carried():
+    source = function_source("pennylane", _pennylane("create_ledger_entry"))
+    assert 'checks: [\n    { kind: "equal_sums", refusal: "entry_unbalanced", items: "ledger_entry_lines", fields: ["debit", "credit"] },' in source
+    source = function_source("pennylane", _pennylane("get_quote_pdf_link"))
+    assert 'expect: [\n    { kind: "non_empty", refusal: "pdf_missing", path: "public_file_url" },' in source
+
+
+def test_delete_carries_its_body():
+    source = function_source("pennylane", _pennylane("unletter_ledger_entry_lines"))
+    assert 'method: "DELETE"' in source
+    assert 'body: {"ledger_entry_lines": "ledger_entry_lines", "unbalanced_lettering_strategy": "unbalanced_lettering_strategy"},' in source
+
+
+# --- Règles 3 à 5 : constantes, contrôles, sonde ------------------------------------
+
+
+def _fn(d, name):
+    return next(f for f in d["functions"] if f["name"] == name)
+
+
+@pytest.mark.parametrize("path, mutate, message", [
+    (PENNYLANE, lambda d: _fn(d, "create_customer_invoice")["call"]["constants"]["body"].update(label=True),
+     "body 'label' is both a constant and an argument"),
+    (NOTION, lambda d: d["connector"]["headers"].update(Authorization="x"),
+     "header 'Authorization' is set twice"),
+    (NOTION, lambda d: _fn(d, "get_page")["call"].update(constants={"headers": {"notion-version": "x"}}),
+     "header 'notion-version' is set twice"),
+    (PENNYLANE, lambda d: _fn(d, "get_product")["call"].update(encode={"product_id": "json"}),
+     "encode names 'product_id', which is not placed in query, body or headers"),
+    (PENNYLANE, lambda d: _fn(d, "create_ledger_entry")["checks"][0].update(refusal="nope"),
+     "equal_sums names refusal 'nope', which the function does not declare"),
+    (PENNYLANE, lambda d: _fn(d, "create_ledger_entry")["checks"][0].update(fields=["debit", "amount"]),
+     "equal_sums needs 'ledger_entry_lines' to be a list argument whose items declare debit, amount"),
+    (PENNYLANE, lambda d: _fn(d, "create_ledger_entry")["checks"][0].update(items="label"),
+     "equal_sums needs 'label' to be a list argument"),
+    (PENNYLANE, lambda d: _fn(d, "get_quote_pdf_link")["expect"][0].update(refusal="nope"),
+     "non_empty names refusal 'nope'"),
+    (PENNYLANE, lambda d: d["connector"]["probe"].update(function="nope"),
+     "probe names 'nope', which is not a function of the connector"),
+    (PENNYLANE, lambda d: d["connector"]["probe"].update(function="get_product"),
+     "probe 'get_product' must be a read function with a call and no required argument"),
+    (PENNYLANE, lambda d: d["connector"]["probe"].update(function="create_customer"),
+     "probe 'create_customer' must be a read function"),
+], ids=["constant_and_argument", "header_and_auth", "header_case", "encode_unplaced", "check_refusal",
+        "check_fields", "check_not_a_list", "expect_refusal", "probe_unknown", "probe_required", "probe_write"])
+def test_added_rules_refuse(path, mutate, message):
+    description = _load(path)
+    mutate(description)
+    with pytest.raises(DescriptionError, match=re.escape(message)):
+        check(description, path)

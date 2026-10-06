@@ -15,12 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "peerDependencies": {
-    "zod": "^3.25"
-  },
   "devDependencies": {
+    "ajv": "8.20.0",
     "typescript": "5.8.3",
-    "vitest": "3.2.7",
-    "zod": "3.25.76"
+    "vitest": "3.2.7"
   }
 }
