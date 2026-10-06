@@ -1,7 +1,7 @@
 # La fabrique
 
 - **Statut** : proposé
-- **Dernière révision** : 2026-10-05
+- **Dernière révision** : 2026-10-06
 
 ## Résumé
 
@@ -70,6 +70,9 @@ Le code généré ne lit aucun secret. En Python, le constructeur du client reç
 - **La fabrique dans le paquet, en TypeScript** : écarté. Elle vit à côté des descriptions et de la lib qu'elle génère, pour qu'une seule source fasse foi.
 - **Générer pour le backend d'oto 1** (un lecteur du format dans ce backend) : écarté le 29/09. Il vit avec ses connecteurs tels qu'ils sont, et ses outils Sellsy ne sont pas touchés.
 - **Partir de zéro, sans la lib** : écarté le 30/09. La lib est gardée pour les connecteurs partagés, au secret fourni par le consommateur.
+- **TypeScript seul, la lib Python gelée jusqu'à l'extinction d'oto 1** : écarté le 06/10. Une seule version des connecteurs passe par la description et la fabrique, pas par l'abandon d'un des deux langages ; la description devient la source du client Python comme du TypeScript, et un client Python écrit à la main à côté d'elle est un doublon à résorber.
+- **Python seul, appelé à distance par oto 2** : écarté de nouveau le 06/10, pour les raisons du service connecteurs abandonné le 29/09.
+- **La fabrique avant la prise du paquet** : écarté le 06/10. Le paquet d'oto 2 reçoit d'abord sa prise (contrat de connecteur, secret à l'appel, comptes réels), prouvée par un connecteur témoin écrit à la main au contrat du paquet, `notion` ; la fabrique génère ensuite ce même contrat et remplace le témoin.
 
 ## Sécurité et confidentialité
 
@@ -103,3 +106,4 @@ Le code généré ne lit aucun secret. En Python, le constructeur du client reç
 - 2026-09-29 : la lib ne lit plus aucun secret : résolution locale et ses quatre fournisseurs retirés, secret exigé par `require` ; publié en 1.148.0 — décidé par le mainteneur (source : séance du 29/09).
 - 2026-09-30 : la lib est gardée pour les connecteurs partagés, au secret fourni par le consommateur — décidé par le mainteneur, accord du responsable du paquet à l'oral (source : point du 30/09).
 - 2026-10-05 : reprise en document de conception vivant depuis la conception connecteurs d'oto 2 (oto-enterprise, archivé) — décidé par le mainteneur.
+- 2026-10-06 : une seule version des connecteurs, par la description et la fabrique ; TypeScript seul et Python à distance écartés ; la prise du paquet d'abord, avec un témoin `notion` écrit à la main — décidé par le mainteneur.

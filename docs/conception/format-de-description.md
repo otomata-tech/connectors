@@ -1,7 +1,7 @@
 # Format de description d'un connecteur
 
 - **Statut** : validé avec Alexis le 29/09/2026
-- **Dernière révision** : 2026-10-05
+- **Dernière révision** : 2026-10-06
 
 ## Résumé
 
@@ -131,7 +131,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 
 ## Écart avec le code
 
-- Écrits : le schéma, son test et douze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite. Aucun test n'impose encore qu'un client ait sa description.
+- Écrits : le schéma, son test et douze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite. Aucun test n'impose encore qu'un client ait sa description, et le client `wordpress`, ajouté en 1.156.0, n'en a pas.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
 - Deux règles échappent au schéma JSON et ne sont vérifiées nulle part : un argument va à un seul endroit (et chaque `{param}` du chemin nomme un argument) ; une référence de `auth` désigne un champ de `credential` existant. La fabrique doit les vérifier.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
