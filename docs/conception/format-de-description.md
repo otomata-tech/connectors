@@ -111,7 +111,7 @@ Treize connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` 
 
 `pennylane` (API v2, une clé par société) couvre ce que couvre le client : référentiels, clients, fournisseurs, factures clients et avoirs, devis, factures d'achat (lecture, correction, validation), grand livre et lettrage, transactions, balance, rapprochement ; 26 lectures, 13 écritures, 9 fonctions sensibles. Valeurs vérifiées le 2026-10-06 contre l'OpenAPI publique « Company V2 ». Restent hors du fichier : le téléversement de pièce (multipart) et l'import de facture d'achat qui en dépend, les deux recherches anti-doublon par `external_reference` du client (servies par le `filter` des listes), l'agrégat `fetch_complete_data` (plusieurs appels) et l'option `only_outstanding` des transactions (filtre local). Le `filter` est une liste de clauses `{field, operator, value}` (champs énumérés par fonction, liste exigée pour `in` et `not_in`), sérialisée en JSON dans la query par `encode` ; `draft: true` est une constante de corps ; le rythme (4 requêtes par seconde), l'arrêt sur `has_more`, la sonde (`get_company`, `scopes` non vide), l'équilibre d'une écriture et le lien PDF d'un devis sont déclarés. Un avoir prend des quantités négatives, imposées par le schéma, là où le client inverse le signe.
 
-Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur), `wordpress` (adresse propre à chaque site, fournie par le credential ; racine REST découverte à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire).
+Cinq clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur), `wordpress` (adresse propre à chaque site, fournie par le credential ; racine REST découverte à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire), `metabase` (adresse propre à chaque instance, fournie par le credential).
 
 ### Contrôles
 
@@ -139,7 +139,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 
 ## Écart avec le code
 
-- Écrits : le schéma, son test et treize descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite, `pennylane` le 2026-10-06. Aucun test n'impose encore qu'un client ait sa description, et le client `wordpress`, ajouté en 1.156.0, n'en a pas.
+- Écrits : le schéma, son test et treize descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite, `pennylane` le 2026-10-06. Aucun test n'impose encore qu'un client ait sa description ; `wordpress`, ajouté en 1.156.0, et `metabase` n'en ont pas, faute de pouvoir dire leur adresse.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
 - `quota` n'a pas de forme : le schéma n'exige qu'un objet non vide.
@@ -157,7 +157,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - Référencer la spec OpenAPI de l'éditeur quand elle existe ?
 - Le défaut `per_connector` vaut-il pour un hôte d'oto 2, dont les fonctions ne passent que par `call` ?
 - Ce que le format ne sait pas encore dire, relevé en décrivant dix connecteurs le 2026-10-05 :
-  - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe) ;
+  - une adresse propre au compte ou à la région (`threecx`, `wordpress`, `metabase`, `typeform` hors des États-Unis, `amplitude` en Europe) ;
   - un corps qui est un tableau (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
   - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
   - une signature par requête (`boondmanager`) ;
@@ -177,3 +177,4 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - 2026-10-06 : description `pennylane`, 48 fonctions, et cinq trous du format relevés — choix du projet.
 - 2026-10-05 : la description microsoft passe à l'accès délégué (jeton d'une personne, fourni par l'hôte), version 2.0.0 — choix du projet (source : refonte du client, v1.155.0).
 - 2026-10-06 : le format dit en-têtes constants, constantes de requête, encodage JSON d'un argument, arrêt de pagination (`more`), rythme maximal, sonde, contrôles avant l'appel (`checks`) et sur la réponse (`expect`) ; `notion` et `pennylane` (2.0.0) s'en servent ; l'entrée est servie en JSON Schema tel quel ; `nextmotion` (1.0.1) corrigé : un `oneOf` aux branches qui se recouvrent devient un `anyOf` de types disjoints (six fonctions), et onze branches `enum: []`, qui n'acceptaient rien, sont retirées — décidé par le mainteneur.
+- 2026-10-06 : client `metabase` (lecture et requêtes) sans description, son adresse étant propre à chaque instance — choix du projet.
