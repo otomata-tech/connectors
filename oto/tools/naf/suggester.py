@@ -86,18 +86,18 @@ class NAFSuggester:
         sections_text = self._get_sections_overview()
 
         system_prompt = (
-            "Tu es un expert en classification NAF française. "
-            "Réponds uniquement en JSON valide. "
-            "Utilise UNIQUEMENT les codes exacts de la liste fournie."
+            "You are an expert in the French NAF classification. "
+            "Reply only with valid JSON. "
+            "Use ONLY the exact codes from the list provided."
         )
 
-        user_prompt = f"""Codes NAF par section (exemples):
+        user_prompt = f"""NAF codes by section (examples):
 {sections_text}
 
-Activité: "{description}"
+Activity (may be written in French): "{description}"
 
-Choisis 1-{limit} codes NAF EXACTS de la liste. Réponds en JSON:
-{{"suggestions": [{{"code": "XX.XXZ", "label": "description", "confidence": 0.9, "reason": "pourquoi"}}]}}"""
+Pick 1-{limit} EXACT NAF codes from the list. Reply in JSON:
+{{"suggestions": [{{"code": "XX.XXZ", "label": "description", "confidence": 0.9, "reason": "why"}}]}}"""
 
         try:
             result = self.groq.complete_json(
