@@ -44,8 +44,8 @@ def lint_markdown(text: str, source: str = '') -> list[str]:
         loc = f'{source}: ' if source else ''
         nums = ', '.join(str(n) for n in glued)
         msgs.append(
-            f'{loc}liste collée au paragraphe précédent (ligne(s) {nums}) : '
-            'ajoutez une ligne vide avant la puce, sinon le rendu colle les puces.'
+            f'{loc}list glued to the preceding paragraph (line(s) {nums}): '
+            'add a blank line before the bullet, otherwise the rendering runs the bullets together.'
         )
     return msgs
 

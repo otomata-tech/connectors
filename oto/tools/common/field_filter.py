@@ -136,9 +136,9 @@ class FieldFilter:
         stringified.
         """
         if isinstance(value, list):
-            # Élément par élément : un scalaire reçoit l'action (sinon il fuirait, même
-            # au milieu de conteneurs — liste mixte), un dict/list repart en recursion
-            # (via ce même `_transform`) pour redacter ses champs imbriqués.
+            # Element by element: a scalar gets the action (otherwise it would leak, even
+            # amid containers — mixed list), a dict/list recurses
+            # (via this same `_transform`) to redact its nested fields.
             return [self._transform(item, rule, action) for item in value]
         if isinstance(value, dict):
             return self._walk(value)

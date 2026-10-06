@@ -312,7 +312,7 @@ def test_an_empty_or_scalar_id_list_is_refused(calls, client, bad):
 
 @pytest.mark.parametrize("bad", ["", None, "../absences", f"{A}/x", f"{A}?x=1", "a b"])
 def test_an_invalid_identifier_never_reaches_the_url(calls, client, bad):
-    with pytest.raises(ValueError, match="invalide"):
+    with pytest.raises(ValueError, match="invalid"):
         client.get_collaborator(bad)
     assert not [c for c in calls if c["method"] == "GET"]
 

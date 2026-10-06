@@ -54,14 +54,14 @@ class CollectiveClient:
         Returns:
             Dict with timestamp, url, total_results, and jobs list.
         """
-        # Un jobId ne se résout que sous SON workspace : l'URL rendue pour
-        # chaque offre se reconstruit donc sur celui de la page scrapée, lu
-        # ici et jamais écrit en dur.
+        # A jobId only resolves under ITS workspace: the URL returned for
+        # each job is therefore rebuilt on that of the scraped page, read
+        # here and never hard-coded.
         workspace = re.search(r"/collective/([^/?#]+)", url)
         if not workspace:
             raise ValueError(
-                "URL sans workspace Collective — attendu "
-                f".../collective/<workspace>/jobs, reçu : {url}"
+                "URL without a Collective workspace — expected "
+                f".../collective/<workspace>/jobs, got: {url}"
             )
 
         async with BrowserClient(profile_path=self.profile_path, headless=self.headless) as browser:
@@ -106,7 +106,7 @@ class CollectiveClient:
                     for job in current_jobs:
                         all_jobs[job["id"]] = job
                     scroll_num += 1
-                    print(f"Scroll {scroll_num}... ({len(all_jobs)} offres total)", file=sys.stderr)
+                    print(f"Scroll {scroll_num}... ({len(all_jobs)} jobs total)", file=sys.stderr)
                     if len(all_jobs) == prev_total:
                         no_change_count += 1
                     else:
@@ -114,7 +114,7 @@ class CollectiveClient:
                     prev_total = len(all_jobs)
                     if not found_seen:
                         await browser.scroll_element(scroll_selector, times=1, delay=scroll_delay)
-                print(f"Fin du scroll après {scroll_num} scrolls", file=sys.stderr)
+                print(f"Scrolling finished after {scroll_num} scrolls", file=sys.stderr)
                 jobs = list(all_jobs.values())
             else:
                 for i in range(max_scroll):
@@ -133,7 +133,7 @@ class CollectiveClient:
                             all_job_ids.append(jid)
                     for job in current_jobs:
                         all_jobs[job["id"]] = job
-                    print(f"Scroll {i + 1}/{max_scroll}... ({len(all_jobs)} offres total)", file=sys.stderr)
+                    print(f"Scroll {i + 1}/{max_scroll}... ({len(all_jobs)} jobs total)", file=sys.stderr)
                     await browser.scroll_element(scroll_selector, times=1, delay=scroll_delay)
                 # Final parse after last scroll
                 raw_text = await browser.get_text()

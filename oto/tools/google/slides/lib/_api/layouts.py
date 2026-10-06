@@ -1,8 +1,8 @@
-"""Layouts du master : résolution, création de slides, génération en lot.
+"""Master layouts: resolution, slide creation, batch generation.
 
-Extrait de `slides_client.py` (découpage par famille d'opérations, surface
-publique figée) : les corps sont inchangés. Ce mixin n'est jamais instancié
-seul — il est composé dans `SlidesClient`, qui construit `slides_service` et
+Extracted from `slides_client.py` (split by operation family, public surface
+frozen): the bodies are unchanged. This mixin is never instantiated on its
+own — it is composed into `SlidesClient`, which builds `slides_service` and
 `drive_service`.
 """
 
@@ -10,7 +10,7 @@ from ..markup import parse_bold_markdown
 
 
 class _LayoutsMixin:
-    """Layouts du master : résolution, création de slides, génération en lot."""
+    """Master layouts: resolution, slide creation, batch generation."""
 
     def get_layout_id_by_name(self, presentation_id, layout_name):
         """
@@ -107,8 +107,8 @@ class _LayoutsMixin:
         """
         Return {layout_name: {'objectId': ..., 'placeholders': [(type, index), ...]}}.
 
-        Useful pour découvrir les layouts d'un master importé avant de les
-        utiliser via `build_from_layouts`.
+        Useful for discovering the layouts of an imported master before using
+        them via `build_from_layouts`.
         """
         pres = self.get_presentation(presentation_id)
         out = {}
@@ -129,17 +129,17 @@ class _LayoutsMixin:
 
     def clear_all_slides(self, presentation_id, keepalive_layout_id=None):
         """
-        Supprime toutes les slides existantes en gardant une slide temporaire
-        (l'API Slides refuse une présentation à 0 slide).
+        Delete all existing slides while keeping a temporary slide
+        (the Slides API refuses a presentation with 0 slides).
 
         Args:
-            presentation_id: ID de la présentation
-            keepalive_layout_id: layoutId d'une slide temporaire à insérer en queue.
-                Si None, prend le premier layout disponible.
+            presentation_id: ID of the presentation
+            keepalive_layout_id: layoutId of a temporary slide to insert at the end.
+                If None, takes the first available layout.
 
         Returns:
-            str: objectId de la slide temporaire keepalive
-                 (à supprimer après avoir créé tes vraies slides)
+            str: objectId of the temporary keepalive slide
+                 (to delete after creating your real slides)
         """
         pres = self.slides_service.presentations().get(
             presentationId=presentation_id, fields='slides(objectId),layouts(objectId)'
@@ -149,11 +149,11 @@ class _LayoutsMixin:
         if keepalive_layout_id is None:
             layouts = pres.get('layouts', [])
             if not layouts:
-                raise ValueError("Aucun layout disponible pour le keepalive")
+                raise ValueError("No layout available for the keepalive")
             keepalive_layout_id = layouts[0]['objectId']
 
         keepalive_id = 'tmp_keepalive_oto'
-        # Si déjà présent (re-run), réutiliser
+        # If already present (re-run), reuse it
         if keepalive_id in existing:
             others = [s for s in existing if s != keepalive_id]
             if others:
@@ -179,37 +179,37 @@ class _LayoutsMixin:
     def build_from_layouts(self, presentation_id, slides_def,
                            override_body_bold=True, parse_markdown_bold=True):
         """
-        Génère une série de slides à partir d'une liste de définitions, en
-        peu de batchUpdate (= robuste face au quota 60 writes/min/user).
+        Generate a series of slides from a list of definitions, with few
+        batchUpdates (= robust against the 60 writes/min/user quota).
 
-        Approche :
-        1. 1 batchUpdate `createSlide` avec `placeholderIdMappings` → objectIds
-           prédictibles.
-        2. 1 batchUpdate `insertText` + `updateTextStyle` (bold) sur tous les
-           placeholders à remplir.
+        Approach:
+        1. 1 `createSlide` batchUpdate with `placeholderIdMappings` → predictable
+           objectIds.
+        2. 1 `insertText` + `updateTextStyle` (bold) batchUpdate on all the
+           placeholders to fill.
 
         Args:
-            presentation_id: ID de la présentation cible (déjà nettoyée si besoin)
-            slides_def: liste de tuples `(slide_id, layout_id, fills)` où `fills`
-                est un dict `{(placeholder_type, placeholder_index): text}`.
-                `slide_id` doit faire ≥ 5 caractères (contrainte API).
-            override_body_bold: si True (défaut), force `bold:False` sur tous les
-                placeholders BODY avant d'appliquer les ranges bold issues du
-                markdown. Utile quand le master rend BODY en gras par défaut
-                (cas du template Otomata) — sinon `**bold**` est invisible.
-            parse_markdown_bold: si True (défaut), parse les segments `**…**`
-                du texte et applique `updateTextStyle bold:True` dessus.
+            presentation_id: ID of the target presentation (already cleared if needed)
+            slides_def: list of tuples `(slide_id, layout_id, fills)` where `fills`
+                is a dict `{(placeholder_type, placeholder_index): text}`.
+                `slide_id` must be at least 5 characters (API constraint).
+            override_body_bold: if True (default), force `bold:False` on all
+                BODY placeholders before applying the bold ranges from the
+                markdown. Useful when the master renders BODY in bold by default
+                (the Otomata template case) — otherwise `**bold**` is invisible.
+            parse_markdown_bold: if True (default), parse the `**…**` segments
+                of the text and apply `updateTextStyle bold:True` to them.
 
         Returns:
-            list[str]: la liste des objectIds des slides créées
+            list[str]: the list of objectIds of the created slides
         """
-        # Phase 1 — création des slides + placeholderIdMappings
+        # Phase 1 — create the slides + placeholderIdMappings
         create_reqs = []
         for idx, (slide_id, layout_id, fills) in enumerate(slides_def):
             if len(slide_id) < 5:
                 raise ValueError(
-                    f"slide_id {slide_id!r} doit faire ≥ 5 caractères "
-                    f"(contrainte Slides API)"
+                    f"slide_id {slide_id!r} must be at least 5 characters "
+                    f"(Slides API constraint)"
                 )
             ph_mappings = [
                 {
@@ -250,7 +250,7 @@ class _LayoutsMixin:
                         'insertionIndex': 0,
                     }
                 })
-                # Casser l'héritage bold du master (cas Otomata) sur les BODY
+                # Break the master's bold inheritance (Otomata case) on BODY placeholders
                 if override_body_bold and ph_type == 'BODY':
                     fill_reqs.append({
                         'updateTextStyle': {
@@ -260,7 +260,7 @@ class _LayoutsMixin:
                             'fields': 'bold',
                         }
                     })
-                # Appliquer les ranges bold issues du markdown
+                # Apply the bold ranges from the markdown
                 for start, end in bolds:
                     fill_reqs.append({
                         'updateTextStyle': {

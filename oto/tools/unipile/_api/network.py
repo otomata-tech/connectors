@@ -1,8 +1,8 @@
-"""Réseau & outreach : relations et invitations.
+"""Network & outreach: relations and invitations.
 
-Extrait de `client.py` (découpage par domaine, surface publique figée) :
-les corps sont inchangés. Ce mixin n'est jamais instancié seul — il est
-composé dans `UnipileClient`, qui fournit le transport (`_request`,
+Extracted from `client.py` (split by domain, frozen public surface):
+the bodies are unchanged. This mixin is never instantiated on its own — it is
+composed into `UnipileClient`, which provides the transport (`_request`,
 `_acct`, `_norm`, `_by_shape`, `session`).
 """
 
@@ -17,40 +17,40 @@ from ..const import cursor_with_limit
 from ..errors import UnipileError
 
 
-# Curseur SYNTHÉTIQUE des invitations : `off:<offset>:<empreinte de la page>`.
+# SYNTHETIC invitations cursor: `off:<offset>:<page fingerprint>`.
 #
-# `relation-requests` est paginé par OFFSET côté Unipile, pas par curseur — il
-# ne rend donc JAMAIS de `next_cursor`. Pour garder au tool son contrat
-# (« rappelle-moi avec le cursor rendu »), on FABRIQUE ce jeton et on le
-# redécode à l'entrée : il n'est JAMAIS transmis en amont. Le préfixe le rend
-# lisible en log et empêche toute collision si Unipile finissait par en rendre
-# un vrai (auquel cas l'amont gagne, cf. `list_invitations`).
+# `relation-requests` is paginated by OFFSET on the Unipile side, not by cursor — so it
+# NEVER returns a `next_cursor`. To keep the tool's contract
+# ("call me again with the returned cursor"), we FABRICATE this token and
+# decode it again on input: it is NEVER forwarded upstream. The prefix makes it
+# readable in logs and prevents any collision if Unipile ever ended up returning
+# a real one (in which case upstream wins, see `list_invitations`).
 #
-# Le jeton porte AUSSI l'empreinte de la page qui l'a produit, et c'est là
-# l'arrêt mécanique : qu'`offset` pagine réellement cet endpoint n'a jamais été
-# vérifié contre le service réel. Si l'hypothèse est fausse, l'amont ignore
-# `offset` et ressert la même page indéfiniment — sans empreinte, la boucle
-# appelante ne s'arrête JAMAIS (simulé : 8 pages, 400 lignes rendues pour 50
-# distinctes). En comparant la page rendue à celle du tour précédent, on coupe
-# au 2e appel. La forme `off:<n>` sans empreinte reste décodée : un curseur
-# rendu par une version antérieure ne casse pas en vol.
+# The token ALSO carries the fingerprint of the page that produced it, and that is
+# the mechanical stop: that `offset` actually paginates this endpoint was never
+# verified against the real service. If the assumption is wrong, upstream ignores
+# `offset` and serves the same page forever — without a fingerprint, the calling
+# loop NEVER stops (simulated: 8 pages, 400 rows returned for 50
+# distinct ones). By comparing the returned page to the previous turn's one, we cut
+# at the 2nd call. The `off:<n>` form without a fingerprint is still decoded: a cursor
+# returned by an earlier version doesn't break mid-flight.
 _INV_CURSOR = "off:"
 
-# Plafond OBSERVÉ (2026-09-10) de `limit` sur relation-requests : 100 passe,
-# 101 et 200 rendent `Unipile 400: Invalid querystring` — un message qui ne
-# nomme ni le param fautif ni la borne. Unipile ne le documente pas (l'OpenAPI
-# v2 dit `default: 20, minimum: 1`, sans maximum : « depends on the
-# provider »). On trie donc ICI, pour rendre une erreur qui se lit.
+# OBSERVED cap (2026-09-10) of `limit` on relation-requests: 100 passes,
+# 101 and 200 return `Unipile 400: Invalid querystring` — a message that names
+# neither the faulty param nor the bound. Unipile doesn't document it (the v2
+# OpenAPI says `default: 20, minimum: 1`, with no maximum: "depends on the
+# provider"). So we sort it out HERE, to return an error that can be read.
 _INV_LIMIT_MAX = 100
 
 
 def _invitations_page_print(page: list) -> str:
-    """Empreinte d'une page d'invitations — ce qui la distingue de la suivante.
+    """Fingerprint of an invitations page — what distinguishes it from the next one.
 
-    Sur les `id` quand les items en portent (ce que rend l'amont), sur l'item
-    entier sinon. Deux pages « identiques » au sens qui compte ici sont deux
-    pages qui reservent les MÊMES invitations — pas deux pages de même
-    taille."""
+    On the `id`s when the items carry them (what upstream returns), on the whole
+    item otherwise. Two "identical" pages in the sense that matters here are two
+    pages that serve the SAME invitations — not two pages of the same
+    size."""
     seed = json.dumps(
         [it.get("id", it) if isinstance(it, dict) else it for it in page],
         sort_keys=True, default=str, ensure_ascii=False,
@@ -59,13 +59,13 @@ def _invitations_page_print(page: list) -> str:
 
 
 def _invitations_cursor(cursor: Optional[str]) -> tuple[int, Optional[str]]:
-    """Décode un curseur d'invitations FABRIQUÉ par nous → `(offset, empreinte
-    de la page qui l'a produit)`. L'empreinte est `None` si le curseur n'en
-    porte pas (forme antérieure `off:<n>`, toujours acceptée).
+    """Decode an invitations cursor FABRICATED by us → `(offset, fingerprint
+    of the page that produced it)`. The fingerprint is `None` if the cursor doesn't
+    carry one (earlier `off:<n>` form, still accepted).
 
-    Tout autre curseur est refusé ICI plutôt que transmis : passé en amont il
-    déclenchait le 400 « Unexpected parameters: type » (cf.
-    `list_invitations`), illisible pour l'appelant."""
+    Any other cursor is refused HERE rather than forwarded: passed upstream it
+    triggered the 400 "Unexpected parameters: type" (see
+    `list_invitations`), unreadable for the caller."""
     if not cursor:
         return 0, None
     if cursor.startswith(_INV_CURSOR):
@@ -73,21 +73,21 @@ def _invitations_cursor(cursor: Optional[str]) -> tuple[int, Optional[str]]:
         if head.isdigit():
             return int(head), (tail or None)
     raise UnipileError(
-        "list_invitations : curseur invalide. Ne repasse QUE le `cursor` rendu "
-        "tel quel par l'appel précédent ; pour repartir du début du listing, "
-        "n'en passe aucun. Un curseur venu d'un autre appel — ou écrit à la "
-        "main — est refusé ici, avant tout appel en amont."
+        "list_invitations: invalid cursor. ONLY pass back the `cursor` returned "
+        "as is by the previous call; to restart from the beginning of the listing, "
+        "pass none. A cursor coming from another call — or written by "
+        "hand — is refused here, before any upstream call."
     )
 
 
 class _NetworkMixin:
-    """Réseau & outreach : relations et invitations."""
+    """Network & outreach: relations and invitations."""
 
     def list_relations(self, cursor: Optional[str] = None,
                        limit: Optional[int] = None) -> dict:
         params: dict[str, Any] = {}
         if cursor:
-            # Le limit de l'appel prime sur celui figé dans le cursor (#179).
+            # The call's limit takes precedence over the one frozen in the cursor (#179).
             params["cursor"] = cursor_with_limit(cursor, limit) if limit else cursor
         if limit:
             params["limit"] = limit
@@ -99,47 +99,47 @@ class _NetworkMixin:
                          limit: Optional[int] = None,
                          cursor: Optional[str] = None,
                          offset: Optional[int] = None) -> dict:
-        """Invitations — v2 : `GET /v2/{account}/users/me/relation-requests`,
-        `type=sent|received` (param REQUIS côté Unipile).
+        """Invitations — v2: `GET /v2/{account}/users/me/relation-requests`,
+        `type=sent|received` (REQUIRED param on the Unipile side).
 
-        ⚠️ Cet endpoint est paginé par `offset`, PAS par curseur. Unipile :
-        « Pagination for this endpoint works with the `offset` parameter. » Il
-        ne rend donc jamais de `next_cursor`, et il REFUSE tout param autre que
-        `limit`/`meta_only` à côté d'un `cursor` :
+        ⚠️ This endpoint is paginated by `offset`, NOT by cursor. Unipile:
+        "Pagination for this endpoint works with the `offset` parameter." It
+        therefore never returns a `next_cursor`, and it REFUSES any param other than
+        `limit`/`meta_only` alongside a `cursor`:
 
             Unipile 400: When cursor is provided, only "limit" and "meta_only"
             are allowed alongside it. Unexpected parameters: type.
 
-        `type` étant OBLIGATOIRE, envoyer un `cursor` était une impasse : la
-        page 1 passait, toute page suivante 400ait — la pagination des
-        invitations était morte au-delà du premier écran, sans que rien ne le
-        signale côté schéma (le tool annonçait « Paginé »). On pagine donc par
-        `offset` et on FABRIQUE le curseur rendu (cf. `_invitations_cursor`)
-        pour garder au tool son contrat.
+        Since `type` is REQUIRED, sending a `cursor` was a dead end: page 1
+        passed, every following page returned 400 — the invitations pagination
+        was dead beyond the first screen, with nothing signaling it on the schema
+        side (the tool announced "Paginated"). So we paginate by
+        `offset` and FABRICATE the returned cursor (see `_invitations_cursor`)
+        to keep the tool's contract.
 
-        Avance de `limit` par page — contrat Unipile : « increment the offset
-        by the limit » — et s'arrête quand `data` est VIDE, pas sur une page
-        courte : le provider peut filtrer des items DANS la fenêtre, et
-        avancer de `len(data)` re-servirait alors les mêmes. Pour un export
-        exhaustif, déduplique quand même par `id`.
+        Advances by `limit` per page — Unipile contract: "increment the offset
+        by the limit" — and stops when `data` is EMPTY, not on a short
+        page: the provider can filter items WITHIN the window, and
+        advancing by `len(data)` would then serve the same ones again. For an
+        exhaustive export, deduplicate by `id` anyway.
 
-        ⚠️ ARRÊT MÉCANIQUE. Qu'`offset` pagine réellement cet endpoint n'a
-        jamais été vérifié contre le service réel. Si l'hypothèse est fausse,
-        l'amont ignore `offset` et ressert la même page à chaque tour : la
-        boucle appelante ne s'arrêterait jamais. Le curseur rendu porte donc
-        l'empreinte de la page qui l'a produit, et AUCUN curseur n'est fabriqué
-        quand la page rendue est identique à celle du tour précédent — la
-        boucle s'arrête alors au 2e appel, et `pagination_note` dit pourquoi.
-        Le critère est la page IDENTIQUE, pas la page vide : c'est le vrai mode
-        d'échec ici, une page vide n'arrive justement jamais dans ce cas."""
+        ⚠️ MECHANICAL STOP. That `offset` actually paginates this endpoint was
+        never verified against the real service. If the assumption is wrong,
+        upstream ignores `offset` and serves the same page every turn: the
+        calling loop would never stop. The returned cursor therefore carries
+        the fingerprint of the page that produced it, and NO cursor is fabricated
+        when the returned page is identical to the previous turn's one — the
+        loop then stops at the 2nd call, and `pagination_note` says why.
+        The criterion is the IDENTICAL page, not the empty page: that's the real
+        failure mode here, an empty page precisely never happens in this case."""
         seen = None
         if offset is None:
             offset, seen = _invitations_cursor(cursor)
         if limit is not None and not 1 <= limit <= _INV_LIMIT_MAX:
             raise UnipileError(
-                f"list_invitations : limit doit être entre 1 et "
-                f"{_INV_LIMIT_MAX} (reçu {limit}). Au-delà, Unipile rend un "
-                "« Invalid querystring » qui ne nomme pas la borne."
+                f"list_invitations: limit must be between 1 and "
+                f"{_INV_LIMIT_MAX} (got {limit}). Beyond that, Unipile returns an "
+                "\"Invalid querystring\" that doesn't name the bound."
             )
         params: dict[str, Any] = {
             "type": "sent" if direction == "sent" else "received"
@@ -151,24 +151,24 @@ class _NetworkMixin:
         out = self._norm(self._request(
             "GET", self._acct("/users/me/relation-requests"), params=params
         ))
-        # Curseur fabriqué UNIQUEMENT si l'amont n'en rend pas (aujourd'hui il
-        # n'en rend jamais) : le jour où Unipile en rend un vrai, il gagne.
-        # Page vide = fin de liste → pas de curseur, l'appelant s'arrête.
+        # Cursor fabricated ONLY if upstream doesn't return one (today it
+        # never does): the day Unipile returns a real one, it wins.
+        # Empty page = end of list → no cursor, the caller stops.
         if isinstance(out, dict) and not out.get("next_cursor"):
             page = out.get("data")
             if isinstance(page, list) and page:
                 mark = _invitations_page_print(page)
                 if mark == seen:
-                    # L'amont vient de resservir la page précédente à
-                    # l'identique : il n'avance pas — `offset` ne pagine pas cet
-                    # endpoint. On ne fabrique AUCUN curseur, sinon la boucle
-                    # appelante tourne à vide sans jamais rencontrer de fin.
+                    # Upstream just served the previous page again
+                    # identically: it doesn't advance — `offset` doesn't paginate this
+                    # endpoint. We fabricate NO cursor, otherwise the calling
+                    # loop spins forever without ever meeting an end.
                     out["pagination_note"] = (
-                        "Pagination arrêtée : l'amont a resservi la page "
-                        "précédente à l'identique, il n'avance pas sur cet "
-                        "endpoint. Les éléments ci-dessus sont les mêmes que "
-                        "ceux de la page précédente ; il n'y a pas de suite à "
-                        "demander."
+                        "Pagination stopped: upstream served the previous "
+                        "page again identically, it doesn't advance on this "
+                        "endpoint. The items above are the same as "
+                        "those of the previous page; there is no next page "
+                        "to ask for."
                     )
                 else:
                     nxt = (f"{_INV_CURSOR}{offset + (limit or len(page))}"
@@ -179,7 +179,7 @@ class _NetworkMixin:
 
     def send_invitation(self, provider_id: str,
                         message: Optional[str] = None) -> dict:
-        """v2 : `POST /users/me/relation-requests`, corps `{user_id, message}`."""
+        """v2: `POST /users/me/relation-requests`, body `{user_id, message}`."""
         body: dict[str, Any] = {"user_id": provider_id}
         if message:
             body["message"] = message
@@ -190,11 +190,11 @@ class _NetworkMixin:
     def handle_invitation(
         self, invitation_id: str, shared_secret: str, action: str = "accept"
     ) -> dict:
-        """Accepte/refuse une invitation REÇUE. v2 : `request_id` suffit (plus de
-        `shared_secret`, gardé dans la signature pour compat appelant). accept →
-        `/accept` ; decline → `/cancel`."""
+        """Accept/decline a RECEIVED invitation. v2: `request_id` is enough (no more
+        `shared_secret`, kept in the signature for caller compat). accept →
+        `/accept`; decline → `/cancel`."""
         if action not in ("accept", "decline"):
-            raise UnipileError("handle_invitation : action = 'accept' ou 'decline'.")
+            raise UnipileError("handle_invitation: action = 'accept' or 'decline'.")
         verb = "accept" if action == "accept" else "cancel"
         return self._request(
             "POST",
@@ -204,11 +204,10 @@ class _NetworkMixin:
         )
 
     def cancel_invitation(self, invitation_id: str) -> dict:
-        """Annule une invitation ENVOYÉE. v2 : `/relation-requests/{id}/cancel`."""
+        """Cancel a SENT invitation. v2: `/relation-requests/{id}/cancel`."""
         return self._request(
             "POST",
             self._acct(
                 f"/users/me/relation-requests/{quote(invitation_id, safe='')}/cancel"
             ),
         )
-

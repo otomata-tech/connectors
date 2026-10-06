@@ -1,17 +1,17 @@
-"""Issues GitHub — tickets, commentaires, étiquettes, jalons, assignations.
+"""GitHub issues — tickets, comments, labels, milestones, assignments.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `GitHubClient`, qui
-fournit le transport (`_request`, `_get`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `GitHubClient`, which
+provides the transport (`_request`, `_get`, `_check_choice`).
 
-⚠️ **Chez GitHub, une pull request EST une issue.** `GET /repos/…/issues` rend
-donc AUSSI les PR, chacune portant une clé `pull_request`. C'est le piège le plus
-courant de cette API : compter les issues d'un dépôt sans filtrer donne un nombre
-faux, souvent de beaucoup. `list_issues(include_pull_requests=False)` — le
-défaut — écarte les PR côté client, puisque l'amont n'offre aucun filtre pour ça.
+⚠️ **At GitHub, a pull request IS an issue.** `GET /repos/…/issues` therefore
+ALSO returns PRs, each carrying a `pull_request` key. This is the most
+common trap of this API: counting a repository's issues without filtering gives a wrong
+number, often by a lot. `list_issues(include_pull_requests=False)` — the
+default — drops PRs client-side, since upstream offers no filter for that.
 
-Conséquence symétrique, et utile : les endpoints de commentaire, d'étiquette et
-d'assignation d'ISSUE fonctionnent tels quels sur une PR, en passant son numéro.
-C'est voulu côté GitHub, et c'est pourquoi `pulls.py` ne les redéclare pas.
+Symmetric consequence, and a useful one: the ISSUE comment, label and
+assignment endpoints work as-is on a PR, by passing its number.
+This is intended on GitHub's side, and is why `pulls.py` does not redeclare them.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ..const import ISSUE_SORTS, ISSUE_STATE_WRITES, ISSUE_STATES, SORT_DIRECTIO
 
 
 class _IssuesMixin:
-    """Issues, commentaires, étiquettes, jalons."""
+    """Issues, comments, labels, milestones."""
 
     # --- issues -------------------------------------------------------------
 
@@ -36,19 +36,19 @@ class _IssuesMixin:
                     include_pull_requests: bool = False,
                     per_page: Optional[int] = None,
                     page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/issues — issues du dépôt.
+        """GET /repos/{owner}/{repo}/issues — the repository's issues.
 
-        ⚠️ **L'amont rend AUSSI les pull requests** (chez GitHub, une PR est une
-        issue). `include_pull_requests=False` (le défaut) les écarte ICI, faute
-        de filtre côté serveur. Le mettre à `True` rend la réponse brute de
-        l'API — utile pour compter « tickets + PR » comme le fait l'interface.
+        ⚠️ **Upstream ALSO returns pull requests** (at GitHub, a PR is an
+        issue). `include_pull_requests=False` (the default) drops them HERE, for lack
+        of a server-side filter. Setting it to `True` returns the API's raw
+        response — useful to count "tickets + PRs" as the UI does.
 
-        ⚠️ Ce filtrage est fait **après pagination** : une page de 30 lignes dont
-        12 sont des PR en rend 18. C'est inévitable sans filtre amont, et c'est
-        la raison de plus de boucler avec `iterate` plutôt que de lire une page.
+        ⚠️ This filtering is done **after pagination**: a 30-row page of which
+        12 are PRs returns 18. This is unavoidable without an upstream filter, and is
+        one more reason to loop with `iterate` rather than read a single page.
 
-        `labels` accepte une liste (jointe par des virgules). `state` vaut
-        `open` (défaut GitHub), `closed` ou `all`.
+        `labels` accepts a list (joined by commas). `state` is
+        `open` (GitHub default), `closed` or `all`.
         """
         self._check_choice("state", state, ISSUE_STATES)
         self._check_choice("sort", sort, ISSUE_SORTS)
@@ -64,39 +64,39 @@ class _IssuesMixin:
                 if not (isinstance(row, dict) and row.get("pull_request"))]
 
     def get_issue(self, owner: str, repo: str, number: Any) -> Any:
-        """GET /repos/{owner}/{repo}/issues/{number} — une issue.
+        """GET /repos/{owner}/{repo}/issues/{number} — one issue.
 
-        Rend aussi une **pull request** si le numéro en désigne une : les deux
-        partagent la même numérotation dans un dépôt.
+        Also returns a **pull request** if the number designates one: both
+        share the same numbering within a repository.
         """
         return self._request("GET", f"/repos/{owner}/{repo}/issues/{number}")
 
     def create_issue(self, owner: str, repo: str,
                      payload: Dict[str, Any]) -> Any:
-        """POST /repos/{owner}/{repo}/issues — crée une issue.
+        """POST /repos/{owner}/{repo}/issues — create an issue.
 
-        Requis : `title`. Optionnels : `body`, `assignees`, `labels`,
+        Required: `title`. Optional: `body`, `assignees`, `labels`,
         `milestone`.
 
-        ⚠️ **Notifie** : les personnes assignées, les abonnés au dépôt et toute
-        personne mentionnée dans `body` reçoivent une notification. Ce n'est pas
-        un brouillon — GitHub n'en a pas pour les issues.
+        ⚠️ **Notifies**: assignees, repository watchers and anyone
+        mentioned in `body` receive a notification. This is not
+        a draft — GitHub has none for issues.
         """
         if not payload.get("title"):
-            raise ValueError("`title` requis pour créer une issue.")
+            raise ValueError("`title` required to create an issue.")
         return self._request("POST", f"/repos/{owner}/{repo}/issues",
                              json=dict(payload))
 
     def update_issue(self, owner: str, repo: str, number: Any,
                      payload: Dict[str, Any]) -> Any:
-        """PATCH /repos/{owner}/{repo}/issues/{number} — met à jour une issue.
+        """PATCH /repos/{owner}/{repo}/issues/{number} — update an issue.
 
-        Champs : `title`, `body`, `state` (`open`/`closed`), `state_reason`
+        Fields: `title`, `body`, `state` (`open`/`closed`), `state_reason`
         (`completed`/`not_planned`/`reopened`), `assignees`, `labels`,
         `milestone`.
 
-        ⚠️ `labels` et `assignees` **REMPLACENT** les listes existantes, ils ne
-        les enrichissent pas. Pour ajouter sans écraser : `add_labels` /
+        ⚠️ `labels` and `assignees` **REPLACE** the existing lists, they do not
+        add to them. To add without overwriting: `add_labels` /
         `add_assignees`.
         """
         self._check_choice("state", payload.get("state"), ISSUE_STATE_WRITES)
@@ -106,9 +106,9 @@ class _IssuesMixin:
 
     def lock_issue(self, owner: str, repo: str, number: Any,
                    lock_reason: Optional[str] = None) -> Any:
-        """PUT /repos/{owner}/{repo}/issues/{number}/lock — verrouille la conversation.
+        """PUT /repos/{owner}/{repo}/issues/{number}/lock — lock the conversation.
 
-        `lock_reason` : `off-topic`, `too heated`, `resolved`, `spam`.
+        `lock_reason`: `off-topic`, `too heated`, `resolved`, `spam`.
         """
         body = {"lock_reason": lock_reason} if lock_reason else None
         return self._request("PUT",
@@ -116,20 +116,20 @@ class _IssuesMixin:
                              json=body)
 
     def unlock_issue(self, owner: str, repo: str, number: Any) -> Any:
-        """DELETE /repos/{owner}/{repo}/issues/{number}/lock — déverrouille."""
+        """DELETE /repos/{owner}/{repo}/issues/{number}/lock — unlock."""
         return self._request("DELETE",
                              f"/repos/{owner}/{repo}/issues/{number}/lock")
 
-    # --- commentaires --------------------------------------------------------
+    # --- comments ------------------------------------------------------------
 
     def list_issue_comments(self, owner: str, repo: str, number: Any,
                             since: Optional[str] = None,
                             per_page: Optional[int] = None,
                             page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/issues/{number}/comments — commentaires.
+        """GET /repos/{owner}/{repo}/issues/{number}/comments — comments.
 
-        Marche aussi sur une pull request (même numérotation) : ce sont les
-        commentaires du FIL, distincts des commentaires de revue ligne à ligne
+        Also works on a pull request (same numbering): these are the
+        THREAD comments, distinct from line-by-line review comments
         (`list_review_comments`).
         """
         return self._get(f"/repos/{owner}/{repo}/issues/{number}/comments",
@@ -137,21 +137,21 @@ class _IssuesMixin:
 
     def create_issue_comment(self, owner: str, repo: str, number: Any,
                              body: str) -> Any:
-        """POST /repos/{owner}/{repo}/issues/{number}/comments — commente.
+        """POST /repos/{owner}/{repo}/issues/{number}/comments — comment.
 
-        ⚠️ **Notifie** les personnes abonnées au fil. Marche aussi sur une PR.
+        ⚠️ **Notifies** the people subscribed to the thread. Also works on a PR.
         """
         if not body:
-            raise ValueError("`body` requis : un commentaire vide est refusé.")
+            raise ValueError("`body` required: an empty comment is refused.")
         return self._request(
             "POST", f"/repos/{owner}/{repo}/issues/{number}/comments",
             json={"body": body})
 
     def update_issue_comment(self, owner: str, repo: str, comment_id: Any,
                              body: str) -> Any:
-        """PATCH /repos/{owner}/{repo}/issues/comments/{id} — édite un commentaire.
+        """PATCH /repos/{owner}/{repo}/issues/comments/{id} — edit a comment.
 
-        ⚠️ Le chemin porte l'id du COMMENTAIRE, pas le numéro de l'issue.
+        ⚠️ The path carries the COMMENT id, not the issue number.
         """
         return self._request(
             "PATCH", f"/repos/{owner}/{repo}/issues/comments/{comment_id}",
@@ -159,32 +159,32 @@ class _IssuesMixin:
 
     def delete_issue_comment(self, owner: str, repo: str,
                              comment_id: Any) -> Any:
-        """DELETE /repos/{owner}/{repo}/issues/comments/{id} — supprime un commentaire.
+        """DELETE /repos/{owner}/{repo}/issues/comments/{id} — delete a comment.
 
-        ⚠️ Définitif, sans corbeille.
+        ⚠️ Permanent, no trash.
         """
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/issues/comments/{comment_id}")
 
-    # --- étiquettes -----------------------------------------------------------
+    # --- labels ---------------------------------------------------------------
 
     def list_labels(self, owner: str, repo: str,
                     per_page: Optional[int] = None,
                     page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/labels — étiquettes définies dans le dépôt."""
+        """GET /repos/{owner}/{repo}/labels — labels defined in the repository."""
         return self._get(f"/repos/{owner}/{repo}/labels", None, per_page, page)
 
     def create_label(self, owner: str, repo: str, name: str, color: str,
                      description: Optional[str] = None) -> Any:
-        """POST /repos/{owner}/{repo}/labels — crée une étiquette.
+        """POST /repos/{owner}/{repo}/labels — create a label.
 
-        `color` est un hexadécimal **sans `#`** (ex. `"d73a4a"`) : GitHub refuse
-        le croisillon.
+        `color` is a hexadecimal **without `#`** (e.g. `"d73a4a"`): GitHub refuses
+        the hash sign.
         """
         if color.startswith("#"):
             raise ValueError(
-                "`color` s'écrit sans `#` (ex. 'd73a4a') — GitHub refuse le "
-                "croisillon.")
+                "`color` is written without `#` (e.g. 'd73a4a') — GitHub refuses "
+                "the hash sign.")
         body: Dict[str, Any] = {"name": name, "color": color}
         if description is not None:
             body["description"] = description
@@ -192,21 +192,21 @@ class _IssuesMixin:
 
     def add_labels(self, owner: str, repo: str, number: Any,
                    labels: List[str]) -> Any:
-        """POST /repos/{owner}/{repo}/issues/{number}/labels — AJOUTE des étiquettes.
+        """POST /repos/{owner}/{repo}/issues/{number}/labels — ADD labels.
 
-        Contrairement à `update_issue(labels=…)`, qui remplace la liste.
+        Unlike `update_issue(labels=…)`, which replaces the list.
         """
         if not labels:
-            raise ValueError("`labels` requis : au moins une étiquette.")
+            raise ValueError("`labels` required: at least one label.")
         return self._request(
             "POST", f"/repos/{owner}/{repo}/issues/{number}/labels",
             json={"labels": list(labels)})
 
     def set_labels(self, owner: str, repo: str, number: Any,
                    labels: List[str]) -> Any:
-        """PUT /repos/{owner}/{repo}/issues/{number}/labels — REMPLACE les étiquettes.
+        """PUT /repos/{owner}/{repo}/issues/{number}/labels — REPLACE the labels.
 
-        Une liste vide les retire toutes.
+        An empty list removes them all.
         """
         return self._request(
             "PUT", f"/repos/{owner}/{repo}/issues/{number}/labels",
@@ -214,19 +214,19 @@ class _IssuesMixin:
 
     def remove_label(self, owner: str, repo: str, number: Any,
                      label: str) -> Any:
-        """DELETE /repos/{owner}/{repo}/issues/{number}/labels/{label} — en retire une."""
+        """DELETE /repos/{owner}/{repo}/issues/{number}/labels/{label} — remove one."""
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/issues/{number}/labels/{label}")
 
-    # --- assignation -----------------------------------------------------------
+    # --- assignment -------------------------------------------------------------
 
     def add_assignees(self, owner: str, repo: str, number: Any,
                       assignees: List[str]) -> Any:
-        """POST /repos/{owner}/{repo}/issues/{number}/assignees — assigne.
+        """POST /repos/{owner}/{repo}/issues/{number}/assignees — assign.
 
-        ⚠️ GitHub **ignore en silence** un compte qui n'a pas accès en écriture
-        au dépôt : la réponse revient 201 sans l'avoir assigné. Comparer la liste
-        rendue à celle demandée pour le voir.
+        ⚠️ GitHub **silently ignores** an account that does not have write access
+        to the repository: the response comes back 201 without having assigned it. Compare the
+        returned list with the requested one to see it.
         """
         return self._request(
             "POST", f"/repos/{owner}/{repo}/issues/{number}/assignees",
@@ -234,27 +234,27 @@ class _IssuesMixin:
 
     def remove_assignees(self, owner: str, repo: str, number: Any,
                          assignees: List[str]) -> Any:
-        """DELETE /repos/{owner}/{repo}/issues/{number}/assignees — désassigne."""
+        """DELETE /repos/{owner}/{repo}/issues/{number}/assignees — unassign."""
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/issues/{number}/assignees",
             json={"assignees": list(assignees)})
 
-    # --- jalons ----------------------------------------------------------------
+    # --- milestones --------------------------------------------------------------
 
     def list_milestones(self, owner: str, repo: str,
                         state: Optional[str] = None,
                         per_page: Optional[int] = None,
                         page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/milestones — jalons du dépôt."""
+        """GET /repos/{owner}/{repo}/milestones — the repository's milestones."""
         self._check_choice("state", state, ISSUE_STATES)
         return self._get(f"/repos/{owner}/{repo}/milestones", {"state": state},
                          per_page, page)
 
     def create_milestone(self, owner: str, repo: str, title: str,
                          payload: Optional[Dict[str, Any]] = None) -> Any:
-        """POST /repos/{owner}/{repo}/milestones — crée un jalon.
+        """POST /repos/{owner}/{repo}/milestones — create a milestone.
 
-        Optionnels : `state`, `description`, `due_on`.
+        Optional: `state`, `description`, `due_on`.
         """
         body: Dict[str, Any] = {"title": title}
         body.update(payload or {})

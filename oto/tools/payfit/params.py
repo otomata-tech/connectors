@@ -1,17 +1,17 @@
-"""Les GARDES de paramètres de l'API PayFit — partagées par le transport et les
-familles d'appels de `_api/`.
+"""The parameter GUARDS of the PayFit API — shared by the transport and the
+call families in `_api/`.
 
-Domicile à part pour une raison mécanique : `client.py` compose les mixins de
-`_api/`, donc un mixin qui importerait `client.py` fermerait un cycle. Elles ne
-dépendent de rien du client.
+They live in their own module for a mechanical reason: `client.py` composes the
+mixins in `_api/`, so a mixin importing `client.py` would close a cycle. They
+depend on nothing from the client.
 
-Trois refus, tous posés AVANT le réseau parce que le 400 qu'ils éviteraient ne
-nomme aucun champ côté PayFit :
+Three refusals, all raised BEFORE the network because the 400 they would avoid
+names no field on the PayFit side:
 
-- un identifiant qui réécrirait l'URL (`../absences`, `id?x=1`) ;
-- un mois qui n'est pas `AAAAMM` — la forme `2026-01`, la seule qu'un humain
-  écrit spontanément, est refusée par l'API ;
-- une taille de page hors de 1..50.
+- an identifier that would rewrite the URL (`../absences`, `id?x=1`);
+- a month that is not `AAAAMM` — the `2026-01` form, the only one a human
+  writes spontaneously, is refused by the API;
+- a page size outside 1..50.
 """
 from __future__ import annotations
 
@@ -34,21 +34,21 @@ def clean(params: Dict[str, Any]) -> Dict[str, Any]:
 def ident(value: Any, name: str) -> str:
     text = str(value) if value is not None else ""
     if not _ID.fullmatch(text):
-        raise ValueError(f"{name} invalide — reçu {value!r}.")
+        raise ValueError(f"{name} is invalid — got {value!r}.")
     return text
 
 
 def month(value: Any, name: str = "date") -> str:
-    """`AAAAMM`, le seul format de mois que cette API accepte."""
+    """`AAAAMM` (YYYYMM), the only month format this API accepts."""
     text = str(value) if value is not None else ""
     if not _MONTH.fullmatch(text):
         raise ValueError(
-            f"{name} doit être un mois au format AAAAMM (janvier = '01') — reçu "
+            f"{name} must be a month in AAAAMM format (January = '01') — got "
             f"{value!r}.")
     return text
 
 
 def page(limit: int, cursor: Optional[str]) -> Dict[str, Any]:
     if not 1 <= limit <= MAX_LIMIT:
-        raise ValueError(f"limit doit être entre 1 et {MAX_LIMIT} — reçu {limit}.")
+        raise ValueError(f"limit must be between 1 and {MAX_LIMIT} — got {limit}.")
     return clean({"maxResults": limit, "nextPageToken": cursor or None})

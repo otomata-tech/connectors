@@ -1,23 +1,23 @@
-"""Les trois refus de ce connecteur — distincts parce qu'ils appellent trois gestes.
+"""The three refusals of this connector — distinct because they call for three gestures.
 
-Le sujet n'est pas la taxonomie : c'est qu'un appelant sache **quoi dire à qui**.
-Sur cette API, trois causes se ressemblent en HTTP (toutes des 400 avec un corps
-`OAuthException`) et ne se ressemblent pas du tout du point de vue de la personne :
+The point isn't the taxonomy: it is that a caller knows **what to tell whom**.
+On this API, three causes look alike in HTTP (all 400s with an
+`OAuthException` body) and look nothing alike from the person's point of view:
 
-- son autorisation est **morte** (60 jours passés, ou révoquée) → elle doit
-  reconnecter son compte, et rien d'autre ne peut le faire à sa place ;
-- Meta **refuse le consentement** — typiquement parce que le compte n'est pas
-  invité comme testeur tant que l'application n'est pas publiée → ce n'est pas
-  elle qui peut le régler, c'est l'exploitant ;
-- l'appel a **échoué** pour tout le reste → réessayer a un sens.
+- their authorization is **dead** (60 days elapsed, or revoked) → they must
+  reconnect their account, and nothing else can do it for them;
+- Meta **refuses the consent** — typically because the account isn't
+  invited as a tester while the application is unpublished → they can't
+  fix it, the operator can;
+- the call **failed** for anything else → retrying makes sense.
 
-Les confondre coûte cher dans ce sens précis : un refus d'autorisation présenté
-comme une panne fait réessayer indéfiniment, et une panne présentée comme une
-autorisation morte fait refaire un consentement parfaitement inutile.
+Confusing them is costly in this precise way: an authorization refusal presented
+as an outage makes people retry indefinitely, and an outage presented as a dead
+authorization makes them redo a perfectly useless consent.
 
-⚠️ **Aucun message d'ici ne nomme d'outil ni d'écran.** La lib ne connaît pas la
-surface qui l'appelle (un serveur MCP, une CLI, un travail périodique) ; c'est à
-elle de traduire un fait en geste, avec les mots de son produit.
+⚠️ **No message from here names a tool or a screen.** The lib doesn't know the
+surface calling it (an MCP server, a CLI, a periodic job); it is up to
+that surface to translate a fact into a gesture, with its product's words.
 """
 from __future__ import annotations
 
@@ -25,19 +25,19 @@ from typing import Optional
 
 
 class InstagramError(RuntimeError):
-    """Racine — tout ce que ce connecteur lève lui-même."""
+    """Root — everything this connector raises itself."""
 
 
 class InstagramAuthExpired(InstagramError):
-    """L'autorisation est morte : jeton expiré, révoqué, ou renouvellement refusé.
+    """The authorization is dead: token expired, revoked, or renewal refused.
 
-    Un jeton Instagram long vit 60 jours et **ne se renouvelle que tant qu'il
-    vit** : il n'y a pas de `refresh_token` qui survivrait à son expiration. Passé
-    ce terme, rien ne le rattrape — il faut un nouveau consentement.
+    A long-lived Instagram token lives 60 days and **only renews while it
+    lives**: there is no `refresh_token` that would survive its expiry. Past
+    that term, nothing recovers it — a new consent is needed.
 
-    `expires_at` porte l'échéance quand on la connaît, pour que l'appelant puisse
-    la DIRE. « Ton autorisation a expiré » sans date se lit comme une panne ;
-    avec la date, ça se lit comme ce que c'est."""
+    `expires_at` carries the expiry when known, so that the caller can
+    STATE it. "Your authorization has expired" without a date reads as an outage;
+    with the date, it reads as what it is."""
 
     def __init__(self, message: str, expires_at: Optional[str] = None):
         super().__init__(message)
@@ -45,10 +45,10 @@ class InstagramAuthExpired(InstagramError):
 
 
 class InstagramAuthRefused(InstagramError):
-    """Meta a refusé le consentement ou l'échange du code.
+    """Meta refused the consent or the code exchange.
 
-    `reason` reprend le code que Meta a rendu quand il y en a un, pour que
-    l'appelant compose son message sans re-deviner la cause."""
+    `reason` carries the code Meta returned when there is one, so that
+    the caller composes its message without re-guessing the cause."""
 
     def __init__(self, message: str, reason: str = ""):
         super().__init__(message)
@@ -56,11 +56,11 @@ class InstagramAuthRefused(InstagramError):
 
 
 class InstagramApiError(InstagramError):
-    """L'appel a échoué pour une autre raison — réessayer a un sens.
+    """The call failed for another reason — retrying makes sense.
 
-    `status` = le code HTTP quand il y en a un. **Le corps de la réponse n'y entre
-    pas** : il porte le jeton sur certains chemins d'erreur, et ce texte-là finit
-    dans un transcript d'agent."""
+    `status` = the HTTP code when there is one. **The response body doesn't go
+    in**: it carries the token on some error paths, and that text ends up
+    in an agent transcript."""
 
     def __init__(self, message: str, status: Optional[int] = None):
         super().__init__(message)

@@ -1,22 +1,22 @@
-"""Instagram Business — publication de contenu & insights via la Graph API Meta.
+"""Instagram Business — content publishing & insights via the Meta Graph API.
 
-Cible : un compte **Instagram Business ou Creator** lié à une Page Facebook.
-Couvre la **publication** (image / reel / carousel / story) et les **insights**
-(compte + média) — PAS la messagerie (les DM passent par le connecteur Unipile
+Target: an **Instagram Business or Creator** account linked to a Facebook Page.
+Covers **publishing** (image / reel / carousel / story) and **insights**
+(account + media) — NOT messaging (DMs go through the Unipile connector
 `instagram_*`).
 
 Auth = **access token** (long-lived user/page token, scopes `instagram_basic`,
-`instagram_content_publish`, `instagram_manage_insights`) + l'**IG user id** du
-compte business (le « IG User ID » numérique, ≠ l'identifiant Page Facebook).
-Les deux passés au constructeur.
+`instagram_content_publish`, `instagram_manage_insights`) + the **IG user id** of the
+business account (the numeric "IG User ID", ≠ the Facebook Page identifier).
+Both passed to the constructor.
 
-Publication = flux en 2 temps de la Graph API : on crée d'abord un **conteneur**
-média (`POST /{ig-user-id}/media`) puis on le **publie** (`POST /{ig-user-id}/
-media_publish`). Les images se publient de façon synchrone ; la vidéo / le reel
-est traité de façon asynchrone côté Meta → créer le conteneur, **sonder le
-statut** (`status_code=FINISHED`) avant de publier.
+Publishing = a 2-step Graph API flow: first a media **container** is created
+(`POST /{ig-user-id}/media`) then it is **published** (`POST /{ig-user-id}/
+media_publish`). Images are published synchronously; video / reel
+is processed asynchronously on Meta's side → create the container, **poll the
+status** (`status_code=FINISHED`) before publishing.
 
-Docs : https://developers.facebook.com/docs/instagram-platform/content-publishing
+Docs: https://developers.facebook.com/docs/instagram-platform/content-publishing
 
 Requires: requests
 """
@@ -31,7 +31,7 @@ from ..common import raise_for_upstream
 
 
 class InstagramBusinessClient:
-    """Client Graph API — publication & insights d'un compte Instagram Business."""
+    """Graph API client — publishing & insights for an Instagram Business account."""
 
     DEFAULT_API_VERSION = "v21.0"
 
@@ -41,12 +41,12 @@ class InstagramBusinessClient:
         ig_user_id: Optional[str] = None,
         api_version: Optional[str] = None,
     ):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
-            access_token: token Graph API.
-            ig_user_id: IG User ID du compte business.
-            api_version: version de la Graph API (défaut `v21.0`).
+            access_token: Graph API token.
+            ig_user_id: IG User ID of the business account.
+            api_version: Graph API version (default `v21.0`).
         """
         self.access_token = require(access_token, "IG_BUSINESS_ACCESS_TOKEN")
         self.ig_user_id = str(require(ig_user_id, "IG_BUSINESS_USER_ID"))
@@ -65,7 +65,7 @@ class InstagramBusinessClient:
         raise_for_upstream(resp, service="instagram")
         return resp.json() if resp.content else {}
 
-    # --- conteneurs (étape 1 de la publication) -----------------------------
+    # --- containers (step 1 of publishing) ----------------------------------
 
     def create_media_container(
         self,
@@ -81,11 +81,11 @@ class InstagramBusinessClient:
         share_to_feed: Optional[bool] = None,
         thumb_offset: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Crée un conteneur média (étape 1). Renvoie `{"id": <creation_id>}`.
+        """Create a media container (step 1). Returns `{"id": <creation_id>}`.
 
-        `media_type` : None (image simple), `REELS` (vidéo/reel), `STORIES`
-        (story), `CAROUSEL` (album, nécessite `children` = ids de conteneurs
-        enfants). Pour un enfant de carousel, poser `is_carousel_item=True`.
+        `media_type`: None (single image), `REELS` (video/reel), `STORIES`
+        (story), `CAROUSEL` (album, requires `children` = ids of child
+        containers). For a carousel child, set `is_carousel_item=True`.
         """
         data: Dict[str, Any] = {}
         if image_url:
@@ -112,30 +112,30 @@ class InstagramBusinessClient:
         return self._request("POST", f"{self.ig_user_id}/media", data=data)
 
     def container_status(self, creation_id: str) -> Dict[str, Any]:
-        """Statut d'un conteneur média. `status_code` ∈ EXPIRED | ERROR |
-        FINISHED | IN_PROGRESS | PUBLISHED. Publier seulement sur FINISHED."""
+        """Status of a media container. `status_code` ∈ EXPIRED | ERROR |
+        FINISHED | IN_PROGRESS | PUBLISHED. Publish only on FINISHED."""
         return self._request(
             "GET", str(creation_id),
             params={"fields": "status_code,status"})
 
-    # --- publication (étape 2) ----------------------------------------------
+    # --- publishing (step 2) ------------------------------------------------
 
     def publish_container(self, creation_id: str) -> Dict[str, Any]:
-        """Publie un conteneur préalablement créé. Renvoie `{"id": <media_id>}`."""
+        """Publish a previously created container. Returns `{"id": <media_id>}`."""
         return self._request(
             "POST", f"{self.ig_user_id}/media_publish",
             data={"creation_id": str(creation_id)})
 
     def publish_image(self, image_url: str, caption: Optional[str] = None) -> Dict[str, Any]:
-        """Raccourci synchrone : crée le conteneur image PUIS le publie.
-        Renvoie le média publié `{"id": <media_id>}`."""
+        """Synchronous shortcut: create the image container THEN publish it.
+        Returns the published media `{"id": <media_id>}`."""
         container = self.create_media_container(image_url=image_url, caption=caption)
         return self.publish_container(container["id"])
 
-    # --- lecture média ------------------------------------------------------
+    # --- media reading ------------------------------------------------------
 
     def list_media(self, limit: int = 25, fields: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les médias publiés du compte (paginé)."""
+        """List the account's published media (paginated)."""
         return self._request(
             "GET", f"{self.ig_user_id}/media",
             params={
@@ -144,7 +144,7 @@ class InstagramBusinessClient:
             })
 
     def get_media(self, media_id: str, fields: Optional[str] = None) -> Dict[str, Any]:
-        """Détail d'un média publié."""
+        """Detail of a published media."""
         return self._request(
             "GET", str(media_id),
             params={
@@ -164,14 +164,14 @@ class InstagramBusinessClient:
         since: Optional[int] = None,
         until: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Insights du **compte** (`GET /{ig-user-id}/insights`).
+        """**Account** insights (`GET /{ig-user-id}/insights`).
 
         Args:
-            metrics: métriques, ex. `reach`, `impressions`, `profile_views`,
+            metrics: metrics, e.g. `reach`, `impressions`, `profile_views`,
                 `follower_count`, `accounts_engaged`.
             period: `day` | `week` | `days_28` | `lifetime`.
-            metric_type: `total_value` pour les métriques modernes (reach…).
-            since/until: bornes epoch (UNIX) optionnelles.
+            metric_type: `total_value` for modern metrics (reach…).
+            since/until: optional epoch (UNIX) bounds.
         """
         params: Dict[str, Any] = {"metric": ",".join(metrics), "period": period}
         if metric_type:
@@ -183,8 +183,8 @@ class InstagramBusinessClient:
         return self._request("GET", f"{self.ig_user_id}/insights", params=params)
 
     def media_insights(self, media_id: str, metrics: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Insights d'un **média** publié (`GET /{ig-media-id}/insights`).
-        Métriques par défaut : reach, likes, comments, saved, shares."""
+        """Insights of a published **media** (`GET /{ig-media-id}/insights`).
+        Default metrics: reach, likes, comments, saved, shares."""
         ms = metrics or ["reach", "likes", "comments", "saved", "shares"]
         return self._request(
             "GET", f"{media_id}/insights",

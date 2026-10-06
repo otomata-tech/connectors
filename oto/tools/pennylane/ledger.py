@@ -1,21 +1,21 @@
-"""Grand livre Pennylane — écritures, journaux, lettrage de lignes.
+"""Pennylane general ledger — entries, journals, line lettering.
 
-Second module du client (cf. `brevo` pour le même découpage) : `PennylaneClient`
-en hérite et lui fournit le transport (`fetch`, `fetch_all_pages`, `post`,
-`delete`). Séparé parce que le grand livre est un domaine à lui, et que
-`client.py` avait déjà dépassé la taille où on relit un fichier.
+Second module of the client (see `brevo` for the same split): `PennylaneClient`
+inherits it and provides the transport (`fetch`, `fetch_all_pages`, `post`,
+`delete`). Kept separate because the general ledger is a domain of its own, and
+`client.py` had already outgrown the size at which a file can still be read.
 
-**Trois scopes distincts, pas un.** Pennylane a éclaté l'ancien scope `ledger` :
-lire les journaux demande `journals:*`, lire le plan comptable
-`ledger_accounts:*`, lire ou écrire les écritures `ledger_entries:*`. Une clé
-qui lit les écritures ne lit donc pas forcément les journaux — et le périmètre
-est propre à qui a posé la clé. Les droits effectifs se lisent sur `GET /me`,
-champ `scopes`.
+**Three distinct scopes, not one.** Pennylane split the old `ledger` scope:
+reading journals requires `journals:*`, reading the chart of accounts
+`ledger_accounts:*`, reading or writing entries `ledger_entries:*`. A key
+that reads entries therefore does not necessarily read journals — and the
+scope is specific to whoever created the key. The effective rights can be read on `GET /me`,
+`scopes` field.
 
-**Le lettrage d'ici n'est pas le rapprochement bancaire.** Le mot « lettrage »
-recouvre deux gestes : associer une transaction bancaire à une facture
-(`match_transaction`, plus haut dans le client), et associer entre elles des
-lignes du grand livre (ici). Objets différents, endpoints différents.
+**Lettering here is not bank reconciliation.** The word "lettering"
+covers two actions: associating a bank transaction with an invoice
+(`match_transaction`, earlier in the client), and associating general-ledger
+lines with each other (here). Different objects, different endpoints.
 """
 from __future__ import annotations
 
@@ -32,114 +32,114 @@ def _somme(lignes: list[dict], champ: str) -> Decimal:
             total += Decimal(brut)
         except InvalidOperation:
             raise ValueError(
-                f"Montant illisible en `{champ}` : {brut!r}. Pennylane attend une "
-                "chaîne décimale (ex. \"120.50\"), pas un nombre ni une expression.")
+                f"Unreadable amount in `{champ}`: {brut!r}. Pennylane expects a "
+                "decimal string (e.g. \"120.50\"), not a number or an expression.")
     return total
 
 
 class LedgerMixin:
-    """Les gestes du grand livre. Attend le transport de `PennylaneClient`."""
+    """The general-ledger actions. Expects the transport of `PennylaneClient`."""
 
-    # --- lecture -----------------------------------------------------------
+    # --- read --------------------------------------------------------------
 
     @staticmethod
     def filtre(clauses: list[dict]) -> str:
-        """Encode des clauses au format que Pennylane attend en query.
+        """Encode clauses in the format Pennylane expects in the query.
 
-        Le paramètre `filter` est une CHAÎNE JSON, pas un objet : une liste de
-        `{"field": …, "operator": …, "value": …}`. Exemple servi par la doc :
+        The `filter` parameter is a JSON STRING, not an object: a list of
+        `{"field": …, "operator": …, "value": …}`. Example given by the docs:
         `[{"field": "date", "operator": "gteq", "value": "2026-01-01"}]`.
 
-        Champs filtrables sur les écritures : `id`, `date`, `journal_id`.
-        Opérateurs : `lt`, `lteq`, `gt`, `gteq`, `eq`, `not_eq`, plus `in` et
-        `not_in` sur `id` et `journal_id`.
+        Filterable fields on entries: `id`, `date`, `journal_id`.
+        Operators: `lt`, `lteq`, `gt`, `gteq`, `eq`, `not_eq`, plus `in` and
+        `not_in` on `id` and `journal_id`.
         """
         return json.dumps(clauses, separators=(",", ":"))
 
     def get_journals(self, max_pages: Optional[int] = None) -> list:
-        """Les journaux de la société — `{id, code, label, type}`.
+        """The company's journals — `{id, code, label, type}`.
 
-        Prérequis de `create_ledger_entry`, qui exige un `journal_id`. Ces ids
-        sont **propres à la société** : les résoudre à chaque fois, jamais les
-        coder en dur. Scope `journals:readonly` ou `journals:all`.
+        Prerequisite of `create_ledger_entry`, which requires a `journal_id`. These ids
+        are **specific to the company**: resolve them every time, never
+        hard-code them. Scope `journals:readonly` or `journals:all`.
         """
         return self.fetch_all_pages("journals", max_pages=max_pages)
 
     def get_ledger_accounts(self) -> list:
-        """Le plan comptable — les `ledger_account_id` qu'exige chaque ligne
-        d'écriture. Scope `ledger_accounts:readonly` ou `ledger_accounts:all`."""
+        """The chart of accounts — the `ledger_account_id`s that every entry
+        line requires. Scope `ledger_accounts:readonly` or `ledger_accounts:all`."""
         return self.fetch_all_pages("ledger_accounts")
 
     def get_ledger_entries(self, max_pages: Optional[int] = None,
                            clauses: Optional[list[dict]] = None) -> list:
-        """Les écritures du grand livre.
+        """The general-ledger entries.
 
-        ⚠️ Sans `clauses`, TOUT l'historique remonte — sur une comptabilité
-        réelle, des milliers d'écritures. Filtrer à la source : `clauses` est
-        une liste de `{"field", "operator", "value"}` (cf. `filtre`), le seul
-        moyen de retrouver une écriture sans tout paginer.
+        ⚠️ Without `clauses`, the WHOLE history comes back — on a real
+        accounting, thousands of entries. Filter at the source: `clauses` is
+        a list of `{"field", "operator", "value"}` (see `filtre`), the only
+        way to find an entry without paginating through everything.
         """
         params = {"filter": self.filtre(clauses)} if clauses else None
         return self.fetch_all_pages("ledger_entries", params=params,
                                     max_pages=max_pages)
 
     def get_ledger_entry(self, entry_id: int) -> dict:
-        """UNE écriture par son id — la relecture de ce qu'on vient de poser.
+        """ONE entry by its id — re-reading what was just posted.
 
-        Scope `ledger_entries:readonly` ou `ledger_entries:all`.
+        Scope `ledger_entries:readonly` or `ledger_entries:all`.
         """
         return self.fetch(f"ledger_entries/{entry_id}")
 
     def get_ledger_entry_lines(self, entry_id: int,
                                max_pages: Optional[int] = None) -> list:
-        """Les lignes d'une écriture, avec leur `id` — ce que consomme le lettrage."""
+        """The lines of an entry, with their `id` — what lettering consumes."""
         return self.fetch_all_pages(f"ledger_entries/{entry_id}/ledger_entry_lines",
                                     max_pages=max_pages)
 
     def get_lettered_lines(self, line_id: int,
                            max_pages: Optional[int] = None) -> list:
-        """Les lignes lettrées AVEC une ligne donnée.
+        """The lines lettered WITH a given line.
 
-        La seule façon de constater ce qu'un lettrage a réellement embarqué : le
-        geste est absorbant (cf. `letter_ledger_entry_lines`), donc son résultat
-        n'est pas toujours ce qu'on a demandé.
+        The only way to see what a lettering actually pulled in: the
+        action is absorbing (see `letter_ledger_entry_lines`), so its result
+        is not always what was asked for.
         """
         return self.fetch_all_pages(
             f"ledger_entry_lines/{line_id}/lettered_ledger_entry_lines",
             max_pages=max_pages)
 
-    # --- écriture ----------------------------------------------------------
+    # --- write -------------------------------------------------------------
 
     @staticmethod
     def controler_ecriture(ledger_entry_lines: list[dict]) -> dict:
-        """Contrôle une écriture SANS l'écrire, et rend son récapitulatif.
+        """Check an entry WITHOUT writing it, and return its summary.
 
-        Séparé de `create_ledger_entry` pour qu'un appelant puisse montrer à un
-        humain ce qui sera posé, avec ses totaux, AVANT de le poser — le geste
-        n'ayant pas de brouillon chez Pennylane. Les deux chemins partagent donc
-        la même règle : ce qui est validé ici est exactement ce qui partira.
+        Separate from `create_ledger_entry` so that a caller can show a
+        human what will be posted, with its totals, BEFORE posting it — the action
+        having no draft at Pennylane. Both paths therefore share
+        the same rule: what is validated here is exactly what will be sent.
 
-        Lève sur refus, avec de quoi corriger. Rend `{lignes, total_debit,
-        total_credit}` sinon.
+        Raises on refusal, with enough to correct. Otherwise returns `{lignes, total_debit,
+        total_credit}`.
         """
         if not ledger_entry_lines:
-            raise ValueError("Une écriture comptable exige au moins une ligne.")
+            raise ValueError("An accounting entry requires at least one line.")
         if len(ledger_entry_lines) > 1000:
             raise ValueError(
-                f"{len(ledger_entry_lines)} lignes : Pennylane en accepte 1000 au "
-                "plus par requête. Découper l'écriture.")
+                f"{len(ledger_entry_lines)} lines: Pennylane accepts at most 1000 "
+                "per request. Split the entry.")
         debits, credits = _somme(ledger_entry_lines, "debit"), _somme(
             ledger_entry_lines, "credit")
         if debits != credits:
             raise ValueError(
-                f"Écriture déséquilibrée : {debits} au débit contre {credits} au "
-                f"crédit, écart de {debits - credits}. Pennylane la refuserait ; "
-                "corriger les lignes avant de rappeler.")
+                f"Unbalanced entry: {debits} debit against {credits} "
+                f"credit, gap of {debits - credits}. Pennylane would refuse it; "
+                "correct the lines before calling again.")
         for i, ligne in enumerate(ledger_entry_lines):
             if not ligne.get("ledger_account_id"):
                 raise ValueError(
-                    f"Ligne {i} sans `ledger_account_id` : le compte du plan "
-                    "comptable est obligatoire (cf. `get_ledger_accounts`).")
+                    f"Line {i} without `ledger_account_id`: the chart-of-accounts "
+                    "account is mandatory (see `get_ledger_accounts`).")
         return {"lignes": len(ledger_entry_lines), "total_debit": str(debits),
                 "total_credit": str(credits)}
 
@@ -148,24 +148,22 @@ class LedgerMixin:
                             due_date: Optional[str] = None,
                             currency: Optional[str] = None,
                             piece_number: Optional[str] = None) -> dict:
-        """Crée une écriture au grand livre — `POST /ledger_entries`.
+        """Create a general-ledger entry — `POST /ledger_entries`.
 
-        Scope `ledger_entries:all`. Chaque ligne porte `debit`, `credit` (des
-        **chaînes** décimales) et `ledger_account_id` ; `label` est optionnel.
+        Scope `ledger_entries:all`. Each line carries `debit`, `credit` (decimal
+        **strings**) and `ledger_account_id`; `label` is optional.
 
-        ⚠️ **Pennylane n'a pas de brouillon pour une écriture comptable.** Le
-        reste du connecteur est brouillon-d'abord (une facture se crée en
-        brouillon, se finalise ensuite) ; ici l'écriture est immédiatement
-        posée. L'appelant doit donc annoncer le détail exact AVANT d'appeler, et
-        savoir que le défaire passe par `PUT /ledger_entries/{id}`, pas par une
-        suppression.
+        ⚠️ **Pennylane has no draft for an accounting entry.** The
+        rest of the connector is draft-first (an invoice is created as a
+        draft, then finalized); here the entry is posted immediately. The caller must therefore announce the exact detail BEFORE calling, and
+        know that undoing it goes through `PUT /ledger_entries/{id}`, not through a
+        deletion.
 
-        ⚠️ **L'ordre des lignes rendues n'est pas garanti** : pour retrouver
-        l'id d'une ligne, apparier sur son contenu, jamais sur sa position.
+        ⚠️ **The order of the returned lines is not guaranteed**: to find
+        a line's id, match on its content, never on its position.
 
-        L'équilibre est vérifié ICI plutôt que laissé au 422 de Pennylane :
-        l'écart chiffré est ce qui permet de corriger, « not balanced » ne l'est
-        pas.
+        The balance is checked HERE rather than left to Pennylane's 422:
+        the figure of the gap is what makes correction possible, "not balanced" is not.
         """
         self.controler_ecriture(ledger_entry_lines)
         body = {"date": date, "label": label, "journal_id": journal_id,
@@ -179,45 +177,45 @@ class LedgerMixin:
         return self.post("ledger_entries", body)
 
     def update_ledger_entry(self, entry_id: int, **fields) -> dict:
-        """Modifie une écriture posée — `PUT /ledger_entries/{id}`.
+        """Modify a posted entry — `PUT /ledger_entries/{id}`.
 
-        Le seul recours quand une écriture est fausse : il n'y a pas de
-        suppression d'écriture dans l'API.
+        The only recourse when an entry is wrong: there is no
+        entry deletion in the API.
 
-        ⚠️ **Ce geste peut DÉTRUIRE des lignes.** `ledger_entry_lines` y prend
-        trois sous-objets — `create`, `update`, `delete` — et le `delete`
-        supprime des lignes par id. Corriger n'est donc pas plus anodin que
-        créer : l'appelant doit soumettre le détail à un humain de la même
-        façon.
+        ⚠️ **This action can DESTROY lines.** `ledger_entry_lines` takes
+        three sub-objects there — `create`, `update`, `delete` — and `delete`
+        removes lines by id. Correcting is therefore no more harmless than
+        creating: the caller must submit the detail to a human in the same
+        way.
         """
         return self.put(f"ledger_entries/{entry_id}", fields)
 
-    # --- lettrage de lignes ------------------------------------------------
+    # --- line lettering ----------------------------------------------------
 
     def letter_ledger_entry_lines(self, line_ids: list[int],
                                   unbalanced_lettering_strategy: str = "none") -> dict:
-        """Lettre des lignes du grand livre entre elles.
+        """Letter general-ledger lines with each other.
 
-        `POST /ledger_entry_lines/lettering` — noter le chemin : le slug de la
-        doc dit « letter », l'OpenAPI sert `lettering`. Scope `ledger_entries:all`.
+        `POST /ledger_entry_lines/lettering` — note the path: the docs slug
+        says "letter", the OpenAPI serves `lettering`. Scope `ledger_entries:all`.
 
-        ⚠️ **Le geste est absorbant** : si une ligne passée est déjà lettrée, le
-        lettrage s'étend à ses lignes déjà associées. Demander [A, C] quand A et
-        B sont lettrées rend [A, B, C]. Un appelant qui l'ignore élargit un
-        lettrage sans le vouloir — d'où `get_lettered_lines` pour constater.
+        ⚠️ **The action is absorbing**: if a line passed is already lettered, the
+        lettering extends to its already associated lines. Asking for [A, C] when A and
+        B are lettered returns [A, B, C]. A caller that ignores this widens a
+        lettering unintentionally — hence `get_lettered_lines` to check.
 
-        `unbalanced_lettering_strategy` : `"none"` refuse un lettrage
-        déséquilibré, `"partial"` l'accepte. Le défaut refuse, parce qu'un
-        déséquilibre non voulu est plus coûteux qu'un appel rejeté.
+        `unbalanced_lettering_strategy`: `"none"` refuses an unbalanced
+        lettering, `"partial"` accepts it. The default refuses, because an unintended
+        imbalance is more costly than a rejected call.
         """
         return self.post("ledger_entry_lines/lettering",
                          self._corps_lettrage(line_ids, unbalanced_lettering_strategy))
 
     def unletter_ledger_entry_lines(self, line_ids: list[int],
                                     unbalanced_lettering_strategy: str = "none") -> dict:
-        """Défait un lettrage — `DELETE /ledger_entry_lines/lettering`, même chemin.
+        """Undo a lettering — `DELETE /ledger_entry_lines/lettering`, same path.
 
-        C'est ce qui rend le lettrage réversible, et donc sûr à exposer.
+        This is what makes lettering reversible, and therefore safe to expose.
         """
         return self.delete("ledger_entry_lines/lettering",
                            self._corps_lettrage(line_ids,
@@ -227,11 +225,11 @@ class LedgerMixin:
     def _corps_lettrage(line_ids: list[int], strategie: str) -> dict:
         if strategie not in ("none", "partial"):
             raise ValueError(
-                f"`unbalanced_lettering_strategy` vaut {strategie!r} : Pennylane "
-                "n'accepte que 'none' (refuse un lettrage déséquilibré) ou "
-                "'partial' (l'accepte).")
+                f"`unbalanced_lettering_strategy` is {strategie!r}: Pennylane "
+                "only accepts 'none' (refuses an unbalanced lettering) or "
+                "'partial' (accepts it).")
         if len(line_ids) < 2:
             raise ValueError(
-                f"{len(line_ids)} ligne(s) : le lettrage en associe au moins deux.")
+                f"{len(line_ids)} line(s): lettering associates at least two.")
         return {"unbalanced_lettering_strategy": strategie,
                 "ledger_entry_lines": [{"id": int(i)} for i in line_ids]}

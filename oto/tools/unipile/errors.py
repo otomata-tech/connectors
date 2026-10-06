@@ -1,6 +1,6 @@
-"""Types d'erreur du connecteur Unipile (et le parsing du délai 429).
+"""Error types of the Unipile connector (and the 429 delay parsing).
 
-Extrait de `client.py` — contenu inchangé, réexporté par `client.py`.
+Extracted from `client.py` — content unchanged, re-exported by `client.py`.
 """
 
 from __future__ import annotations
@@ -10,12 +10,12 @@ from typing import Optional
 
 
 class UnipileError(RuntimeError):
-    """Erreur API Unipile, message remonté tel quel.
+    """Unipile API error, message passed through as is.
 
-    `status_code` = code HTTP amont quand l'erreur vient d'une réponse Unipile
-    (même contrat que `oto.tools.common.UpstreamHTTPError` : permet aux
-    consommateurs de router un 4xx comme erreur gérée, pas un bug), None sinon
-    (erreur réseau, config, identity mismatch).
+    `status_code` = upstream HTTP code when the error comes from a Unipile response
+    (same contract as `oto.tools.common.UpstreamHTTPError`: lets
+    consumers route a 4xx as a handled error, not a bug), None otherwise
+    (network error, config, identity mismatch).
     """
 
     def __init__(self, message: str, status_code: Optional[int] = None):
@@ -24,10 +24,10 @@ class UnipileError(RuntimeError):
 
 
 class UnipileRateLimited(UnipileError):
-    """429 Unipile : quota amont atteint. LinkedIn cappe les fiches société/profil
-    à ~100/12h PAR COMPTE (« We only allow 100 requests. Retry in N hours »). Type
-    dédié + délai parsé → l'appelant STOPPE au lieu de marteler (251 appels perdus
-    en 12h vécu 2026-07-21). `retry_after` = secondes avant réessai, None si illisible."""
+    """Unipile 429: upstream quota reached. LinkedIn caps company/profile pages
+    at ~100/12h PER ACCOUNT ("We only allow 100 requests. Retry in N hours"). Dedicated
+    type + parsed delay → the caller STOPS instead of hammering (251 calls lost
+    in 12h, seen 2026-07-21). `retry_after` = seconds before retry, None if unreadable."""
 
     def __init__(self, message: str, retry_after: Optional[int] = None):
         super().__init__(message, status_code=429)
@@ -38,7 +38,7 @@ _RETRY_RE = re.compile(r"retry in\s+(\d+)\s*(hour|hr|minute|min|second|sec)", re
 
 
 def _parse_retry_after(msg: str) -> Optional[int]:
-    """Secondes avant réessai depuis un corps 429 (« Retry in 12 hours »). None sinon."""
+    """Seconds before retry from a 429 body ("Retry in 12 hours"). None otherwise."""
     m = _RETRY_RE.search(msg or "")
     if not m:
         return None
@@ -46,8 +46,8 @@ def _parse_retry_after(msg: str) -> Optional[int]:
 
 
 def _retry_after_header(headers) -> Optional[int]:
-    """Secondes avant réessai depuis l'en-tête HTTP `Retry-After` (forme en secondes).
-    None si absent, ou sous la forme date HTTP (le corps prend alors le relais)."""
+    """Seconds before retry from the HTTP `Retry-After` header (seconds form).
+    None if absent, or in HTTP-date form (the body then takes over)."""
     raw = (headers or {}).get("Retry-After") if hasattr(headers, "get") else None
     if raw is None:
         return None

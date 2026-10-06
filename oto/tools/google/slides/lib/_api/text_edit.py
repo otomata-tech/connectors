@@ -1,14 +1,14 @@
-"""Lecture et édition du texte des formes d'une slide.
+"""Reading and editing the text of a slide's shapes.
 
-Extrait de `slides_client.py` (découpage par famille d'opérations, surface
-publique figée) : les corps sont inchangés. Ce mixin n'est jamais instancié
-seul — il est composé dans `SlidesClient`, qui construit `slides_service` et
+Extracted from `slides_client.py` (split by operation family, public surface
+frozen): the bodies are unchanged. This mixin is never instantiated on its
+own — it is composed into `SlidesClient`, which builds `slides_service` and
 `drive_service`.
 """
 
 
 class _TextEditMixin:
-    """Lecture et édition du texte des formes d'une slide."""
+    """Reading and editing the text of a slide's shapes."""
 
     def get_text_content(self, presentation_id, slide_id, object_id):
         """

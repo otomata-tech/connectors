@@ -50,13 +50,13 @@ def test_submit_bulk_payload(monkeypatch):
 
 def test_submit_guards():
     c = fe.FullenrichClient(api_key="k")
-    with pytest.raises(ValueError, match="aucun contact"):
+    with pytest.raises(ValueError, match="no contact"):
         c.submit([])
-    with pytest.raises(ValueError, match="plafond"):
+    with pytest.raises(ValueError, match="cap"):
         c.submit([{"first_name": "A", "last_name": "B"}] * (fe.MAX_CONTACTS_PER_JOB + 1))
-    with pytest.raises(ValueError, match="first_name et last_name"):
+    with pytest.raises(ValueError, match="first_name and last_name"):
         c.submit([{"first_name": "A"}])
-    with pytest.raises(ValueError, match="linkedin_slug OU domain"):
+    with pytest.raises(ValueError, match="linkedin_slug OR domain"):
         c.submit([{"first_name": "A", "last_name": "B"}])
 
 
@@ -132,7 +132,7 @@ def test_fetch_finished_parses_profiles(monkeypatch):
 def test_fetch_credits_insufficient(monkeypatch):
     monkeypatch.setattr(fe.requests, "get",
                         lambda url, headers=None, timeout=None: _Resp(200, {"status": "CREDITS_INSUFFICIENT"}))
-    with pytest.raises(RuntimeError, match="crédits insuffisants"):
+    with pytest.raises(RuntimeError, match="insufficient credits"):
         FullenrichClientFixture().fetch("abc123")
 
 
@@ -174,7 +174,7 @@ def test_fetch_429_rate_limit_est_un_statut_nomme(monkeypatch):
 
 def test_fetch_402_credits_insuffisants_comme_le_statut(monkeypatch):
     monkeypatch.setattr(fe.requests, "get", _get(402, {"status": "CREDITS_INSUFFICIENT"}))
-    with pytest.raises(RuntimeError, match="crédits insuffisants"):
+    with pytest.raises(RuntimeError, match="insufficient credits"):
         FullenrichClientFixture().fetch("abc123")
 
 

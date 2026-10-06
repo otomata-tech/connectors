@@ -166,7 +166,7 @@ def test_search_without_filters_sends_an_empty_object(capture):
 
 
 def test_resource_name_is_validated():
-    with pytest.raises(ValueError, match="ressource"):
+    with pytest.raises(ValueError, match="resource"):
         _client().list_records("../accounts")
 
 

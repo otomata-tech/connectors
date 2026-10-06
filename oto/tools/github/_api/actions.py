@@ -1,28 +1,28 @@
-"""GitHub Actions — workflows, exécutions, jobs, logs, artefacts.
+"""GitHub Actions — workflows, runs, jobs, logs, artifacts.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `GitHubClient`, qui
-fournit le transport (`_request`, `_get`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `GitHubClient`, which
+provides the transport (`_request`, `_get`, `_check_choice`).
 
-⚠️ **Toutes les listes d'Actions sont des OBJETS, pas des tableaux** :
+⚠️ **All Actions lists are OBJECTS, not arrays**:
 `{total_count, workflow_runs: [...]}`, `{total_count, jobs: [...]}`,
-`{total_count, artifacts: [...]}`. Une boucle écrite pour un tableau nu itérerait
-sur les CLÉS du dict sans lever. `client.iterate()` connaît ces enveloppes ; ne
-pas réécrire la pagination à la main ici.
+`{total_count, artifacts: [...]}`. A loop written for a bare array would iterate
+over the dict's KEYS without raising. `client.iterate()` knows these envelopes; do
+not rewrite pagination by hand here.
 
-⚠️ **Logs et artefacts se téléchargent par REDIRECTION** : GitHub répond 302 vers
-une URL de stockage signée, à durée de vie courte (≈ 1 minute), et **cette URL ne
-doit PAS recevoir l'en-tête `Authorization`** — le stockage la rejetterait. Les
-méthodes de téléchargement d'ici rendent donc la réponse brute et exposent
-l'URL, plutôt que de suivre la redirection avec les en-têtes de la session.
+⚠️ **Logs and artifacts are downloaded through a REDIRECT**: GitHub answers 302 to
+a signed storage URL with a short lifetime (≈ 1 minute), and **this URL must NOT
+receive the `Authorization` header** — the storage would reject it. The
+download methods here therefore return the raw response and expose
+the URL, rather than following the redirect with the session's headers.
 
-⚠️ **Relancer et annuler sont des actions RÉELLES sur l'infrastructure** :
-`rerun_workflow_run` réexécute un pipeline (donc consomme des minutes facturées
-et peut redéployer), `cancel_workflow_run` interrompt un travail en cours, et
-`dispatch_workflow` déclenche un workflow — potentiellement un déploiement.
+⚠️ **Rerunning and cancelling are REAL actions on infrastructure**:
+`rerun_workflow_run` re-executes a pipeline (thus consuming billed minutes
+and possibly redeploying), `cancel_workflow_run` interrupts work in progress, and
+`dispatch_workflow` triggers a workflow — potentially a deployment.
 
-**Délibérément absent** : les secrets et variables Actions. Les poser par un
-connecteur reviendrait à déplacer des credentials d'un coffre vers un autre, ce
-que l'architecture d'oto refuse par principe.
+**Deliberately absent**: Actions secrets and variables. Setting them through a
+connector would amount to moving credentials from one vault to another, which
+oto's architecture refuses on principle.
 """
 from __future__ import annotations
 
@@ -32,47 +32,47 @@ from ..const import RUN_STATUSES
 
 
 class _ActionsMixin:
-    """Workflows, exécutions, jobs, artefacts."""
+    """Workflows, runs, jobs, artifacts."""
 
     # --- workflows ------------------------------------------------------------
 
     def list_workflows(self, owner: str, repo: str,
                        per_page: Optional[int] = None,
                        page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/actions/workflows — workflows définis.
+        """GET /repos/{owner}/{repo}/actions/workflows — defined workflows.
 
-        ⚠️ Rend `{total_count, workflows: [...]}`, pas un tableau.
+        ⚠️ Returns `{total_count, workflows: [...]}`, not an array.
         """
         return self._get(f"/repos/{owner}/{repo}/actions/workflows", None,
                          per_page, page)
 
     def get_workflow(self, owner: str, repo: str, workflow: Any) -> Any:
-        """GET /repos/{owner}/{repo}/actions/workflows/{workflow} — un workflow.
+        """GET /repos/{owner}/{repo}/actions/workflows/{workflow} — one workflow.
 
-        `workflow` accepte l'**id numérique OU le nom de fichier**
-        (`ci.yml`) — le nom de fichier est plus stable dans le temps.
+        `workflow` accepts the **numeric id OR the file name**
+        (`ci.yml`) — the file name is more stable over time.
         """
         return self._request(
             "GET", f"/repos/{owner}/{repo}/actions/workflows/{workflow}")
 
     def dispatch_workflow(self, owner: str, repo: str, workflow: Any,
                           ref: str, inputs: Optional[Dict[str, Any]] = None) -> Any:
-        """POST /…/actions/workflows/{workflow}/dispatches — **DÉCLENCHE un workflow**.
+        """POST /…/actions/workflows/{workflow}/dispatches — **TRIGGERS a workflow**.
 
-        ⚠️ Exécution réelle : peut construire, tester, publier ou **déployer**.
-        `ref` est la branche ou le tag sur lequel tourner.
+        ⚠️ Real execution: may build, test, publish or **deploy**.
+        `ref` is the branch or tag to run on.
 
-        ⚠️ **Le workflow doit déclarer `workflow_dispatch`** dans ses
-        déclencheurs, sinon GitHub répond 404 — un 404 ici veut dire « pas
-        déclenchable », pas « n'existe pas ».
+        ⚠️ **The workflow must declare `workflow_dispatch`** in its
+        triggers, otherwise GitHub answers 404 — a 404 here means "not
+        triggerable", not "does not exist".
 
-        ⚠️ Réponse **204 sans corps** : elle ne rend PAS l'exécution créée. Pour
-        la retrouver, lister les exécutions du workflow juste après (il y a un
-        court délai avant qu'elle apparaisse).
+        ⚠️ **204 response with no body**: it does NOT return the created run. To
+        find it, list the workflow's runs right afterwards (there is a
+        short delay before it appears).
         """
         if not ref:
             raise ValueError(
-                "`ref` requis : la branche ou le tag sur lequel déclencher.")
+                "`ref` required: the branch or tag to trigger on.")
         body: Dict[str, Any] = {"ref": ref}
         if inputs:
             body["inputs"] = inputs
@@ -81,7 +81,7 @@ class _ActionsMixin:
             f"/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches",
             json=body)
 
-    # --- exécutions -------------------------------------------------------------
+    # --- runs -------------------------------------------------------------------
 
     def list_workflow_runs(self, owner: str, repo: str,
                            workflow: Optional[Any] = None,
@@ -93,15 +93,15 @@ class _ActionsMixin:
                            head_sha: Optional[str] = None,
                            per_page: Optional[int] = None,
                            page: Optional[int] = None) -> Any:
-        """GET /…/actions/runs — exécutions du dépôt (ou d'un workflow donné).
+        """GET /…/actions/runs — runs of the repository (or of a given workflow).
 
-        Avec `workflow`, interroge `/actions/workflows/{workflow}/runs`.
-        `created` accepte la syntaxe d'intervalle de GitHub (`>=2026-01-01`).
+        With `workflow`, queries `/actions/workflows/{workflow}/runs`.
+        `created` accepts GitHub's range syntax (`>=2026-01-01`).
 
-        ⚠️ Rend `{total_count, workflow_runs: [...]}`, pas un tableau.
-        ⚠️ `status` mélange des états d'avancement (`queued`, `in_progress`,
-        `completed`) et des CONCLUSIONS (`success`, `failure`, `cancelled`…) dans
-        un même paramètre — c'est bien l'API qui est ainsi.
+        ⚠️ Returns `{total_count, workflow_runs: [...]}`, not an array.
+        ⚠️ `status` mixes progress states (`queued`, `in_progress`,
+        `completed`) and CONCLUSIONS (`success`, `failure`, `cancelled`…) in
+        a single parameter — it is indeed the API that is like this.
         """
         self._check_choice("status", status, RUN_STATUSES)
         path = (f"/repos/{owner}/{repo}/actions/workflows/{workflow}/runs"
@@ -113,30 +113,30 @@ class _ActionsMixin:
             per_page, page)
 
     def get_workflow_run(self, owner: str, repo: str, run_id: Any) -> Any:
-        """GET /repos/{owner}/{repo}/actions/runs/{run_id} — une exécution.
+        """GET /repos/{owner}/{repo}/actions/runs/{run_id} — one run.
 
-        ⚠️ Lire `status` ET `conclusion` : une exécution `completed` peut avoir
-        échoué. `conclusion` est `null` tant que le travail n'est pas fini.
+        ⚠️ Read `status` AND `conclusion`: a `completed` run may have
+        failed. `conclusion` is `null` while the work is not finished.
         """
         return self._request("GET",
                              f"/repos/{owner}/{repo}/actions/runs/{run_id}")
 
     def cancel_workflow_run(self, owner: str, repo: str, run_id: Any) -> Any:
-        """POST /…/actions/runs/{run_id}/cancel — **ANNULE une exécution en cours**.
+        """POST /…/actions/runs/{run_id}/cancel — **CANCELS a run in progress**.
 
-        ⚠️ Interrompt un travail réel. Réponse **202** : l'annulation est
-        demandée, pas encore effective.
+        ⚠️ Interrupts real work. **202** response: the cancellation is
+        requested, not yet effective.
         """
         return self._request(
             "POST", f"/repos/{owner}/{repo}/actions/runs/{run_id}/cancel")
 
     def rerun_workflow_run(self, owner: str, repo: str, run_id: Any,
                            enable_debug_logging: Optional[bool] = None) -> Any:
-        """POST /…/actions/runs/{run_id}/rerun — **RELANCE toute l'exécution**.
+        """POST /…/actions/runs/{run_id}/rerun — **RERUNS the whole run**.
 
-        ⚠️ Exécution réelle : consomme des minutes facturées, et peut redéployer
-        si le workflow déploie. Pour ne rejouer que ce qui a échoué,
-        `rerun_failed_jobs` — moins coûteux et moins risqué.
+        ⚠️ Real execution: consumes billed minutes, and may redeploy
+        if the workflow deploys. To replay only what failed,
+        `rerun_failed_jobs` — cheaper and less risky.
         """
         body = ({"enable_debug_logging": enable_debug_logging}
                 if enable_debug_logging is not None else None)
@@ -146,10 +146,10 @@ class _ActionsMixin:
 
     def rerun_failed_jobs(self, owner: str, repo: str, run_id: Any,
                           enable_debug_logging: Optional[bool] = None) -> Any:
-        """POST /…/actions/runs/{run_id}/rerun-failed-jobs — relance les jobs EN ÉCHEC.
+        """POST /…/actions/runs/{run_id}/rerun-failed-jobs — rerun the FAILED jobs.
 
-        Les jobs réussis ne sont pas rejoués : c'est la relance la moins chère et
-        la moins risquée des deux.
+        Successful jobs are not replayed: it is the cheaper and
+        less risky of the two reruns.
         """
         body = ({"enable_debug_logging": enable_debug_logging}
                 if enable_debug_logging is not None else None)
@@ -159,10 +159,10 @@ class _ActionsMixin:
             json=body)
 
     def delete_workflow_run(self, owner: str, repo: str, run_id: Any) -> Any:
-        """DELETE /repos/{owner}/{repo}/actions/runs/{run_id} — supprime une exécution.
+        """DELETE /repos/{owner}/{repo}/actions/runs/{run_id} — delete a run.
 
-        ⚠️ Définitif : emporte ses logs et son historique. Une exécution en cours
-        ne peut pas être supprimée (l'annuler d'abord).
+        ⚠️ Permanent: takes its logs and history with it. A run in progress
+        cannot be deleted (cancel it first).
         """
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/actions/runs/{run_id}")
@@ -173,49 +173,49 @@ class _ActionsMixin:
                       filter: Optional[str] = None,
                       per_page: Optional[int] = None,
                       page: Optional[int] = None) -> Any:
-        """GET /…/actions/runs/{run_id}/jobs — jobs d'une exécution.
+        """GET /…/actions/runs/{run_id}/jobs — jobs of a run.
 
-        `filter="all"` inclut les tentatives précédentes (défaut : `latest`).
-        ⚠️ Rend `{total_count, jobs: [...]}`, pas un tableau.
+        `filter="all"` includes previous attempts (default: `latest`).
+        ⚠️ Returns `{total_count, jobs: [...]}`, not an array.
         """
         return self._get(f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
                          {"filter": filter}, per_page, page)
 
     def get_job(self, owner: str, repo: str, job_id: Any) -> Any:
-        """GET /repos/{owner}/{repo}/actions/jobs/{job_id} — un job et ses étapes."""
+        """GET /repos/{owner}/{repo}/actions/jobs/{job_id} — a job and its steps."""
         return self._request("GET",
                              f"/repos/{owner}/{repo}/actions/jobs/{job_id}")
 
     def get_job_logs_url(self, owner: str, repo: str, job_id: Any) -> Optional[str]:
-        """GET /…/actions/jobs/{job_id}/logs — l'URL SIGNÉE des logs d'un job.
+        """GET /…/actions/jobs/{job_id}/logs — the SIGNED URL of a job's logs.
 
-        ⚠️ GitHub répond **302** vers une URL de stockage à durée de vie courte
-        (≈ 1 minute). Cette méthode ne suit PAS la redirection et rend l'URL :
-        la rejouer avec l'en-tête `Authorization` de la session ferait échouer le
-        stockage, qui refuse une requête doublement authentifiée. Télécharger
-        l'URL rendue **sans en-tête d'auth**, tout de suite.
+        ⚠️ GitHub answers **302** to a storage URL with a short lifetime
+        (≈ 1 minute). This method does NOT follow the redirect and returns the URL:
+        replaying it with the session's `Authorization` header would make the
+        storage fail, as it refuses a doubly authenticated request. Download
+        the returned URL **without an auth header**, right away.
 
-        Rend `None` si GitHub n'a pas redirigé (logs expirés ou absents — ils
-        sont conservés un temps limité).
+        Returns `None` if GitHub did not redirect (logs expired or absent — they
+        are kept for a limited time).
         """
         resp = self._request(
             "GET", f"/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
             raw=True)
         return (getattr(resp, "headers", None) or {}).get("Location")
 
-    # --- artefacts -----------------------------------------------------------------
+    # --- artifacts -----------------------------------------------------------------
 
     def list_artifacts(self, owner: str, repo: str,
                        run_id: Optional[Any] = None,
                        name: Optional[str] = None,
                        per_page: Optional[int] = None,
                        page: Optional[int] = None) -> Any:
-        """GET /…/actions/artifacts — artefacts du dépôt (ou d'une exécution).
+        """GET /…/actions/artifacts — artifacts of the repository (or of a run).
 
-        Avec `run_id`, interroge `/actions/runs/{run_id}/artifacts`.
-        ⚠️ Rend `{total_count, artifacts: [...]}`, pas un tableau.
-        ⚠️ Un artefact **expire** (90 jours par défaut) : `expired: true` signale
-        une entrée dont le contenu n'est plus téléchargeable.
+        With `run_id`, queries `/actions/runs/{run_id}/artifacts`.
+        ⚠️ Returns `{total_count, artifacts: [...]}`, not an array.
+        ⚠️ An artifact **expires** (90 days by default): `expired: true` flags
+        an entry whose content can no longer be downloaded.
         """
         path = (f"/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
                 if run_id is not None
@@ -223,18 +223,18 @@ class _ActionsMixin:
         return self._get(path, {"name": name}, per_page, page)
 
     def get_artifact(self, owner: str, repo: str, artifact_id: Any) -> Any:
-        """GET /repos/{owner}/{repo}/actions/artifacts/{id} — un artefact."""
+        """GET /repos/{owner}/{repo}/actions/artifacts/{id} — one artifact."""
         return self._request(
             "GET", f"/repos/{owner}/{repo}/actions/artifacts/{artifact_id}")
 
     def get_artifact_download_url(self, owner: str, repo: str,
                                   artifact_id: Any,
                                   archive_format: str = "zip") -> Optional[str]:
-        """GET /…/artifacts/{id}/{format} — l'URL SIGNÉE de téléchargement.
+        """GET /…/artifacts/{id}/{format} — the SIGNED download URL.
 
-        Même règle que les logs : **302** vers une URL de stockage éphémère, à
-        télécharger **sans en-tête `Authorization`**. Rend `None` si GitHub n'a
-        pas redirigé (artefact expiré).
+        Same rule as logs: **302** to an ephemeral storage URL, to
+        be downloaded **without an `Authorization` header**. Returns `None` if GitHub did
+        not redirect (expired artifact).
         """
         resp = self._request(
             "GET",
@@ -243,6 +243,6 @@ class _ActionsMixin:
         return (getattr(resp, "headers", None) or {}).get("Location")
 
     def delete_artifact(self, owner: str, repo: str, artifact_id: Any) -> Any:
-        """DELETE /repos/{owner}/{repo}/actions/artifacts/{id} — supprime un artefact."""
+        """DELETE /repos/{owner}/{repo}/actions/artifacts/{id} — delete an artifact."""
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/actions/artifacts/{artifact_id}")

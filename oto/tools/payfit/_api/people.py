@@ -1,18 +1,17 @@
-"""Les personnes : l'annuaire des collaborateurs, leurs bulletins, leurs
-titres-restaurant.
+"""People: the collaborator directory, their payslips, their meal vouchers.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `PayfitClient`, qui
-fournit le transport (`_get`, `_get_file`, `_post`, `_company_path`).
+This mixin is never instantiated on its own: it is composed into `PayfitClient`,
+which provides the transport (`_get`, `_get_file`, `_post`, `_company_path`).
 
-⚠️ **Un bulletin, c'est deux appels et deux natures.** `list_payslips` rend les
-MÉTADONNÉES (`year`, `month`, `contractId`, `payslipId`, `payslipUrl`) ;
-`get_payslip` rend le PDF. **L'API ne sert jamais les LIGNES d'un bulletin** :
-brut, net, cotisation par cotisation, il n'existe aucun endpoint qui les rende
-en données. Les seuls montants structurés de cette API sont les écritures
-comptables (`list_accounting_entries`).
+⚠️ **A payslip is two calls and two natures.** `list_payslips` returns the
+METADATA (`year`, `month`, `contractId`, `payslipId`, `payslipUrl`);
+`get_payslip` returns the PDF. **The API never serves the LINES of a payslip**:
+gross, net, contribution by contribution, no endpoint returns them
+as data. The only structured amounts in this API are the accounting entries
+(`list_accounting_entries`).
 
-⚠️ `list_payslips` ne pagine pas et ne se filtre pas : elle rend TOUS les
-bulletins du collaborateur, tous contrats confondus.
+⚠️ `list_payslips` neither paginates nor filters: it returns ALL of the
+collaborator's payslips, across all contracts.
 """
 from __future__ import annotations
 
@@ -25,18 +24,18 @@ from ..params import page as _page
 
 
 class _PeopleMixin:
-    """Collaborateurs, bulletins, titres-restaurant."""
+    """Collaborators, payslips, meal vouchers."""
 
-    # --- annuaire -----------------------------------------------------------
+    # --- directory ----------------------------------------------------------
 
     def list_collaborators(self, *, limit: int = 50, cursor: Optional[str] = None,
                            email: Optional[str] = None) -> Any:
         """GET /companies/{companyId}/collaborators.
 
-        Scope `collaborators:read` ; les champs sensibles (NIR, IBAN/BIC,
-        naissance, coordonnées personnelles) n'arrivent que si la clé porte AUSSI
+        Scope `collaborators:read`; sensitive fields (NIR, IBAN/BIC,
+        birth, personal contact details) only arrive if the key ALSO carries
         `collaborators:social-security:read`, `collaborators:bank-info:read`,
-        `collaborators:personal:read` ou `collaborators:legal-identity:read`.
+        `collaborators:personal:read` or `collaborators:legal-identity:read`.
 
         Args:
             email: only collaborators with this email in one of their contracts
@@ -59,29 +58,29 @@ class _PeopleMixin:
                             number_of_children: Optional[int] = None,
                             gender: Optional[str] = None,
                             invite_collaborator: Optional[bool] = None) -> Any:
-        """POST /companies/{companyId}/collaborators — crée un collaborateur.
+        """POST /companies/{companyId}/collaborators — creates a collaborator.
 
-        Scope `collaborators:write`. Rend `{collaboratorId}`. Un collaborateur
-        créé ici n'a **pas encore de contrat** : `create_contract` est l'étape
-        suivante, et c'est elle qui le fait entrer dans la paie.
+        Scope `collaborators:write`. Returns `{collaboratorId}`. A collaborator
+        created here has **no contract yet**: `create_contract` is the next
+        step, and it is what brings them into payroll.
 
-        ⚠️ `invite_collaborator=True` **envoie un e-mail** à la personne pour
-        qu'elle crée son accès PayFit : un effet visible hors du système.
+        ⚠️ `invite_collaborator=True` **sends an email** to the person so
+        they can create their PayFit access: an effect visible outside the system.
 
         Args:
-            first_name / last_name / personal_email: les trois champs exigés.
-            other_name: nom d'usage (FR), segundo apellido (ES), middle name (UK).
-            social_security_number: NIR — longueur imposée par pays (FR 15,
+            first_name / last_name / personal_email: the three required fields.
+            other_name: usage name (FR), second surname (ES), middle name (UK).
+            social_security_number: NIR — length imposed per country (FR 15,
                 ES 14, GB 12).
             personal_address: `{streetNumber, addressFirstLine, addressSecondLine,
-                city, state, postCode, country}` — `country` en code ISO 2
-                lettres ; `streetNumber`, `addressFirstLine`, `city`, `postCode`
-                et `country` sont exigés dès que l'objet est fourni.
+                city, state, postCode, country}` — `country` as a 2-letter ISO
+                code; `streetNumber`, `addressFirstLine`, `city`, `postCode`
+                and `country` are required as soon as the object is provided.
             birth_information: `{birthDate, birthPlace, birthCountry}`,
-                `birthDate` en AAAA-MM-JJ dans le passé.
-            number_of_children: entier de 0 à 20.
-            gender: `MALE` ou `FEMALE` — le jeu FERMÉ de l'API, pas le nôtre.
-            invite_collaborator: envoie l'e-mail d'invitation.
+                `birthDate` as YYYY-MM-DD in the past.
+            number_of_children: integer from 0 to 20.
+            gender: `MALE` or `FEMALE` — the API's CLOSED set, not ours.
+            invite_collaborator: sends the invitation email.
         """
         return self._post(self._company_path("/collaborators"), clean({
             "firstName": first_name, "lastName": last_name,
@@ -94,26 +93,26 @@ class _PeopleMixin:
             "inviteCollaborator": invite_collaborator,
         }))
 
-    # --- bulletins ----------------------------------------------------------
+    # --- payslips -----------------------------------------------------------
 
     def list_payslips(self, collaborator_id: str) -> Any:
         """GET /companies/{companyId}/collaborators/{collaboratorId}/payslips.
 
-        Scope `contracts:payslips:read`. Rend `{payslips: [{year, month,
-        contractId, payslipId, payslipUrl}]}` — des métadonnées, jamais de
-        montants.
+        Scope `contracts:payslips:read`. Returns `{payslips: [{year, month,
+        contractId, payslipId, payslipUrl}]}` — metadata, never
+        amounts.
         """
         return self._get(self._company_path(
             f"/collaborators/{_id(collaborator_id, 'collaborator_id')}/payslips"))
 
     def get_payslip(self, collaborator_id: str, contract_id: str,
                     payslip_id: str) -> Dict[str, Any]:
-        """GET …/collaborators/{id}/contracts/{id}/payslips/{id} — le PDF.
+        """GET …/collaborators/{id}/contracts/{id}/payslips/{id} — the PDF.
 
-        Scope `contracts:payslips:read`. Rend `{data: bytes, filename, mimetype}`.
-        Les trois identifiants viennent d'une même entrée de `list_payslips`
-        (plus l'id du collaborateur) : le `contractId` d'une ligne n'est pas
-        interchangeable avec un autre contrat de la personne.
+        Scope `contracts:payslips:read`. Returns `{data: bytes, filename, mimetype}`.
+        The three identifiers come from a single `list_payslips` entry
+        (plus the collaborator id): a row's `contractId` is not
+        interchangeable with another of the person's contracts.
         """
         col = _id(collaborator_id, "collaborator_id")
         con = _id(contract_id, "contract_id")
@@ -122,18 +121,18 @@ class _PeopleMixin:
             self._company_path(f"/collaborators/{col}/contracts/{con}/payslips/{pay}"),
             filename=f"payfit-bulletin-{pay}.pdf", mimetype="application/pdf")
 
-    # --- titres-restaurant --------------------------------------------------
+    # --- meal vouchers ------------------------------------------------------
 
     def list_meal_vouchers(self, date: str, *, limit: int = 50,
                            cursor: Optional[str] = None) -> Any:
         """GET /companies/{companyId}/collaborators/meal-vouchers — 🇫🇷.
 
-        Scope `collaborators:meal-vouchers:read`. Par collaborateur et pour le
-        mois : nombre de titres, valeur faciale, part patronale, part salariale,
-        éligibilité des jours non travaillés.
+        Scope `collaborators:meal-vouchers:read`. Per collaborator and for the
+        month: number of vouchers, face value, employer share, employee share,
+        eligibility of non-worked days.
 
         Args:
-            date: le mois, AAAAMM.
+            date: the month, AAAAMM.
         """
         return self._get(self._company_path("/collaborators/meal-vouchers"),
                          date=_month(date), **_page(limit, cursor))

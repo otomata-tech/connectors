@@ -1,15 +1,15 @@
 """Ashby ATS API client.
 
-Auth = **API key** en Basic auth (la clé est le *username*, mot de passe vide).
-Créée dans Ashby : Settings → Integrations → Ashby API. Passée en clair au
-constructeur.
+Auth = **API key** via Basic auth (the key is the *username*, empty password).
+Created in Ashby: Settings → Integrations → Ashby API. Passed in clear to the
+constructor.
 
-Particularité Ashby : **tout est POST** sur des endpoints RPC (`candidate.list`,
-`candidate.info`, `job.list`, …), le corps JSON porte les paramètres. La
-pagination se fait par `cursor` (curseur de page suivante dans
-`nextCursor` quand `moreDataAvailable` est vrai).
+Ashby quirk: **everything is POST** on RPC endpoints (`candidate.list`,
+`candidate.info`, `job.list`, …), the JSON body carries the parameters.
+Pagination is by `cursor` (next-page cursor in
+`nextCursor` when `moreDataAvailable` is true).
 
-Docs : https://developers.ashbyhq.com/
+Docs: https://developers.ashbyhq.com/
 
 Requires: requests
 """
@@ -23,12 +23,12 @@ from ..common.credentials import require
 
 
 class AshbyClient:
-    """Client Ashby — RPC POST (candidate.*, job.*, application.*)."""
+    """Ashby client — POST RPC (candidate.*, job.*, application.*)."""
 
     BASE_URL = "https://api.ashbyhq.com"
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: Ashby API key.
@@ -42,8 +42,8 @@ class AshbyClient:
         })
 
     def call(self, endpoint: str, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Appel RPC brut (POST `endpoint`). Échappatoire pour tout endpoint Ashby
-        non couvert par un helper. Lève si `success` est faux."""
+        """Raw RPC call (POST `endpoint`). Escape hatch for any Ashby endpoint
+        not covered by a helper. Raises if `success` is false."""
         url = f"{self.BASE_URL}/{endpoint}"
         resp = self.session.post(url, json=body or {}, timeout=30)
         if resp.status_code >= 400:
@@ -57,26 +57,26 @@ class AshbyClient:
             raise Exception(f"Ashby error: {data.get('errors') or data}")
         return data
 
-    # --- Candidats ----------------------------------------------------------
+    # --- Candidates ---------------------------------------------------------
 
     def list_candidates(
         self, limit: int = 50, cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidats (paginé). `cursor` = `nextCursor` de la page
-        précédente. Renvoie `{results, moreDataAvailable, nextCursor}`."""
+        """List candidates (paginated). `cursor` = `nextCursor` of the previous
+        page. Returns `{results, moreDataAvailable, nextCursor}`."""
         body: Dict[str, Any] = {"limit": min(limit, 100)}
         if cursor:
             body["cursor"] = cursor
         return self.call("candidate.list", body)
 
     def get_candidate(self, candidate_id: str) -> Dict[str, Any]:
-        """Récupère un candidat par id (`candidate.info`)."""
+        """Fetch a candidate by id (`candidate.info`)."""
         return self.call("candidate.info", {"id": candidate_id})
 
     def search_candidates(
         self, email: Optional[str] = None, name: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Recherche de candidats par `email` et/ou `name` (`candidate.search`)."""
+        """Search candidates by `email` and/or `name` (`candidate.search`)."""
         body: Dict[str, Any] = {}
         if email:
             body["email"] = email
@@ -85,7 +85,7 @@ class AshbyClient:
         return self.call("candidate.search", body)
 
     def add_note(self, candidate_id: str, note: str) -> Dict[str, Any]:
-        """Ajoute une note à un candidat (`candidate.createNote`)."""
+        """Add a note to a candidate (`candidate.createNote`)."""
         return self.call("candidate.createNote",
                          {"candidateId": candidate_id, "note": note})
 
@@ -95,7 +95,7 @@ class AshbyClient:
         self, limit: int = 50, cursor: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les jobs (`job.list`). `status` : "Open" | "Closed" | "Draft" |
+        """List jobs (`job.list`). `status`: "Open" | "Closed" | "Draft" |
         "Archived"."""
         body: Dict[str, Any] = {"limit": min(limit, 100)}
         if cursor:
@@ -105,16 +105,16 @@ class AshbyClient:
         return self.call("job.list", body)
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
-        """Récupère un job par id (`job.info`)."""
+        """Fetch a job by id (`job.info`)."""
         return self.call("job.info", {"id": job_id})
 
-    # --- Candidatures -------------------------------------------------------
+    # --- Applications -----------------------------------------------------
 
     def list_applications(
         self, limit: int = 50, cursor: Optional[str] = None,
         job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidatures (`application.list`), filtrable par `job_id`."""
+        """List applications (`application.list`), filterable by `job_id`."""
         body: Dict[str, Any] = {"limit": min(limit, 100)}
         if cursor:
             body["cursor"] = cursor
@@ -123,5 +123,5 @@ class AshbyClient:
         return self.call("application.list", body)
 
     def get_application(self, application_id: str) -> Dict[str, Any]:
-        """Récupère une candidature par id (`application.info`)."""
+        """Fetch an application by id (`application.info`)."""
         return self.call("application.info", {"id": application_id})

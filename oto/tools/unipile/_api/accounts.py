@@ -1,8 +1,8 @@
-"""Comptes Unipile & lien d'auth hébergée.
+"""Unipile accounts & hosted auth link.
 
-Extrait de `client.py` (découpage par domaine, surface publique figée) :
-les corps sont inchangés. Ce mixin n'est jamais instancié seul — il est
-composé dans `UnipileClient`, qui fournit le transport (`_request`,
+Extracted from `client.py` (split by domain, frozen public surface):
+the bodies are unchanged. This mixin is never instantiated on its own — it is
+composed into `UnipileClient`, which provides the transport (`_request`,
 `_acct`, `_norm`, `_by_shape`, `session`).
 """
 
@@ -20,43 +20,43 @@ from ..errors import UnipileError
 
 logger = logging.getLogger(__name__)
 
-# Garde-fou de `list_accounts` : au-delà, on s'arrête et on le DIT (log). À la
-# taille de page par défaut d'Unipile (20), c'est 10 000 comptes — trois ordres
-# de grandeur au-dessus de la clé plateforme d'aujourd'hui. Il n'est là que pour
-# qu'un amont qui répondrait `has_more: true` à l'infini ne fige pas l'appelant.
+# Guard for `list_accounts`: beyond it, we stop and SAY SO (log). At Unipile's
+# default page size (20), that's 10,000 accounts — three orders of
+# magnitude above today's platform key. It's only there so that
+# an upstream answering `has_more: true` forever doesn't freeze the caller.
 _ACCOUNTS_MAX_PAGES = 500
 
 
 class _AccountsMixin:
-    """Comptes Unipile & lien d'auth hébergée."""
+    """Unipile accounts & hosted auth link."""
 
     def list_accounts(self) -> list[dict]:
-        """TOUS les comptes de la clé, toutes pages confondues.
+        """ALL the accounts of the key, across all pages.
 
-        ⚠️ `GET /v2/accounts` est PAGINÉ par `offset` (`limit` défaut 20, `has_more`)
-        et TRIÉ PAR `name` (OpenAPI v2 « List all Accounts »). Ce client ne lisait
-        que la première page : passé 20 comptes sur une clé, tout compte dont le
-        nom se range après le 20e devenait INVISIBLE — sans erreur, puisque la page
-        rendue est parfaitement valide. Vécu le 2026-09-14 : la clé plateforme
-        portait plus de 20 comptes, et la réconciliation poll-and-bind d'oto-backend
-        (qui cherche le compte fraîchement connecté DANS cette liste) ne pouvait
-        plus lier personne dont le nom tombe après le 20e ; l'inventaire admin
-        des sièges mentait par omission (des sièges vivants et utilisés n'y
-        figuraient pas). Les noms en tête d'alphabet passaient : non reproductible
-        pour qui s'appelle Alessandro.
+        ⚠️ `GET /v2/accounts` is PAGINATED by `offset` (`limit` default 20, `has_more`)
+        and SORTED BY `name` (OpenAPI v2 "List all Accounts"). This client only read
+        the first page: past 20 accounts on a key, any account whose
+        name sorts after the 20th became INVISIBLE — with no error, since the returned
+        page is perfectly valid. Seen on 2026-09-14: the platform key
+        carried more than 20 accounts, and oto-backend's poll-and-bind reconciliation
+        (which looks for the freshly connected account IN this list) could no
+        longer bind anyone whose name falls after the 20th; the admin seat
+        inventory lied by omission (live, in-use seats were missing from it).
+        Names early in the alphabet got through: not reproducible
+        for someone called Alessandro.
 
-        On avance de la taille de la page RENDUE (`limit` n'est pas envoyé : on
-        garde la taille par défaut de l'amont plutôt que de deviner un maximum que
-        la doc ne donne pas) jusqu'à `has_more` faux ou une page vide. Dédupliqué
-        par `id` : un compte créé pendant le parcours décale l'ordre alphabétique
-        et peut resservir un compte déjà vu.
+        We advance by the size of the RETURNED page (`limit` is not sent: we
+        keep the upstream's default size rather than guess a maximum that
+        the docs don't give) until `has_more` is false or a page is empty. Deduplicated
+        by `id`: an account created during the walk shifts the alphabetical order
+        and can serve an already-seen account again.
 
-        ⚠️ ARRÊT MÉCANIQUE, même raison que `list_invitations` : si l'amont ignorait
-        `offset` et resservait la même page, la boucle ne finirait jamais. Page
-        identique à la précédente ⟹ on s'arrête avec ce qu'on a, et on le
-        journalise — rendre la première page reste le comportement d'avant, pas une
-        régression. Une réponse sans `has_more` (ou une liste nue) est lue comme
-        une page unique."""
+        ⚠️ MECHANICAL STOP, same reason as `list_invitations`: if upstream ignored
+        `offset` and served the same page again, the loop would never end. Page
+        identical to the previous one ⟹ we stop with what we have, and we
+        log it — returning the first page stays the previous behavior, not a
+        regression. A response without `has_more` (or a bare list) is read as
+        a single page."""
         out: list[dict] = []
         seen_ids: set[str] = set()
         offset = 0
@@ -69,19 +69,19 @@ class _AccountsMixin:
             page = data.get("data") or data.get("items") or []
             if not page:
                 if offset:
-                    # L'amont annonçait une suite (`has_more`) et rend une page vide :
-                    # soit la liste a rétréci entre deux appels, soit `offset` ne veut
-                    # pas dire ce qu'on croit ici. Le second cas re-tronquerait en
-                    # silence — il se dit.
+                    # Upstream announced more (`has_more`) and returns an empty page:
+                    # either the list shrank between two calls, or `offset` doesn't
+                    # mean what we think here. The second case would silently
+                    # re-truncate — so we say it.
                     logger.warning(
-                        "unipile list_accounts : `has_more` annonçait une suite, la page "
-                        "à offset=%s est vide — %d compte(s) lus.", offset, len(out))
+                        "unipile list_accounts: `has_more` announced more, the page "
+                        "at offset=%s is empty — %d account(s) read.", offset, len(out))
                 break
             ids = [a.get("id") if isinstance(a, dict) else a for a in page]
             if ids == previous:
                 logger.warning(
-                    "unipile list_accounts : l'amont a resservi la page précédente à "
-                    "l'identique (offset=%s) — pagination arrêtée à %d compte(s).",
+                    "unipile list_accounts: upstream served the previous page again "
+                    "identically (offset=%s) — pagination stopped at %d account(s).",
                     offset, len(out))
                 break
             previous = ids
@@ -97,34 +97,34 @@ class _AccountsMixin:
             offset += len(page)
         else:
             logger.warning(
-                "unipile list_accounts : plafond de %d pages atteint — liste tronquée "
-                "à %d compte(s).", _ACCOUNTS_MAX_PAGES, len(out))
+                "unipile list_accounts: cap of %d pages reached — list truncated "
+                "at %d account(s).", _ACCOUNTS_MAX_PAGES, len(out))
         return out
 
     def delete_account(self, account_id: str) -> None:
-        """Retire un compte de l'instance Unipile — c'est ce qui LIBÈRE le siège
-        facturé (une déconnexion côté oto ne fait que dénouer le binding, le siège
-        continue de courir).
+        """Remove an account from the Unipile instance — this is what RELEASES the
+        billed seat (a disconnect on the oto side only unwinds the binding, the seat
+        keeps running).
 
-        ⚠️ IRRÉVERSIBLE : la session hébergée est détruite. Une reconnexion de la
-        même personne repartira d'un `account_id` NEUF — donc l'historique de
-        propriété côté appelant (bindings morts) ne rebindera plus ce compte.
-        204 attendu ; un id inconnu remonte en `UnipileError` 404."""
+        ⚠️ IRREVERSIBLE: the hosted session is destroyed. A reconnection of the
+        same person will start from a NEW `account_id` — so the ownership history
+        on the caller's side (dead bindings) will no longer rebind this account.
+        204 expected; an unknown id bubbles up as a 404 `UnipileError`."""
         self._request("DELETE", f"/accounts/{quote(account_id, safe='')}")
 
     def account_id(self) -> str:
-        """`account_id` LinkedIn : celui fourni, sinon le 1er compte LinkedIn du compte
-        Unipile.
+        """LinkedIn `account_id`: the one provided, otherwise the 1st LinkedIn account of the
+        Unipile account.
 
-        ⚠️ La casse du provider a CHANGÉ en v2 : un compte porte `provider:"linkedin"`
-        (minuscules) et **plus de champ `type`** (champs v2 relevés en live :
+        ⚠️ The provider casing CHANGED in v2: an account carries `provider:"linkedin"`
+        (lowercase) and **no more `type` field** (v2 fields seen live:
         application_id, created_at, id, is_locked, metadata, name, object, provider,
-        proxy, status, user_id). L'ancien test `== "LINKEDIN"` ne pouvait donc plus
-        JAMAIS être vrai → la découverte automatique tombait toujours dans le « aucun
-        compte LinkedIn connecté » alors qu'un compte opérationnel existait : un
-        diagnostic qui MENT coûte des heures. Comparaison insensible à la casse, sur
-        `provider` (v2) avec repli `type` (v1), et le message d'échec ÉNUMÈRE les
-        providers réellement vus."""
+        proxy, status, user_id). The old `== "LINKEDIN"` test could therefore never
+        be true again → automatic discovery always fell into "no
+        LinkedIn account connected" even though an operational account existed: a
+        diagnostic that LIES costs hours. Case-insensitive comparison, on
+        `provider` (v2) with `type` fallback (v1), and the failure message LISTS the
+        providers actually seen."""
         if self._account_id:
             return self._account_id
         seen: list[str] = []
@@ -137,19 +137,19 @@ class _AccountsMixin:
             if provider.lower() == "linkedin" and acc.get("id"):
                 self._account_id = str(acc["id"])
                 return self._account_id
-        inventory = (f" Comptes connectés : {', '.join(sorted(set(seen)))}."
-                     if seen else " Aucun compte connecté sur cette clé Unipile.")
+        inventory = (f" Connected accounts: {', '.join(sorted(set(seen)))}."
+                     if seen else " No account connected on this Unipile key.")
         raise UnipileError(
-            "Aucun compte LinkedIn connecté sur Unipile "
-            "(et UNIPILE_LINKEDIN_ACCOUNT_ID non défini)." + inventory
+            "No LinkedIn account connected on Unipile "
+            "(and UNIPILE_LINKEDIN_ACCOUNT_ID not set)." + inventory
         )
 
     def account_alive(self, account_id: str) -> bool:
-        """La SESSION du compte est-elle vivante ? `GET /v2/{account_id}/users/me` :
-        200 = utilisable, 401 = déconnecté (checkpoint / login avorté / cookie mort).
-        Distinct de `status:'running'` du compte, qui peut mentir sur un compte
-        mort-né (wizard abandonné). Sert à ne binder qu'un compte RÉELLEMENT
-        utilisable (un compte mort-né préféré à l'ancien sain = incident vécu)."""
+        """Is the account's SESSION alive? `GET /v2/{account_id}/users/me`:
+        200 = usable, 401 = disconnected (checkpoint / aborted login / dead cookie).
+        Distinct from the account's `status:'running'`, which can lie on a
+        stillborn account (abandoned wizard). Used to bind only an account that is ACTUALLY
+        usable (a stillborn account preferred over the old healthy one = incident we've seen)."""
         try:
             resp = self.session.request(
                 "GET", f"{self.base_url}/{quote(account_id, safe='')}/users/me",
@@ -160,9 +160,9 @@ class _AccountsMixin:
 
     # ---- hosted auth -----------------------------------------------------
 
-    # Produits LinkedIn activables au lien hosted-auth (`config.linkedin.products`).
-    # `classic` = la base, toujours incluse. Les deux PREMIUM sont EXCLUSIFS : un
-    # compte ne peut en activer qu'UN (contrainte Unipile documentée).
+    # LinkedIn products that can be enabled on the hosted-auth link (`config.linkedin.products`).
+    # `classic` = the base, always included. The two PREMIUM ones are EXCLUSIVE: an
+    # account can only enable ONE (documented Unipile constraint).
     LINKEDIN_PREMIUM_PRODUCTS = ("recruiter", "sales_navigator")
 
     def hosted_auth_link(
@@ -177,26 +177,26 @@ class _AccountsMixin:
         allow_cookies: bool = False,
         reconnect_account: Optional[str] = None,
     ) -> str:
-        """URL d'auth hébergée (v2 : `POST /v2/auth/link`, createAuthLink).
+        """Hosted auth URL (v2: `POST /v2/auth/link`, createAuthLink).
 
-        Schéma v2 : `expires_on` (snake) ; `providers` = liste de codes
-        **minuscules** (`["linkedin"]`) ou `"*"` (tous) ; **un seul** `redirect_uri`
-        (v2 ne sépare plus succès/échec) ; la réponse porte le lien sur **`link`**.
-        `name`/`notify_url` restent acceptés (corrélation webhook du hosted-auth #131).
+        v2 schema: `expires_on` (snake); `providers` = list of **lowercase**
+        codes (`["linkedin"]`) or `"*"` (all); **a single** `redirect_uri`
+        (v2 no longer separates success/failure); the response carries the link on **`link`**.
+        `name`/`notify_url` remain accepted (hosted-auth webhook correlation #131).
 
-        ⚠️ **C'est à l'app d'activer les produits premium** : sans
-        `config.linkedin.products`, Unipile ne connecte que `classic` → les
-        endpoints Recruiter/Sales Navigator répondent 403 « out of your scope » et
-        le wizard n'offre AUCUNE case premium (confirmé par le support Unipile).
-        - `premium` : `"recruiter"` | `"sales_navigator"` | None. **Exclusifs** — un
-          compte ne peut activer qu'un seul des deux.
-        - `allow_cookies` : ajoute la connexion par cookies aux méthodes du wizard
-          (sans lui, seul identifiant/mot de passe est proposé). **Recommandé par
-          Unipile pour les produits premium.**
-        - `reconnect_account` : `account_id` d'un compte EXISTANT → `type=reconnect`
-          (rattache le produit/répare la session SUR ce compte) au lieu de `create`
-          (qui ferait un DOUBLON). À utiliser pour activer un premium sur un compte
-          déjà connecté."""
+        ⚠️ **It's up to the app to enable premium products**: without
+        `config.linkedin.products`, Unipile only connects `classic` → the
+        Recruiter/Sales Navigator endpoints answer 403 "out of your scope" and
+        the wizard offers NO premium checkbox (confirmed by Unipile support).
+        - `premium`: `"recruiter"` | `"sales_navigator"` | None. **Exclusive** — an
+          account can only enable one of the two.
+        - `allow_cookies`: adds cookie-based connection to the wizard's methods
+          (without it, only login/password is offered). **Recommended by
+          Unipile for premium products.**
+        - `reconnect_account`: `account_id` of an EXISTING account → `type=reconnect`
+          (attaches the product/repairs the session ON that account) instead of `create`
+          (which would make a DUPLICATE). To be used to enable a premium on an
+          already connected account."""
         expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
         body: dict[str, Any] = {
             "type": "reconnect" if reconnect_account else "create",
@@ -204,8 +204,8 @@ class _AccountsMixin:
             "api_url": f"https://{self.dsn}",
             "expires_on": expires.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         }
-        # v2 = un seul redirect_uri (l'échec n'a plus d'URL dédiée) ; on prend le
-        # succès, sinon l'échec en repli.
+        # v2 = a single redirect_uri (failure no longer has a dedicated URL); we take the
+        # success one, otherwise the failure one as a fallback.
         redirect = success_redirect_url or failure_redirect_url
         if redirect:
             body["redirect_uri"] = redirect
@@ -215,15 +215,15 @@ class _AccountsMixin:
             body["notify_url"] = notify_url
         if name:
             body["name"] = name
-        # config.linkedin : produits à activer + méthodes de connexion offertes.
-        # N'est posé que si on demande quelque chose de non-défaut (sinon Unipile
-        # garde son comportement d'origine : classic + credentials).
+        # config.linkedin: products to enable + offered connection methods.
+        # Only set if we ask for something non-default (otherwise Unipile
+        # keeps its original behavior: classic + credentials).
         if premium or allow_cookies:
             if premium and premium not in self.LINKEDIN_PREMIUM_PRODUCTS:
                 raise UnipileError(
-                    f"premium invalide : {premium!r} (attendu "
-                    f"{' ou '.join(map(repr, self.LINKEDIN_PREMIUM_PRODUCTS))}). "
-                    "Un compte ne peut activer qu'UN produit premium."
+                    f"invalid premium: {premium!r} (expected "
+                    f"{' or '.join(map(repr, self.LINKEDIN_PREMIUM_PRODUCTS))}). "
+                    "An account can only enable ONE premium product."
                 )
             cfg: dict[str, Any] = {}
             if premium:
@@ -233,4 +233,3 @@ class _AccountsMixin:
             body["config"] = {"linkedin": cfg}
         data = self._request("POST", "/auth/link", json=body)
         return (data or {}).get("link") or (data or {}).get("url", "")
-

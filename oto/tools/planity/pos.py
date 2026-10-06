@@ -1,14 +1,14 @@
-"""La caisse : périodes, tickets, lignes, paiements.
+"""The till: periods, receipts, lines, payments.
 
-Une **période** est une session de caisse (ouverture → clôture) ; elle porte ses
-tickets en ligne, sous `receipts`. Il y en a des centaines sur un salon : toute
-lecture passe par une plage sur `createdAt`, jamais par le nœud entier.
+A **period** is a till session (opening → closing); it carries its receipts
+inline, under `receipts`. A salon has hundreds of them: every read goes through
+a range on `createdAt`, never through the whole node.
 
-⚠️ **Un ticket porte un instantané COMPLET de la cliente** — nom, téléphone,
-email, adresse, commentaire — figé au moment de l'encaissement. Ce module est une
-bibliothèque et rend ce que Planity donne. La projection se décide à la frontière
-d'un outil, et elle s'y réduit à l'identifiant : ni nom, ni contact, ni adresse.
-Le connecteur backend porte cette règle et sa raison."""
+⚠️ **A receipt carries a COMPLETE snapshot of the customer** — name, phone,
+email, address, comment — frozen at the moment of payment. This module is a
+library and returns what Planity gives. Projection is decided at a tool's
+boundary, and there it is reduced to the identifier: no name, no contact, no
+address. The backend connector carries that rule and its reason."""
 from __future__ import annotations
 
 from typing import Optional
@@ -18,12 +18,12 @@ from .firebase_ws import FirebaseRTDB, range_on
 NOEUD_PERIODES = "pos_periods"
 NOEUD_MOYENS_PAIEMENT = "business_payment_methods"
 
-#: L'index de tri des périodes de caisse. Millisecondes, comme partout chez Planity.
+#: The sort index of till periods. Milliseconds, as everywhere at Planity.
 INDEX_PERIODE = "createdAt"
 
 
 def _ligne(brut: dict) -> dict:
-    """Une ligne de ticket. `title` nomme la PRESTATION ou le PRODUIT, pas la cliente."""
+    """A receipt line. `title` names the SERVICE or the PRODUCT, not the customer."""
     return {
         "title": brut.get("title"),
         "price_cents": brut.get("price"),
@@ -49,7 +49,7 @@ def _paiement(brut: dict) -> dict:
 
 
 def ticket(receipt_id: str, brut: dict) -> dict:
-    """Un ticket nommé. `customer` reste tel quel — cf. l'avertissement du module."""
+    """A named receipt. `customer` is left as is — see the module warning."""
     lignes = brut.get("lines") or {}
     paiements = brut.get("paymentMethods") or {}
     rdv = brut.get("appointment") or {}
@@ -70,15 +70,15 @@ def ticket(receipt_id: str, brut: dict) -> dict:
         "vat_rates": brut.get("vatRates"),
         "seller_id": brut.get("userId"),
         "seller_name": brut.get("userName"),
-        # Un ticket annulé porte `status`; un ticket normal n'a pas le champ du
-        # tout. Le rendre à `None` ferait lire « pas de statut » comme « annulé
-        # inconnu » — il vaut `"OK"` par ABSENCE, ce que dit `cancelled`.
+        # A cancelled receipt carries `status`; a normal receipt has no such
+        # field at all. Returning `None` would make "no status" read as "unknown
+        # cancelled" — it is `"OK"` by ABSENCE, which is what `cancelled` says.
         "status": brut.get("status"),
         "cancelled": brut.get("status") == "CANCELLED",
         "cancelled_at": brut.get("cancelledAt"),
         "cancelled_by": brut.get("cancelledBy"),
-        # `appointment` est une MAP {veventId: {...}} : c'est la clé qui porte le
-        # lien vers l'agenda, pas une valeur à l'intérieur.
+        # `appointment` is a MAP {veventId: {...}}: the key carries the link to
+        # the calendar, not a value inside it.
         "appointment_ids": sorted(rdv.keys()) if isinstance(rdv, dict) else [],
         "customer_id": client.get("id") if isinstance(client, dict) else None,
         "customer": client,
@@ -87,7 +87,7 @@ def ticket(receipt_id: str, brut: dict) -> dict:
 
 
 def _valeurs(noeud) -> list:
-    """Planity écrit ses collections tantôt en map, tantôt en liste."""
+    """Planity writes its collections sometimes as a map, sometimes as a list."""
     if isinstance(noeud, dict):
         return list(noeud.values())
     if isinstance(noeud, list):
@@ -115,12 +115,11 @@ def periode(period_id: str, brut: dict, avec_tickets: bool = True) -> dict:
 
 async def lire_periodes(db: FirebaseRTDB, business_id: str, gte_ms: int, lte_ms: int,
                         limite: Optional[int] = None) -> list[dict]:
-    """Les périodes de caisse ouvertes dans la fenêtre, SANS leurs tickets.
+    """The till periods opened in the window, WITHOUT their receipts.
 
-    Sans tickets délibérément : une période en porte des dizaines, chacun avec un
-    instantané de cliente. Une liste de périodes qui les embarquerait ferait
-    transiter des milliers de fiches pour répondre « combien de sessions ce
-    mois-ci »."""
+    Deliberately without receipts: a period carries dozens, each with a customer
+    snapshot. A period list that embedded them would move thousands of records
+    just to answer "how many sessions this month"."""
     brut = await db.get(f"{NOEUD_PERIODES}/{business_id}",
                         range_on(INDEX_PERIODE, gte_ms, lte_ms, limit=limite))
     if not isinstance(brut, dict):
@@ -140,17 +139,17 @@ async def lire_periode(db: FirebaseRTDB, business_id: str, period_id: str) -> Op
 
 async def lire_ticket(db: FirebaseRTDB, business_id: str, period_id: str,
                       receipt_id: str) -> Optional[dict]:
-    """Un ticket précis. Il vit SOUS sa période — il n'a pas d'adresse à lui."""
+    """A specific receipt. It lives UNDER its period — it has no address of its own."""
     brut = await db.get(
         f"{NOEUD_PERIODES}/{business_id}/{period_id}/receipts/{receipt_id}")
-    # Vide = absent. Un ticket squelette se lirait comme un ticket à zéro euro.
+    # Empty = absent. A skeleton receipt would read as a zero-euro receipt.
     if not isinstance(brut, dict) or not brut:
         return None
     return ticket(receipt_id, brut)
 
 
 async def lire_moyens_paiement(db: FirebaseRTDB, business_id: str) -> list[dict]:
-    """Les moyens de paiement du salon — la table qui donne son nom à `method`."""
+    """The salon's payment methods — the table that gives `method` its name."""
     brut = await db.get(f"{NOEUD_MOYENS_PAIEMENT}/{business_id}")
     if not isinstance(brut, dict):
         return []

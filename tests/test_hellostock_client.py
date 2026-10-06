@@ -227,7 +227,7 @@ def test_a_send_is_never_retried_even_on_a_502(fake):
 def test_a_redirect_is_not_followed_and_says_so(fake):
     fake.force["/api/admin/demandes"] = (
         307, b"", {"Location": "https://www.example.test/api/admin/demandes"})
-    with pytest.raises(hs.HelloStockProtocolError, match="redirection"):
+    with pytest.raises(hs.HelloStockProtocolError, match="redirect"):
         _client(fake).list_demandes()
     assert len(fake.requests_log) == 1
 
@@ -235,7 +235,7 @@ def test_a_redirect_is_not_followed_and_says_so(fake):
 def test_a_non_json_success_is_a_protocol_error(fake):
     fake.force["/api/admin/users"] = (200, "<html>connexion</html>",
                                       {"Content-Type": "text/html"})
-    with pytest.raises(hs.HelloStockProtocolError, match="sans corps JSON"):
+    with pytest.raises(hs.HelloStockProtocolError, match="without a JSON body"):
         _client(fake).list_users()
 
 

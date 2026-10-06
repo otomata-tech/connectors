@@ -1,4 +1,4 @@
-"""Minari API client — prospection téléphonique (journal d'appels, listes, analytics)."""
+"""Minari API client — phone prospecting (call log, lists, analytics)."""
 
 from .client import MinariClient
 

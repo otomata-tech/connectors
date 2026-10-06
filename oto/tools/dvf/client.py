@@ -1,4 +1,4 @@
-"""DvfClient — ré-exporté depuis la lib partagée france-opendata (source unique)."""
+"""DvfClient — re-exported from the shared france-opendata lib (single source)."""
 from france_opendata.dvf import DvfClient
 
 __all__ = ["DvfClient"]

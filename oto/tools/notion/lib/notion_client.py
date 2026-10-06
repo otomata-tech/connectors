@@ -16,7 +16,7 @@ from ...common.local_dirs import get_cache_dir
 from ._api import _CollabMixin, _ContentMixin, _PagesMixin, _StructureMixin
 from ._ids import notion_id
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 # Bounds of a block read: pages of 100 per level, nesting depth.
 _MAX_BLOCK_PAGES = 50
 _MAX_BLOCK_DEPTH = 8
@@ -325,9 +325,9 @@ class NotionClient(_PagesMixin, _StructureMixin, _CollabMixin, _ContentMixin):
             start_cursor = result.get('next_cursor')
 
         raise Exception(
-            f"search_edited_on({date!r}): {max_pages} pages Notion parcourues "
-            f"sans atteindre le début de la fenêtre — augmenter max_pages ou "
-            f"vérifier la date."
+            f"search_edited_on({date!r}): {max_pages} Notion pages scanned "
+            f"without reaching the start of the window — increase max_pages or "
+            f"check the date."
         )
 
     def get_page(self, page_id: str) -> Dict:

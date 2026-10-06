@@ -1,8 +1,8 @@
-"""Recherche LinkedIn (classic / sales navigator / recruiter) et facettes.
+"""LinkedIn search (classic / sales navigator / recruiter) and facets.
 
-Extrait de `client.py` (découpage par domaine, surface publique figée) :
-les corps sont inchangés. Ce mixin n'est jamais instancié seul — il est
-composé dans `UnipileClient`, qui fournit le transport (`_request`,
+Extracted from `client.py` (split by domain, frozen public surface):
+the bodies are unchanged. This mixin is never instantiated on its own — it is
+composed into `UnipileClient`, which provides the transport (`_request`,
 `_acct`, `_norm`, `_by_shape`, `session`).
 """
 
@@ -15,16 +15,16 @@ from ..errors import UnipileError
 
 
 class _SearchMixin:
-    """Recherche LinkedIn (classic / sales navigator / recruiter) et facettes."""
+    """LinkedIn search (classic / sales navigator / recruiter) and facets."""
 
     def resolve_facet(
         self, facet_type: str, keywords: str, limit: int = 100
     ) -> list[dict]:
-        """Résout un nom en candidats de facette LinkedIn (v2 :
-        `GET /v2/{account}/linkedin/search/parameters`). Renvoie `[{id, name}]` —
-        le `name` est le LIBELLÉ lisible (« Microsoft Excel »), indispensable pour
-        qu'un agent DÉSAMBIGÜISE (ex. 6 candidats pour « Microsoft Excel ») : la
-        réponse porte le libellé sous `name` (pas `title`, historiquement null)."""
+        """Resolve a name into LinkedIn facet candidates (v2:
+        `GET /v2/{account}/linkedin/search/parameters`). Returns `[{id, name}]` —
+        the `name` is the readable LABEL ("Microsoft Excel"), essential for
+        an agent to DISAMBIGUATE (e.g. 6 candidates for "Microsoft Excel"): the
+        response carries the label under `name` (not `title`, historically null)."""
         params = {"type": facet_type, "keywords": keywords, "limit": limit}
         data = self._request(
             "GET", self._acct("/linkedin/search/parameters"), params=params
@@ -44,11 +44,11 @@ class _SearchMixin:
                 continue
             matches = self.resolve_facet(facet_type, v)
             if not matches:
-                raise UnipileError(f"Facette {facet_type} introuvable pour : {v!r}")
+                raise UnipileError(f"Facet {facet_type} not found for: {v!r}")
             out.append(str(matches[0]["id"]))
         return out
 
-    # ---- recherche -------------------------------------------------------
+    # ---- search ----------------------------------------------------------
 
     def search(
         self,
@@ -64,17 +64,17 @@ class _SearchMixin:
         industry: Optional[dict] = None,
         skills: Optional[list] = None,
     ) -> dict:
-        """Recherche LinkedIn. `company`/`location`/`industry`/`skills` = noms (résolus
-        en facettes) ou ids numériques ; `industry`/`skills` acceptent aussi un dict
-        `{include?, exclude?}`. Les formes d'encodage varient par PRODUIT et par
-        FACETTE (vérifiées live, cf. `_facet_field`) — l'appelant passe juste noms/ids."""
+        """LinkedIn search. `company`/`location`/`industry`/`skills` = names (resolved
+        into facets) or numeric ids; `industry`/`skills` also accept a dict
+        `{include?, exclude?}`. The encoding shapes vary by PRODUCT and by
+        FACET (verified live, see `_facet_field`) — the caller just passes names/ids."""
         prefix = _API_PREFIX.get(api, _API_PREFIX["classic"])
-        # #238 : pagination CURSOR-ONLY. Le cursor encode DÉJÀ toute la requête
-        # (mots-clés + facettes). On NE reconstruit PAS le body et on ne re-résout
-        # PAS les facettes (chaque nom→id = un GET amont ; empilés, ils faisaient
-        # timeouter les pages Recruiter à 180s). On renvoie juste le cursor sur
-        # l'endpoint structuré du produit. (Une recherche par `url` ne produit pas de
-        # cursor → toute pagination est structurée.)
+        # #238: CURSOR-ONLY pagination. The cursor ALREADY encodes the whole request
+        # (keywords + facets). We do NOT rebuild the body and do NOT re-resolve
+        # the facets (each name→id = an upstream GET; stacked, they made the Recruiter
+        # pages time out at 180s). We just send the cursor to the product's
+        # structured endpoint. (A search by `url` doesn't produce a
+        # cursor → all pagination is structured.)
         if cursor:
             cat = "companies" if category == "companies" else "people"
             return self._norm(self._request(
@@ -82,23 +82,23 @@ class _SearchMixin:
                 params={"cursor": cursor}, json={}, timeout=_SCRAPE_TIMEOUT))
         params: dict[str, Any] = {}
 
-        # Recherche par URL collée : endpoint from-url du produit, corps {url}.
+        # Search by pasted URL: the product's from-url endpoint, body {url}.
         if url:
             try:
                 return self._norm(self._request(
                     "POST", self._acct(prefix), params=params, json={"url": url},
                     timeout=_URL_SEARCH_TIMEOUT))
             except UnipileError as e:
-                # Réseau/timeout SANS status HTTP = l'endpoint from-url n'a jamais
-                # répondu → très probablement un searchContextId expiré/mort (#238).
-                # Erreur PROPRE et actionnable au lieu d'un timeout MCP opaque.
+                # Network/timeout WITHOUT HTTP status = the from-url endpoint never
+                # answered → most likely an expired/dead searchContextId (#238).
+                # CLEAN, actionable error instead of an opaque MCP timeout.
                 if getattr(e, "status_code", None) is None:
                     raise UnipileError(
-                        "Recherche Recruiter par URL injoignable — le contexte de "
-                        "recherche (searchContextId de l'URL) est probablement expiré "
-                        "côté LinkedIn. Régénère l'URL depuis ton historique Recruiter, "
-                        "ou passe à la recherche STRUCTURÉE (api='recruiter' + "
-                        "keywords/company/location) puis pagine par cursor.") from e
+                        "Recruiter search by URL unreachable — the search "
+                        "context (the URL's searchContextId) has probably expired "
+                        "on the LinkedIn side. Regenerate the URL from your Recruiter history, "
+                        "or switch to the STRUCTURED search (api='recruiter' + "
+                        "keywords/company/location) then paginate by cursor.") from e
                 raise
 
         cat = "companies" if category == "companies" else "people"
@@ -111,34 +111,34 @@ class _SearchMixin:
             ak = {k: v for k, v in advanced_keywords.items() if v}
             if ak:
                 body["advanced_keywords"] = ak
-        # ⚠️ La FORME des facettes (location/company/industry) diffère par produit
-        # (contrat API v2 vérifié en live) — voir `_facet_field` :
-        #   classic          : liste plate d'ids ["123"] (inclusion seule)
+        # ⚠️ The SHAPE of the facets (location/company/industry) differs per product
+        # (v2 API contract verified live) — see `_facet_field`:
+        #   classic          : flat list of ids ["123"] (inclusion only)
         #   sales_navigator  : {include:[ids], exclude:[ids]}
-        #   recruiter        : [{id, ...}] (objets)
+        #   recruiter        : [{id, ...}] (objects)
         loc = self._facet_field("LOCATION", location, api_norm)
         if loc is not None:
             body["location"] = loc
         ind = self._facet_field(
             "INDUSTRY", industry, api_norm,
-            dict_input=True,  # `industry` est un dict {include?, exclude?}
+            dict_input=True,  # `industry` is a dict {include?, exclude?}
         )
         if ind is not None:
             body["industry"] = ind
         comp = self._facet_field("COMPANY", company, api_norm)
         if comp is not None:
-            # people-search : filtre EMPLOYEUR courant (`current_company`) ;
-            # companies-search : le filtre société n'existe pas (on l'omet).
+            # people-search: current EMPLOYER filter (`current_company`);
+            # companies-search: the company filter doesn't exist (we omit it).
             if cat == "people":
                 body["current_company"] = comp
         if cat == "people" and network_distance:
             body["network_distance"] = [int(d) for d in network_distance]
         if cat == "people":
-            # `skills` = MÊME encodage de facette par produit que location/industry
-            # (`_facet_field`) : recruiter → `[{id}]` (MUST_HAVE implicite) et
-            # `[{id, priority:"DOESNT_HAVE"}]` pour l'exclusion — forme confirmée par la
-            # doc Unipile (Recruiter people search). Accepte noms/ids OU dict
-            # `{include?, exclude?}` (comme industry).
+            # `skills` = SAME per-product facet encoding as location/industry
+            # (`_facet_field`): recruiter → `[{id}]` (implicit MUST_HAVE) and
+            # `[{id, priority:"DOESNT_HAVE"}]` for exclusion — shape confirmed by the
+            # Unipile doc (Recruiter people search). Accepts names/ids OR dict
+            # `{include?, exclude?}` (like industry).
             sk = self._facet_field("SKILL", skills, api_norm,
                                    dict_input=isinstance(skills, dict))
             if sk is not None:
@@ -150,13 +150,13 @@ class _SearchMixin:
 
     def _facet_field(self, facet_type: str, value, api: str,
                      dict_input: bool = False):
-        """Encode un filtre de facette selon le PRODUIT (contrat v2 vérifié en live).
+        """Encode a facet filter according to the PRODUCT (v2 contract verified live).
 
-        `value` = liste de noms/ids (défaut) OU dict `{include?, exclude?}` de
-        noms/ids (`dict_input=True`, pour `industry`). Renvoie la valeur prête pour
-        le corps, ou None si rien. `exclude` sur `classic` LÈVE (l'API classic n'a
-        pas d'exclusion — concaténer include+exclude renvoyait les EXCLUS, faux en
-        silence)."""
+        `value` = list of names/ids (default) OR dict `{include?, exclude?}` of
+        names/ids (`dict_input=True`, for `industry`). Returns the value ready for
+        the body, or None if nothing. `exclude` on `classic` RAISES (the classic API has
+        no exclusion — concatenating include+exclude returned the EXCLUDED ones, wrong
+        silently)."""
         if dict_input:
             inc = self._as_facet_ids(facet_type, (value or {}).get("include"))
             exc = self._as_facet_ids(facet_type, (value or {}).get("exclude"))
@@ -168,10 +168,10 @@ class _SearchMixin:
         if api == "classic":
             if exc:
                 raise UnipileError(
-                    f"exclusion non supportée par api='classic' pour {facet_type.lower()} : "
-                    "l'API LinkedIn classic n'accepte qu'une liste à INCLURE. Retire "
-                    "`exclude`, ou utilise api='sales_navigator' / 'recruiter'.")
-            return inc  # liste plate d'ids
+                    f"exclusion not supported by api='classic' for {facet_type.lower()}: "
+                    "the LinkedIn classic API only accepts an INCLUDE list. Remove "
+                    "`exclude`, or use api='sales_navigator' / 'recruiter'.")
+            return inc  # flat list of ids
         if api == "sales_navigator":
             out: dict[str, Any] = {}
             if inc:
@@ -179,12 +179,12 @@ class _SearchMixin:
             if exc:
                 out["exclude"] = exc
             return out
-        # recruiter : la forme dépend de la FACETTE (vérifié LIVE, contrat sélectionné) :
-        #   INDUSTRY → objet `{include:[ids], exclude:[ids]}` (comme sales_navigator) ;
-        #   SKILL    → `[{name: <id>}]` — ⚠️ le champ s'appelle `name` mais porte l'ID
-        #              (un `name`=libellé ne filtre PAS ; `{id,...}` lève 400) ;
-        #   LOCATION/COMPANY (défaut) → `[{id}]`.
-        # Exclusion partout via `priority: "DOESNT_HAVE"`.
+        # recruiter: the shape depends on the FACET (verified LIVE, selected contract):
+        #   INDUSTRY → object `{include:[ids], exclude:[ids]}` (like sales_navigator);
+        #   SKILL    → `[{name: <id>}]` — ⚠️ the field is called `name` but carries the ID
+        #              (a `name`=label does NOT filter; `{id,...}` raises 400);
+        #   LOCATION/COMPANY (default) → `[{id}]`.
+        # Exclusion everywhere via `priority: "DOESNT_HAVE"`.
         if facet_type == "INDUSTRY":
             out2: dict[str, Any] = {}
             if inc:
@@ -196,4 +196,3 @@ class _SearchMixin:
         objs = [{key: i} for i in inc]
         objs += [{key: i, "priority": "DOESNT_HAVE"} for i in exc]
         return objs
-

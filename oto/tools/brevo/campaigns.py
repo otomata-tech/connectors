@@ -1,11 +1,11 @@
-"""Brevo — campagnes email (envoi de masse à des listes/segments).
+"""Brevo — email campaigns (mass send to lists/segments).
 
-Distinct du transactionnel (`email.py`) : une campagne cible des listes entières
-et se planifie. **L'API expose ici la conception et la mesure, pas le
-déclenchement** : `sendNow`, le passage de statut à `sent` et la suppression ne
-sont volontairement pas wrappés (un appel LLM malheureux enverrait à toute la
-base). On crée/édite un brouillon, on s'envoie un test, on lit les stats ; le
-départ se déclenche depuis l'UI Brevo.
+Distinct from transactional (`email.py`): a campaign targets entire lists
+and is scheduled. **The API exposes design and measurement here, not the
+trigger**: `sendNow`, switching the status to `sent` and deletion are
+deliberately not wrapped (an unlucky LLM call would send to the whole
+base). You create/edit a draft, send yourself a test, read the stats; the
+send is triggered from the Brevo UI.
 """
 from __future__ import annotations
 
@@ -28,15 +28,15 @@ class CampaignsMixin(_BrevoBase):
         sort: Optional[str] = None,
         exclude_html_content: bool = True,
     ) -> Dict[str, Any]:
-        """Liste les campagnes email.
+        """List email campaigns.
 
         Args:
             type: `classic` | `trigger`.
             status: `suspended` | `archive` | `sent` | `queued` | `draft` |
                 `inProcess` | `replicate` | `replicateTemplate`.
             statistics: `globalStats` | `linksStats` | `statsByDomain` |
-                `statsByDevice` | `statsByBrowser` — enrichit chaque campagne.
-            exclude_html_content: `True` (défaut) allège fortement la réponse.
+                `statsByDevice` | `statsByBrowser` — enriches each campaign.
+            exclude_html_content: `True` (default) makes the response much lighter.
         """
         params = self._clean({
             "type": type, "status": status, "statistics": statistics,
@@ -50,7 +50,7 @@ class CampaignsMixin(_BrevoBase):
         self, campaign_id: int, statistics: Optional[str] = None,
         exclude_html_content: bool = True,
     ) -> Dict[str, Any]:
-        """Détail d'une campagne, avec ses stats si `statistics` est fourni."""
+        """A campaign's details, with its stats if `statistics` is provided."""
         params = self._clean({
             "statistics": statistics, "excludeHtmlContent": exclude_html_content})
         return self._request(
@@ -71,14 +71,14 @@ class CampaignsMixin(_BrevoBase):
         tag: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Crée une campagne (brouillon si `scheduled_at` est omis). Renvoie `{"id": …}`.
+        """Create a campaign (draft if `scheduled_at` is omitted). Returns `{"id": …}`.
 
         Args:
-            sender: `{"email": …, "name": …}` ou `{"id": <senderId>}` — sender vérifié.
+            sender: `{"email": …, "name": …}` or `{"id": <senderId>}` — verified sender.
             recipients: `{"listIds": [1,2], "exclusionListIds": [3], "segmentIds": [4]}`.
-            scheduled_at: ISO 8601 UTC. **Planifie réellement l'envoi.** Omettre pour
-                rester en brouillon.
-            template_id: partir d'un template au lieu de `html_content`.
+            scheduled_at: ISO 8601 UTC. **Actually schedules the send.** Omit to
+                stay in draft.
+            template_id: start from a template instead of `html_content`.
         """
         body = self._clean({
             "name": name, "sender": sender, "subject": subject,
@@ -90,29 +90,29 @@ class CampaignsMixin(_BrevoBase):
         return self._request("POST", "/emailCampaigns", json=body)
 
     def update_campaign(self, campaign_id: int, **fields: Any) -> Dict[str, Any]:
-        """Met à jour une campagne **non encore envoyée** (champs fournis seulement).
+        """Update a campaign **not yet sent** (provided fields only).
 
-        Accepte les mêmes clés que `create_campaign`, en camelCase Brevo
-        (`htmlContent`, `scheduledAt`, `recipients`…). Corps vide (204) au succès.
+        Accepts the same keys as `create_campaign`, in Brevo camelCase
+        (`htmlContent`, `scheduledAt`, `recipients`…). Empty body (204) on success.
         """
         return self._request(
             "PUT", f"/emailCampaigns/{int(campaign_id)}", json=self._clean(fields))
 
     def send_campaign_test(self, campaign_id: int,
                            email_to: List[str]) -> Dict[str, Any]:
-        """Envoie un test de la campagne aux adresses données.
+        """Send a test of the campaign to the given addresses.
 
-        Ces adresses doivent exister comme contacts du compte Brevo. N'envoie
-        **pas** la campagne à ses destinataires réels.
+        These addresses must exist as contacts of the Brevo account. Does
+        **not** send the campaign to its real recipients.
         """
         return self._request("POST", f"/emailCampaigns/{int(campaign_id)}/sendTest",
                              json={"emailTo": email_to})
 
     def campaign_ab_test_result(self, campaign_id: int) -> Dict[str, Any]:
-        """Résultat d'un A/B test (gagnant, critère, stats par variante)."""
+        """A/B test result (winner, criterion, stats per variant)."""
         return self._request(
             "GET", f"/emailCampaigns/{int(campaign_id)}/abTestCampaignResult")
 
     def campaign_shared_url(self, campaign_id: int) -> Dict[str, Any]:
-        """URL publique de partage (vue navigateur) d'une campagne envoyée."""
+        """Public share URL (browser view) of a sent campaign."""
         return self._request("GET", f"/emailCampaigns/{int(campaign_id)}/sharedUrl")

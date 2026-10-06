@@ -1,7 +1,7 @@
-"""Familles d'appels PayFit, composées dans `PayfitClient`.
+"""PayFit call families, composed into `PayfitClient`.
 
-Un module par domaine d'API. Construction, transport et résolution de l'id
-d'entreprise : `../client.py`. Gardes de paramètres : `../params.py`.
+One module per API domain. Construction, transport and company id resolution:
+`../client.py`. Parameter guards: `../params.py`.
 """
 
 from .absences import _AbsencesMixin

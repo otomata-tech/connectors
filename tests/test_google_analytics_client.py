@@ -114,12 +114,12 @@ def test_la_cle_se_lit_en_texte_ou_en_dict(key):
 
 
 def test_un_json_de_client_oauth_est_refuse_nommement():
-    with pytest.raises(ValueError, match="client OAuth"):
+    with pytest.raises(ValueError, match="OAuth client ID"):
         parse_service_account_key({"installed": {"client_id": "x"}})
 
 
 def test_un_texte_qui_n_est_pas_du_json_est_refuse():
-    with pytest.raises(ValueError, match="pas du JSON"):
+    with pytest.raises(ValueError, match="is not JSON"):
         parse_service_account_key("AIzaFaux")
 
 
@@ -129,7 +129,7 @@ def test_une_cle_sans_cle_privee_est_refusee(key):
 
 
 def test_une_cle_privee_illisible_est_refusee_a_la_lecture(key):
-    with pytest.raises(ValueError, match="illisible"):
+    with pytest.raises(ValueError, match="unreadable"):
         parse_service_account_key({**key, "private_key": "-----BEGIN PRIVATE KEY-----\nxx"})
 
 
@@ -196,7 +196,7 @@ def test_flux_et_evenements_cles_visent_la_propriete(client, transport):
 
 @pytest.mark.parametrize("bad", ["G-ABC123", "accounts/1", "", "properties/"])
 def test_un_identifiant_qui_n_est_pas_une_propriete_est_refuse(bad):
-    with pytest.raises(ValueError, match="Propriété GA4 invalide"):
+    with pytest.raises(ValueError, match="Invalid GA4 property"):
         property_name(bad)
 
 
@@ -227,7 +227,7 @@ def test_run_report_filtres_et_tri(client, transport):
 
 
 def test_run_report_sans_metrique_ni_dimension_est_refuse(client):
-    with pytest.raises(ValueError, match="au moins une"):
+    with pytest.raises(ValueError, match="at least one"):
         client.run_report(PROP)
 
 
@@ -265,7 +265,7 @@ def test_sans_acces_le_refus_nomme_le_compte_de_service_et_la_propriete(client, 
     with pytest.raises(GA4PermissionDenied) as ei:
         client.run_report(PROP, metrics=["sessions"])
     assert ei.value.client_email == EMAIL and ei.value.resource == PROP
-    assert EMAIL in str(ei.value) and "Lecteur" in str(ei.value)
+    assert EMAIL in str(ei.value) and "Viewer" in str(ei.value)
 
 
 def test_api_non_activee_est_distinguee_d_un_manque_d_acces(client, transport):

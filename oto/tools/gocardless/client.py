@@ -1,26 +1,26 @@
 """
 GoCardless API Pro Client — READ-ONLY surface for direct-debit data.
 
-Pourquoi read-only : dans les usages oto (réconciliation, traitement des
-prélèvements échoués → avoirs), GoCardless n'est qu'une **source de lecture**.
-La mutation (émettre un avoir) vit ailleurs (Pennylane). On n'expose donc
-aucun POST/PUT/DELETE ici — un agent ne peut pas annuler un prélèvement par
-erreur.
+Why read-only: in oto's uses (reconciliation, handling of failed
+direct debits → credit notes), GoCardless is only a **read source**.
+The mutation (issuing a credit note) lives elsewhere (Pennylane). We therefore expose
+no POST/PUT/DELETE here — an agent cannot cancel a direct debit by
+mistake.
 
-Auth : Bearer token. Header `GoCardless-Version` obligatoire.
-Clé toujours fournie par le consommateur (`api_key`, requise).
-⚠️ Un token `live_` frappe les données réelles.
+Auth: Bearer token. `GoCardless-Version` header mandatory.
+Key always supplied by the consumer (`api_key`, required).
+⚠️ A `live_` token hits real data.
 
-Chaîne de données : payment → links.mandate → mandate.links.customer.
-Le motif d'un échec vit dans l'Events API (action=failed).
-Un versement en banque (payout, PO…) regroupe des lignes (payout_items) : une
-par paiement reversé, échec, rétrofacturation, remboursement ou frais, chacune
-liée à son paiement (links.payment).
+Data chain: payment → links.mandate → mandate.links.customer.
+The reason for a failure lives in the Events API (action=failed).
+A bank payout (payout, PO…) groups lines (payout_items): one
+per paid-out payment, failure, chargeback, refund or fee, each
+linked to its payment (links.payment).
 
-Usage :
+Usage:
     client = GoCardlessClient(api_key="live_...")
     failed = client.list_payments(status="failed", limit=20)
-    party = client.payment_party(failed[0]["id"])   # customer + motif résolu
+    party = client.payment_party(failed[0]["id"])   # customer + resolved reason
 """
 
 import re
@@ -34,11 +34,11 @@ from ..common.errors import UpstreamHTTPError
 
 
 def _to_rfc3339(value: Optional[str]) -> Optional[str]:
-    """Normalise une date pour les filtres GoCardless `created_at[*]`.
+    """Normalizes a date for the GoCardless `created_at[*]` filters.
 
-    L'API exige un date-time RFC3339 — une date nue (`2026-05-25`) renvoie
-    une 422 « not a valid date-time ». On complète le début de journée UTC.
-    Un timestamp déjà complet est laissé tel quel.
+    The API requires an RFC3339 date-time — a bare date (`2026-05-25`) returns
+    a 422 "not a valid date-time". We complete it with the start of the UTC day.
+    An already complete timestamp is left as is.
     """
     if value and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         return f"{value}T00:00:00.000Z"
@@ -46,7 +46,7 @@ def _to_rfc3339(value: Optional[str]) -> Optional[str]:
 
 
 class GoCardlessClient:
-    """Client lecture seule pour l'API GoCardless Pro v2015-07-06."""
+    """Read-only client for the GoCardless Pro API v2015-07-06."""
 
     BASE_URL = "https://api.gocardless.com"
     API_VERSION = "2015-07-06"
@@ -54,8 +54,8 @@ class GoCardlessClient:
     def __init__(self, api_key: str = None, rate_limit_delay: float = 0.2):
         """
         Args:
-            api_key: Bearer token GoCardless (ou secret GOCARDLESS_API_KEY).
-            rate_limit_delay: pause entre requêtes paginées.
+            api_key: GoCardless Bearer token (or GOCARDLESS_API_KEY secret).
+            rate_limit_delay: pause between paginated requests.
         """
         self.api_key = require(api_key, "GOCARDLESS_API_KEY")
         self.rate_limit_delay = rate_limit_delay
@@ -69,7 +69,7 @@ class GoCardlessClient:
     # --- Primitive GET ---
 
     def fetch(self, endpoint: str, params: Optional[dict] = None, retries: int = 3) -> dict:
-        """GET sur l'API avec retry sur rate-limit (429)."""
+        """GET on the API with retry on rate-limit (429)."""
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
         for attempt in range(retries):
             try:
@@ -89,11 +89,11 @@ class GoCardlessClient:
         return {"error": "Max retries exceeded"}
 
     def _read(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """GET qui LÈVE sur refus amont, là où `fetch` rend un dict d'erreur.
+        """GET that RAISES on upstream refusal, where `fetch` returns an error dict.
 
-        `fetch` garde son contrat propre (seule la sonde de connexion l'appelle
-        directement, pour lire son dict) ; toute lecture passe par ici, pour
-        qu'un refus ne se lise jamais comme « rien à lire ».
+        `fetch` keeps its own contract (only the connection probe calls it
+        directly, to read its dict); every read goes through here, so
+        that a refusal is never read as "nothing to read".
         """
         data = self.fetch(endpoint, params)
         if "error" not in data:
@@ -105,11 +105,11 @@ class GoCardlessClient:
 
     def fetch_all(self, resource: str, params: Optional[dict] = None,
                   max_pages: Optional[int] = None) -> list:
-        """Pagination cursor GoCardless (`meta.cursors.after`).
+        """GoCardless cursor pagination (`meta.cursors.after`).
 
-        `resource` est la clé de collection (ex. 'payments', 'events') qui sert
-        à la fois d'endpoint et de clé dans la réponse. Un refus sur n'importe
-        quelle page lève : une collecte tronquée ne se rend jamais comme complète.
+        `resource` is the collection key (e.g. 'payments', 'events') that serves
+        both as endpoint and as key in the response. A refusal on any
+        page raises: a truncated collection is never returned as complete.
         """
         params = dict(params or {})
         out, pages, after = [], 0, None
@@ -125,23 +125,23 @@ class GoCardlessClient:
             time.sleep(self.rate_limit_delay)
         return out
 
-    # --- Lectures simples ---
+    # --- Simple reads ---
 
     def list_creditors(self) -> list:
-        """Comptes marchands GoCardless (le compte encaisseur)."""
+        """GoCardless merchant accounts (the collecting account)."""
         return self._read("creditors")["creditors"]
 
     def list_payments(self, status: Optional[str] = None, limit: int = 50,
                       mandate: Optional[str] = None, customer: Optional[str] = None,
                       created_gt: Optional[str] = None) -> list:
-        """Liste de prélèvements (1 page).
+        """List of direct debits (1 page).
 
         Args:
-            status: filtre statut. Valeurs : pending_submission, submitted,
+            status: status filter. Values: pending_submission, submitted,
                 confirmed, paid_out, failed, cancelled, charged_back, etc.
-            limit: taille de page (max 500 côté API).
-            mandate / customer: filtres par lien.
-            created_gt: ISO8601, prélèvements créés après cette date.
+            limit: page size (max 500 on the API side).
+            mandate / customer: filters by link.
+            created_gt: ISO8601, direct debits created after this date.
         """
         params = {"limit": limit}
         if status:
@@ -166,7 +166,7 @@ class GoCardlessClient:
     def list_events(self, payment: Optional[str] = None, mandate: Optional[str] = None,
                     action: Optional[str] = None, resource_type: Optional[str] = None,
                     limit: int = 50) -> list:
-        """Events (timeline). Le motif d'un échec : action='failed' sur un payment."""
+        """Events (timeline). The reason for a failure: action='failed' on a payment."""
         params = {"limit": limit}
         if payment:
             params["payment"] = payment
@@ -178,21 +178,21 @@ class GoCardlessClient:
             params["resource_type"] = resource_type
         return self._read("events", params)["events"]
 
-    # --- Versements (payouts) ---
+    # --- Payouts ---
 
     def list_payouts(self, status: Optional[str] = None, limit: int = 50,
                      currency: Optional[str] = None, reference: Optional[str] = None,
                      created_gt: Optional[str] = None,
                      created_lt: Optional[str] = None) -> list:
-        """Versements en banque (1 page). Montants en centimes.
+        """Bank payouts (1 page). Amounts in cents.
 
         Args:
             status: pending, paid, bounced.
-            limit: taille de page (max 500 côté API).
-            currency: code ISO 4217 (EUR, GBP…).
-            reference: libellé exact porté sur le relevé bancaire.
-            created_gt / created_lt: ISO8601, bornes sur la création du
-                versement (exclues). Une date nue vaut minuit UTC.
+            limit: page size (max 500 on the API side).
+            currency: ISO 4217 code (EUR, GBP…).
+            reference: exact label carried on the bank statement.
+            created_gt / created_lt: ISO8601, bounds on the payout's
+                creation (exclusive). A bare date means midnight UTC.
         """
         params = {"limit": limit}
         if status:
@@ -211,33 +211,33 @@ class GoCardlessClient:
         return self._read(f"payouts/{payout_id}")["payouts"]
 
     def list_payout_items(self, payout_id: str) -> list:
-        """Toutes les lignes d'un versement, toutes pages lues.
+        """All the lines of a payout, all pages read.
 
-        Une ligne = `type` (payment_paid_out, payment_failed,
+        A line = `type` (payment_paid_out, payment_failed,
         payment_charged_back, payment_refunded, refund, refund_funds_returned,
-        gocardless_fee, app_fee, revenue_share, surcharge_fee), `amount` signé
-        en centimes, `links` (payment, mandate, refund) et `taxes`.
-        ⚠️ GoCardless ne sert les lignes que des versements créés il y a moins
-        de 6 mois : au-delà, HTTP 410.
+        gocardless_fee, app_fee, revenue_share, surcharge_fee), signed `amount`
+        in cents, `links` (payment, mandate, refund) and `taxes`.
+        ⚠️ GoCardless only serves the lines of payouts created less than
+        6 months ago: beyond that, HTTP 410.
         """
         return self.fetch_all("payout_items", {"payout": payout_id, "limit": 500})
 
     def payout_detail(self, payout_id: str) -> dict:
-        """Un versement et toutes ses lignes, pour le rapprocher paiement par
-        paiement. Montants bruts de l'API, en centimes."""
+        """A payout and all its lines, to reconcile it payment by
+        payment. Raw API amounts, in cents."""
         return {
             "payout": self.get_payout(payout_id),
             "items": self.list_payout_items(payout_id),
         }
 
-    # --- Agrégats métier ---
+    # --- Business aggregates ---
 
     def payment_party(self, payment_id: str) -> dict:
-        """Résout la chaîne payment → mandate → customer pour un prélèvement.
+        """Resolves the payment → mandate → customer chain for a direct debit.
 
-        Renvoie un dict aplati : montant, statut, dates, et la contrepartie
-        (email, nom/société, metadata). ⚠️ La metadata GoCardless ne contient
-        pas forcément d'identifiant client externe (cas observé chez un client : vide).
+        Returns a flattened dict: amount, status, dates, and the counterparty
+        (email, name/company, metadata). ⚠️ GoCardless metadata does not
+        necessarily contain an external customer identifier (case observed at a client: empty).
         """
         p = self.get_payment(payment_id)
         mandate_id = p.get("links", {}).get("mandate")
@@ -264,33 +264,33 @@ class GoCardlessClient:
         }
 
     def failed_payments(self, since: Optional[str] = None, limit: int = 200) -> list:
-        """Prélèvements échoués enrichis, en un seul appel agent.
+        """Enriched failed direct debits, in a single agent call.
 
-        Fait la tuyauterie côté outil : liste les `failed`, puis pour chaque
-        ligne résout mandat → customer (nom/email) et le motif d'échec
-        (Events API). Le paiement vient déjà de la liste, donc seulement
-        mandat + customer + events sont re-tapés par ligne.
+        Does the plumbing on the tool side: lists the `failed`, then for each
+        row resolves mandate → customer (name/email) and the failure reason
+        (Events API). The payment already comes from the list, so only
+        mandate + customer + events are re-fetched per row.
 
-        ⚠️ Faits seulement — pas d'action décidée ici. « Relancer vs refaire
-        un mandat » est un jugement métier qui reste à l'agent/la doctrine.
+        ⚠️ Facts only — no action decided here. "Retry vs redo
+        a mandate" is a business judgment that stays with the agent/the doctrine.
 
         Args:
-            since: ISO8601 (ex '2026-05-25'), filtre sur la date de création.
-                Note : un paiement créé avant `since` mais échoué après ne
-                ressort pas (l'API GCL filtre sur created_at).
-            limit: taille de page des `failed` à enrichir (max 500).
+            since: ISO8601 (e.g. '2026-05-25'), filter on the creation date.
+                Note: a payment created before `since` but failed after does not
+                show up (the GCL API filters on created_at).
+            limit: page size of the `failed` to enrich (max 500).
         """
         payments = self.list_payments(status="failed", limit=limit, created_gt=since)
 
-        # 3 requêtes SÉQUENTIELLES par ligne (mandat, client, motif) + une pause :
-        # sur 200 échecs, 600 allers-retours en file indienne — 186 s mesurés en
-        # prod, le seul tool encore capable de retenir un worker trois minutes.
-        # Deux leviers, aucun changement de contrat :
-        #  - mémoïser mandat/client, car les échecs se CONCENTRENT (un même débiteur
-        #    rate plusieurs prélèvements, et les relances mensuelles rejouent le même
-        #    mandat) — les doublons ne coûtent plus rien ;
-        #  - enrichir en parallèle borné à 5, ce qui reste loin sous le plafond
-        #    GoCardless (1000 req/min) et rend la pause par ligne inutile.
+        # 3 SEQUENTIAL requests per row (mandate, customer, reason) + a pause:
+        # on 200 failures, 600 round trips in single file — 186 s measured in
+        # prod, the only tool still able to hold a worker for three minutes.
+        # Two levers, no contract change:
+        #  - memoize mandate/customer, because failures CLUSTER (the same debtor
+        #    misses several debits, and the monthly retries replay the same
+        #    mandate) — duplicates no longer cost anything;
+        #  - enrich in parallel bounded to 5, which stays far below GoCardless's
+        #    cap (1000 req/min) and makes the per-row pause unnecessary.
         from concurrent.futures import ThreadPoolExecutor
         from threading import Lock
 
@@ -318,7 +318,7 @@ class GoCardlessClient:
             name = customer.get("company_name") or " ".join(
                 filter(None, [customer.get("given_name"), customer.get("family_name")])
             )
-            fail = self.failure_reason(p["id"])   # par paiement : jamais mutualisable
+            fail = self.failure_reason(p["id"])   # per payment: never shareable
             return {
                 "payment_id": p["id"],
                 "name": name,
@@ -340,16 +340,16 @@ class GoCardlessClient:
         return rows
 
     def failure_reason(self, payment_id: str) -> dict:
-        """Motif du dernier échec d'un prélèvement (Events API).
+        """Reason for a direct debit's latest failure (Events API).
 
-        Renvoie cause/description/reason_code/will_attempt_retry. Si
-        `will_attempt_retry` est True, GoCardless va retenter — ne pas émettre
-        d'avoir tant que ce n'est pas False.
+        Returns cause/description/reason_code/will_attempt_retry. If
+        `will_attempt_retry` is True, GoCardless will retry — do not issue
+        a credit note until it is False.
         """
         events = self.list_events(payment=payment_id, action="failed", limit=10)
         if not events:
             return {"failed": False}
-        ev = events[0]  # le plus récent
+        ev = events[0]  # the most recent
         d = ev.get("details", {})
         return {
             "failed": True,

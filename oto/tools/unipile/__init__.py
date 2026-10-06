@@ -1,20 +1,20 @@
 """Unipile connector — hosted LinkedIn (and other IM) via the Unipile API v2.
 
-Unipile maintient la session LinkedIn côté serveur (vrai Chrome + proxy
-résidentiel), ce qui contourne les deux contraintes du browser local : empreinte
-TLS et isolation de session (le cookie ne vit pas sur notre IP datacenter, donc
-n'expose ni ne déconnecte la session de l'utilisateur). Cf. oto-mcp#5.
+Unipile keeps the LinkedIn session server-side (real Chrome + residential
+proxy), which sidesteps the two constraints of the local browser: TLS
+fingerprint and session isolation (the cookie doesn't live on our datacenter IP,
+so it neither exposes nor disconnects the user's session). See oto-mcp#5.
 """
 
 from .client import UnipileClient, UnipileError, parse_feed
 
 
 def make_unipile_client(api_key=None, dsn=None, account_id=None, provider=None):
-    """Factory du client Unipile (construction seam consommée par oto-mcp).
+    """Unipile client factory (construction seam consumed by oto-mcp).
 
-    `provider` = le canal du compte opéré (LINKEDIN, WHATSAPP, …). Il décide de la
-    forme d'endpoint de messagerie (inbox vs plate) : un appelant qui l'omet est
-    supposé LinkedIn, et le client se rattrape sur le 501 d'Unipile."""
+    `provider` = the channel of the operated account (LINKEDIN, WHATSAPP, …). It decides
+    the messaging endpoint shape (inbox vs flat): a caller that omits it is
+    assumed to be LinkedIn, and the client recovers on Unipile's 501."""
     return UnipileClient(api_key=api_key, dsn=dsn, account_id=account_id,
                          provider=provider)
 

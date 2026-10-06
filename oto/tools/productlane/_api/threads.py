@@ -1,20 +1,20 @@
-"""Fils Productlane — la boîte de retours clients, ses messages et ses commentaires.
+"""Productlane threads — the customer feedback inbox, its messages and comments.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`, `_check_choice`, `_check_limit`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`, `_check_choice`, `_check_limit`).
 
-Deux plans à ne pas confondre, parce que l'un est PUBLIC et l'autre non :
+Two planes not to be confused, because one is PUBLIC and the other is not:
 
-- un **message** (`/threads/{id}/messages`) part au contact, par le canal d'où
-  vient le fil (email, Slack, live chat, Teams) — c'est une communication
-  sortante réelle ;
-- un **commentaire interne** (`/threads/{id}/comments`) n'est visible que de
-  l'équipe.
+- a **message** (`/threads/{id}/messages`) goes to the contact, through the channel
+  the thread came from (email, Slack, live chat, Teams) — it is a real
+  outbound communication;
+- an **internal comment** (`/threads/{id}/comments`) is visible only to the
+  team.
 
-Les deux s'écrivent avec un champ `content` et des `attachments` : rien dans la
-forme de l'appel ne rappelle lequel sort de l'organisation. C'est pourquoi les
-deux méthodes portent des noms explicites (`send_message` / `post_comment`) et
-que la première le redit dans sa docstring.
+Both are written with a `content` field and `attachments`: nothing in the
+shape of the call tells you which one leaves the organization. That is why the
+two methods carry explicit names (`send_message` / `post_comment`) and
+why the first restates it in its docstring.
 """
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ from ..const import (MESSAGE_DIRECTIONS, MESSAGE_ORDERS, MESSAGE_TYPES,
 
 
 class _ThreadsMixin:
-    """Fils, messages, commentaires internes et liens Linear."""
+    """Threads, messages, internal comments and Linear links."""
 
-    # --- fils ---------------------------------------------------------------
+    # --- threads ------------------------------------------------------------
 
     def list_threads(self, limit: Optional[int] = None,
                      cursor: Optional[str] = None,
@@ -46,10 +46,10 @@ class _ThreadsMixin:
                      created_before: Optional[str] = None,
                      updated_after: Optional[str] = None,
                      updated_before: Optional[str] = None) -> Any:
-        """GET /threads — fils de l'espace de travail. Scope `threads:read`.
+        """GET /threads — workspace threads. Scope `threads:read`.
 
-        Paginé par curseur (`page.cursor` / `page.has_more`), trié
-        `created_at DESC` sans possibilité de changer l'ordre côté serveur.
+        Cursor-paginated (`page.cursor` / `page.has_more`), sorted
+        `created_at DESC` with no way to change the order server-side.
         """
         self._check_choice("status", status, THREAD_STATUSES)
         self._check_choice("tab", tab, THREAD_TABS)
@@ -66,14 +66,14 @@ class _ThreadsMixin:
         })
 
     def get_thread(self, thread_id: str, expand: Optional[Any] = None) -> Any:
-        """GET /threads/{id} — un fil. Scope `threads:read`.
+        """GET /threads/{id} — one thread. Scope `threads:read`.
 
-        `expand` inline les ressources liées : `messages`, `comments`, ou les
-        deux. Accepte une liste ou une chaîne séparée par des virgules.
+        `expand` inlines related resources: `messages`, `comments`, or
+        both. Accepts a list or a comma-separated string.
 
-        ⚠️ **L'amont IGNORE une valeur d'`expand` inconnue** au lieu de la
-        refuser : une faute de frappe rendrait un fil sans ses messages, sans un
-        mot d'explication. Les valeurs sont donc vérifiées ici.
+        ⚠️ **Upstream IGNORES an unknown `expand` value** instead of
+        rejecting it: a typo would return a thread without its messages, with no
+        word of explanation. The values are therefore checked here.
         """
         if expand is not None:
             values = expand.split(",") if isinstance(expand, str) else list(expand)
@@ -85,17 +85,17 @@ class _ThreadsMixin:
                              params={"expand": expand})
 
     def create_thread(self, payload: Dict[str, Any]) -> Any:
-        """POST /threads — crée un fil et **upsert son contact par email**.
+        """POST /threads — create a thread and **upsert its contact by email**.
 
-        Scope `threads:write`. Requis : `text`, `pain_level`, `contact_email`.
-        Optionnels : `external_ids`, `title`, `status`, `origin`, `contact_name`,
+        Scope `threads:write`. Required: `text`, `pain_level`, `contact_email`.
+        Optional: `external_ids`, `title`, `status`, `origin`, `contact_name`,
         `assignee_id`, `company_id`, `project_id`, `issue_id`, `created_at`,
         `updated_at`, `notify`.
 
-        ⚠️ Le contact est **créé s'il n'existe pas** : cet appel écrit donc dans
-        deux tables, et `contact_email` n'est pas qu'un pointeur.
-        ⚠️ `notify` déclenche une notification sortante — le laisser absent est
-        le comportement discret.
+        ⚠️ The contact is **created if it does not exist**: this call therefore writes to
+        two tables, and `contact_email` is more than a pointer.
+        ⚠️ `notify` triggers an outbound notification — leaving it out is
+        the quiet behavior.
         """
         self._check_choice("pain_level", payload.get("pain_level"), PAIN_LEVELS)
         self._check_choice("status", payload.get("status"), THREAD_STATUSES)
@@ -103,24 +103,24 @@ class _ThreadsMixin:
         return self._request("POST", "/threads", json=dict(payload))
 
     def update_thread(self, thread_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /threads/{id} — met à jour un fil. Scope `threads:write`.
+        """PATCH /threads/{id} — update a thread. Scope `threads:write`.
 
-        Champs : `external_ids`, `text`, `title`, `pain_level`, `assignee_id`,
+        Fields: `external_ids`, `text`, `title`, `pain_level`, `assignee_id`,
         `contact_id`, `company_id`, `tag_ids`, `project_id`, `status`,
         `snoozed_until`, `closed_loop`, `ai_draft_html`, `ai_draft_sources`,
         `clear_ai_draft_error`, `notify`.
 
-        ⚠️ `tag_ids` REMPLACE la liste des étiquettes, il ne l'enrichit pas.
+        ⚠️ `tag_ids` REPLACES the list of tags, it does not add to it.
         """
         self._check_choice("pain_level", payload.get("pain_level"), PAIN_LEVELS)
         self._check_choice("status", payload.get("status"), THREAD_STATUSES)
         return self._request("PATCH", f"/threads/{thread_id}", json=dict(payload))
 
     def delete_thread(self, thread_id: str) -> Any:
-        """DELETE /threads/{id} — **soft-delete** d'un fil. Scope `threads:write`."""
+        """DELETE /threads/{id} — **soft-delete** a thread. Scope `threads:write`."""
         return self._request("DELETE", f"/threads/{thread_id}")
 
-    # --- messages (SORTANTS) -----------------------------------------------
+    # --- messages (OUTBOUND) -----------------------------------------------
 
     def list_messages(self, thread_id: str, limit: Optional[int] = None,
                       cursor: Optional[str] = None, order: Optional[str] = None,
@@ -131,11 +131,11 @@ class _ThreadsMixin:
                       created_before: Optional[str] = None,
                       updated_after: Optional[str] = None,
                       updated_before: Optional[str] = None) -> Any:
-        """GET /threads/{id}/messages — la conversation, **tous canaux fondus**.
+        """GET /threads/{id}/messages — the conversation, **all channels merged**.
 
-        Scope `threads:read`. Triée du plus ancien au plus récent par défaut
-        (`order="asc"`), contrairement aux autres listes v2 qui sont en
-        `created_at DESC` : c'est une conversation, elle se lit dans l'ordre.
+        Scope `threads:read`. Sorted oldest to newest by default
+        (`order="asc"`), unlike the other v2 lists which are
+        `created_at DESC`: it is a conversation, it reads in order.
         """
         self._check_choice("order", order, MESSAGE_ORDERS)
         self._check_choice("type", type, MESSAGE_TYPES)
@@ -148,38 +148,38 @@ class _ThreadsMixin:
         })
 
     def send_message(self, thread_id: str, payload: Dict[str, Any]) -> Any:
-        """POST /threads/{id}/messages — **envoie un message au contact**.
+        """POST /threads/{id}/messages — **send a message to the contact**.
 
-        Scope `threads:write`. Requis : `content`. Optionnels : `cc`, `bcc`,
+        Scope `threads:write`. Required: `content`. Optional: `cc`, `bcc`,
         `attachments`, `channel_id`, `author`.
 
-        ⚠️ **Communication sortante réelle** : le canal (email, Slack, live chat,
-        Microsoft Teams) est déduit de l'origine du fil, et la réponse dit lequel
-        a servi. Pour une note qui ne sort pas de l'équipe, c'est `post_comment`.
+        ⚠️ **Real outbound communication**: the channel (email, Slack, live chat,
+        Microsoft Teams) is inferred from the thread's origin, and the response says which
+        one was used. For a note that stays within the team, use `post_comment`.
 
-        Un **400 `validation_failed`** signale que l'intégration correspondant au
-        canal déduit n'est pas configurée pour l'espace de travail — ce n'est donc
-        pas un défaut du contenu envoyé.
+        A **400 `validation_failed`** signals that the integration matching the
+        inferred channel is not configured for the workspace — so it is not
+        a defect in the content sent.
         """
         return self._request("POST", f"/threads/{thread_id}/messages",
                              json=dict(payload))
 
-    # --- commentaires internes ---------------------------------------------
+    # --- internal comments -------------------------------------------------
 
     def list_comments(self, thread_id: str, limit: Optional[int] = None,
                       cursor: Optional[str] = None) -> Any:
-        """GET /threads/{id}/comments — commentaires internes. Scope `threads:read`.
+        """GET /threads/{id}/comments — internal comments. Scope `threads:read`.
 
-        Visibles de l'équipe seulement.
+        Visible to the team only.
         """
         return self._list(f"/threads/{thread_id}/comments", limit, cursor)
 
     def post_comment(self, thread_id: str, content: str,
                      attachments: Optional[Any] = None) -> Any:
-        """POST /threads/{id}/comments — commentaire **interne**. Scope `comments:write`.
+        """POST /threads/{id}/comments — **internal** comment. Scope `comments:write`.
 
-        Visible des coéquipiers seulement : rien ne part au contact. C'est la
-        contrepartie discrète de `send_message`.
+        Visible to teammates only: nothing goes to the contact. It is the
+        quiet counterpart of `send_message`.
         """
         body: Dict[str, Any] = {"content": content}
         if attachments is not None:
@@ -188,9 +188,9 @@ class _ThreadsMixin:
 
     def update_comment(self, thread_id: str, comment_id: str,
                        payload: Dict[str, Any]) -> Any:
-        """PATCH /threads/{id}/comments/{comment_id} — édite un commentaire interne.
+        """PATCH /threads/{id}/comments/{comment_id} — edit an internal comment.
 
-        Scope `comments:write`. Champs : `content`, `attachments`.
+        Scope `comments:write`. Fields: `content`, `attachments`.
         """
         return self._request("PATCH",
                              f"/threads/{thread_id}/comments/{comment_id}",
@@ -204,19 +204,19 @@ class _ThreadsMixin:
         return self._request("DELETE",
                              f"/threads/{thread_id}/comments/{comment_id}")
 
-    # --- lien vers Linear ---------------------------------------------------
+    # --- link to Linear -----------------------------------------------------
 
     def link_thread(self, thread_id: str,
                     issue_ids: Optional[Any] = None,
                     project_ids: Optional[Any] = None,
                     priority: Optional[Any] = None) -> Any:
-        """POST /threads/{id}/customer-needs — relie le fil à des issues/projets.
+        """POST /threads/{id}/customer-needs — link the thread to issues/projects.
 
-        Scope `threads:write`. Passe par le pipeline « customer need » de Linear,
-        **qui doit donc être connecté** : sans Linear, l'amont refuse.
+        Scope `threads:write`. Goes through Linear's "customer need" pipeline,
+        **which must therefore be connected**: without Linear, upstream refuses.
 
-        C'est le geste qui transforme un retour client en demande tracée sur la
-        roadmap — et ce qui fait qu'un projet Productlane porte un « score ».
+        This is the gesture that turns customer feedback into a tracked request on the
+        roadmap — and what gives a Productlane project a "score".
         """
         body: Dict[str, Any] = {}
         if issue_ids is not None:
@@ -227,6 +227,6 @@ class _ThreadsMixin:
             body["priority"] = priority
         if not body:
             raise ValueError(
-                "relier un fil demande au moins `issue_ids` ou `project_ids`.")
+                "linking a thread requires at least `issue_ids` or `project_ids`.")
         return self._request("POST", f"/threads/{thread_id}/customer-needs",
                              json=body)

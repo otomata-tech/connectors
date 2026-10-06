@@ -1,15 +1,15 @@
 """Teamtailor ATS API client.
 
-Auth = **API key** dans l'en-tête `Authorization: Token token=<key>`, plus un
-en-tête de version d'API obligatoire (`X-Api-Version`). Clé créée dans
-Teamtailor : Settings → API keys (Admin). Passée en clair au constructeur.
+Auth = **API key** in the `Authorization: Token token=<key>` header, plus a
+mandatory API version header (`X-Api-Version`). Key created in
+Teamtailor: Settings → API keys (Admin). Passed in clear to the constructor.
 
-L'API suit la convention **JSON:API** : les ressources ont `{type, id,
-attributes, relationships}` et le filtrage passe par `filter[...]`, la
-pagination par `page[number]`/`page[size]`. Les helpers exposent une surface
-simple (candidats, jobs, candidatures) ; `call` reste l'échappatoire générique.
+The API follows the **JSON:API** convention: resources have `{type, id,
+attributes, relationships}`, filtering goes through `filter[...]` and
+pagination through `page[number]`/`page[size]`. The helpers expose a simple
+surface (candidates, jobs, applications); `call` remains the generic escape hatch.
 
-Docs : https://docs.teamtailor.com/
+Docs: https://docs.teamtailor.com/
 
 Requires: requests
 """
@@ -22,7 +22,7 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-# Version d'API Teamtailor figée (en-tête obligatoire). À bumper consciemment.
+# Pinned Teamtailor API version (mandatory header). Bump it deliberately.
 _API_VERSION = "20210218"
 
 
@@ -33,11 +33,11 @@ class TeamtailorClient:
 
     def __init__(self, api_key: Optional[str] = None,
                  api_version: str = _API_VERSION):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: Teamtailor API key.
-            api_version: valeur de l'en-tête `X-Api-Version` (date figée).
+            api_version: value of the `X-Api-Version` header (pinned date).
         """
         self.api_key = require(api_key, "TEAMTAILOR_API_KEY")
         self.session = requests.Session()
@@ -48,7 +48,7 @@ class TeamtailorClient:
         })
 
     def call(self, method: str, path: str, **kwargs) -> Any:
-        """Appel brut JSON:API (échappatoire générique). `path` commence par `/`."""
+        """Raw JSON:API call (generic escape hatch). `path` starts with `/`."""
         url = f"{self.BASE_URL}{path}"
         resp = self.session.request(method, url, timeout=30, **kwargs)
         raise_for_upstream(resp, service="teamtailor")
@@ -64,27 +64,27 @@ class TeamtailorClient:
             params.update(extra)
         return params
 
-    # --- Candidats ----------------------------------------------------------
+    # --- Candidates ---------------------------------------------------------
 
     def list_candidates(
         self, page_size: int = 30, page_number: int = 1,
         email: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidats (paginé). `email` filtre par email exact."""
+        """List candidates (paginated). `email` filters by exact email."""
         extra = {"filter[email]": email} if email else None
         return self.call("GET", "/candidates",
                         params=self._page(page_size, page_number, extra))
 
     def get_candidate(self, candidate_id: str) -> Dict[str, Any]:
-        """Récupère un candidat par id."""
+        """Fetch a candidate by id."""
         return self.call("GET", f"/candidates/{candidate_id}")
 
     def create_candidate(self, attributes: Dict[str, Any]) -> Dict[str, Any]:
-        """Crée un candidat.
+        """Create a candidate.
 
         Args:
-            attributes: attributs JSON:API (`first-name`, `last-name`, `email`,
-                `phone`, `pitch`, `tags`, …). Encapsulés en `{data:{type, attributes}}`.
+            attributes: JSON:API attributes (`first-name`, `last-name`, `email`,
+                `phone`, `pitch`, `tags`, …). Wrapped in `{data:{type, attributes}}`.
         """
         body = {"data": {"type": "candidates", "attributes": attributes}}
         return self.call("POST", "/candidates", json=body)
@@ -95,23 +95,23 @@ class TeamtailorClient:
         self, page_size: int = 30, page_number: int = 1,
         status: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les jobs (postes). `status` : "open" | "draft" | "archived" |
+        """List jobs (positions). `status`: "open" | "draft" | "archived" |
         "unlisted"."""
         extra = {"filter[status]": status} if status else None
         return self.call("GET", "/jobs",
                         params=self._page(page_size, page_number, extra))
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
-        """Récupère un job par id."""
+        """Fetch a job by id."""
         return self.call("GET", f"/jobs/{job_id}")
 
-    # --- Candidatures -------------------------------------------------------
+    # --- Applications -------------------------------------------------------
 
     def list_job_applications(
         self, page_size: int = 30, page_number: int = 1,
         job_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidatures. `job_id` filtre par poste."""
+        """List applications. `job_id` filters by position."""
         extra = {"filter[job-id]": job_id} if job_id else None
         return self.call("GET", "/job-applications",
                         params=self._page(page_size, page_number, extra))

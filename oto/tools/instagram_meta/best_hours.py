@@ -1,14 +1,14 @@
-"""Meilleures heures et jours de publication — un calcul LOCAL, sur du déjà lu.
+"""Best posting hours and days — a LOCAL computation, on data already read.
 
-Meta n'expose pas cette réponse : on la dérive de l'engagement moyen (likes +
-commentaires) des publications déjà récupérées. C'est donc une **heuristique**,
-et elle est nommée comme telle jusque dans ce qu'elle rend : `sample_size` voyage
-avec le résultat, parce qu'un classement sur quatre posts et un classement sur
-quarante se lisent de la même façon et ne valent pas la même chose.
+Meta doesn't expose this answer: we derive it from the average engagement (likes +
+comments) of the posts already fetched. It is therefore a **heuristic**,
+and it is named as such even in what it returns: `sample_size` travels
+with the result, because a ranking over four posts and a ranking over
+forty read the same way and are not worth the same.
 
-Aucun appel réseau ici — la fonction prend la liste de médias que l'appelant a
-lue, ce qui la rend testable sans rien simuler et évite un second aller-retour
-quand l'appelant a déjà les publications sous la main.
+No network call here — the function takes the list of media the caller has
+read, which makes it testable without mocking anything and avoids a second round trip
+when the caller already has the posts at hand.
 """
 from __future__ import annotations
 
@@ -16,22 +16,22 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-#: Lundi = 0, comme `datetime.weekday()`.
+#: Monday = 0, like `datetime.weekday()`.
 JOURS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
 def compute_best_hours(media: list[dict]) -> dict:
-    """`{by_hour, by_weekday, sample_size}`, triés par engagement moyen décroissant.
+    """`{by_hour, by_weekday, sample_size}`, sorted by decreasing average engagement.
 
-    Les heures sont celles des horodatages rendus par Meta (UTC) : les convertir
-    demanderait de savoir dans quel fuseau publie le compte, ce que l'API ne dit
-    pas — et une conversion supposée décalerait le classement d'une ou deux heures
-    sans que rien ne le signale.
+    Hours are those of the timestamps returned by Meta (UTC): converting them
+    would require knowing which timezone the account posts in, which the API doesn't
+    say — and an assumed conversion would shift the ranking by an hour or two
+    with nothing signaling it.
 
-    Une publication sans horodatage est IGNORÉE et ne compte pas dans les moyennes,
-    mais reste dans `sample_size` : c'est le nombre de publications examinées, pas
-    le nombre de retenues — un écart entre les deux se voit alors en comparant les
-    `posts` cumulés, au lieu d'être effacé."""
+    A post without a timestamp is IGNORED and doesn't count in the averages,
+    but stays in `sample_size`: it is the number of posts examined, not
+    the number retained — a gap between the two is then visible by comparing the cumulated
+    `posts`, instead of being erased."""
     if not media:
         return {"by_hour": [], "by_weekday": [], "sample_size": 0}
 

@@ -1,23 +1,23 @@
-"""Centre d'aide Productlane — articles, groupes, et la file de brouillons.
+"""Productlane help center — articles, groups, and the draft queue.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`, `_check_choice`).
 
-**Deux chemins d'écriture, et ils ne servent pas la même chose :**
+**Two write paths, and they do not serve the same purpose:**
 
-- l'écriture DIRECTE (`create_article`, `update_article`, `delete_article`)
-  applique tout de suite ;
-- le BROUILLON (`create_draft` puis `accept_draft` / `decline_draft`) propose un
-  changement à relire. `kind="edit"` modifie un article existant, `create` en
-  propose un nouveau, `delete` propose son retrait.
+- DIRECT writes (`create_article`, `update_article`, `delete_article`)
+  apply immediately;
+- the DRAFT (`create_draft` then `accept_draft` / `decline_draft`) proposes a
+  change for review. `kind="edit"` modifies an existing article, `create`
+  proposes a new one, `delete` proposes its removal.
 
-⚠️ `accept_draft` peut répondre **`superseded` au lieu de `accepted`** : le
-brouillon ne s'applique plus proprement (l'article a bougé sous lui). C'est un
-succès HTTP qui n'a rien appliqué — lire le statut rendu, pas seulement le code.
+⚠️ `accept_draft` can answer **`superseded` instead of `accepted`**: the
+draft no longer applies cleanly (the article moved underneath it). That is an HTTP
+success that applied nothing — read the returned status, not just the code.
 
-⚠️ La `visibility` d'un article n'est pas binaire : `public`, `agent` (visible
-des agents IA), `internal`, `unlisted`. `all` n'existe qu'en FILTRE de liste — un
-article ne peut pas « être » de visibilité `all`, d'où deux constantes distinctes.
+⚠️ An article's `visibility` is not binary: `public`, `agent` (visible to
+AI agents), `internal`, `unlisted`. `all` only exists as a list FILTER — an
+article cannot "be" of visibility `all`, hence two distinct constants.
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from ..const import (DOC_KIND_FILTERS, DOC_VISIBILITIES,
 
 
 class _DocsMixin:
-    """Articles, groupes et brouillons du centre d'aide."""
+    """Help center articles, groups and drafts."""
 
     # --- articles -----------------------------------------------------------
 
@@ -46,10 +46,10 @@ class _DocsMixin:
                       updated_after: Optional[str] = None,
                       updated_before: Optional[str] = None,
                       language: Optional[str] = None) -> Any:
-        """GET /docs/articles — articles du centre d'aide. Scope `docs:read`.
+        """GET /docs/articles — help center articles. Scope `docs:read`.
 
-        `visibility` et `kind` acceptent ici `all`, qui n'est PAS une valeur
-        d'écriture (cf. l'en-tête de module).
+        `visibility` and `kind` accept `all` here, which is NOT a write
+        value (see the module header).
         """
         self._check_choice("visibility", visibility, DOC_VISIBILITY_FILTERS)
         self._check_choice("kind", kind, DOC_KIND_FILTERS)
@@ -65,33 +65,33 @@ class _DocsMixin:
 
     def get_article(self, article_id: str,
                     language: Optional[str] = None) -> Any:
-        """GET /docs/articles/{id} — un article. Scope `docs:read`."""
+        """GET /docs/articles/{id} — one article. Scope `docs:read`."""
         return self._request("GET", f"/docs/articles/{article_id}",
                              params={"language": language})
 
     def create_article(self, payload: Dict[str, Any]) -> Any:
-        """POST /docs/articles — crée un article. Scope `docs:write`.
+        """POST /docs/articles — create an article. Scope `docs:write`.
 
-        Requis : `title`, `content`, `group_id`. Optionnels : `summary`,
+        Required: `title`, `content`, `group_id`. Optional: `summary`,
         `portal_instance_id`, `published`, `visibility`, `icon`, `language`.
 
-        `content` est du **markdown** (titres, listes à puces, listes numérotées…).
-        `group_id` est requis : un article naît dans un groupe (cf. `list_groups`).
+        `content` is **markdown** (headings, bullet lists, numbered lists...).
+        `group_id` is required: an article is born in a group (see `list_groups`).
         """
         self._check_choice("visibility", payload.get("visibility"),
                            DOC_VISIBILITIES)
         return self._request("POST", "/docs/articles", json=dict(payload))
 
     def update_article(self, article_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /docs/articles/{id} — met à jour un article. Scope `docs:write`.
+        """PATCH /docs/articles/{id} — update an article. Scope `docs:write`.
 
-        Champs : `title`, `content`, `allow_image_removal`, `summary`,
+        Fields: `title`, `content`, `allow_image_removal`, `summary`,
         `published`, `visibility`, `archived`, `show_on_home_page`, `group_id`,
         `portal_instance_id`, `icon`, `language`.
 
-        ⚠️ `allow_image_removal` autorise la réécriture du contenu à SUPPRIMER
-        des images qui n'y figurent plus. Sans lui, elles sont conservées — c'est
-        un garde-fou de l'éditeur contre une perte par recopie partielle.
+        ⚠️ `allow_image_removal` allows the content rewrite to DELETE
+        images that no longer appear in it. Without it, they are kept — it is
+        a vendor safeguard against loss through partial re-copying.
         """
         self._check_choice("visibility", payload.get("visibility"),
                            DOC_VISIBILITIES)
@@ -99,57 +99,57 @@ class _DocsMixin:
                              json=dict(payload))
 
     def delete_article(self, article_id: str) -> Any:
-        """DELETE /docs/articles/{id} — supprime un article. Scope `docs:write`."""
+        """DELETE /docs/articles/{id} — delete an article. Scope `docs:write`."""
         return self._request("DELETE", f"/docs/articles/{article_id}")
 
     def move_articles(self, article_ids: Any, group_id: Optional[str]) -> Any:
-        """POST /docs/articles/move — réaffecte des articles à un groupe.
+        """POST /docs/articles/move — reassign articles to a group.
 
-        Scope `docs:write`. `group_id=None` les **dégroupe** — c'est une valeur
-        signifiante, pas une absence, donc elle est envoyée telle quelle.
+        Scope `docs:write`. `group_id=None` **ungroups** them — it is a meaningful
+        value, not an absence, so it is sent as-is.
         """
         if not article_ids:
-            raise ValueError("`article_ids` requis : au moins un article à déplacer.")
+            raise ValueError("`article_ids` is required: at least one article to move.")
         return self._request("POST", "/docs/articles/move",
                              json={"article_ids": list(article_ids),
                                    "group_id": group_id})
 
-    # --- groupes ------------------------------------------------------------
+    # --- groups -------------------------------------------------------------
 
     def list_groups(self, portal_instance_id: Optional[str] = None) -> Any:
-        """GET /docs/groups — groupes d'articles. Scope `docs:read`.
+        """GET /docs/groups — article groups. Scope `docs:read`.
 
-        ⚠️ **Pas de pagination** sur cet endpoint : il rend tout d'un coup.
+        ⚠️ **No pagination** on this endpoint: it returns everything at once.
         """
         return self._request("GET", "/docs/groups",
                              params={"portal_instance_id": portal_instance_id})
 
     def create_group(self, name: str,
                      portal_instance_id: Optional[str] = None) -> Any:
-        """POST /docs/groups — crée un groupe d'articles. Scope `docs:write`."""
+        """POST /docs/groups — create an article group. Scope `docs:write`."""
         if not name:
-            raise ValueError("`name` requis.")
+            raise ValueError("`name` is required.")
         body: Dict[str, Any] = {"name": name}
         if portal_instance_id is not None:
             body["portal_instance_id"] = portal_instance_id
         return self._request("POST", "/docs/groups", json=body)
 
     def update_group(self, group_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /docs/groups/{id} — met à jour un groupe. Scope `docs:write`.
+        """PATCH /docs/groups/{id} — update a group. Scope `docs:write`.
 
-        Champs : `name`, `order`, `portal_instance_id`.
+        Fields: `name`, `order`, `portal_instance_id`.
         """
         return self._request("PATCH", f"/docs/groups/{group_id}",
                              json=dict(payload))
 
     def delete_group(self, group_id: str) -> Any:
-        """DELETE /docs/groups/{id} — supprime un groupe. Scope `docs:write`.
+        """DELETE /docs/groups/{id} — delete a group. Scope `docs:write`.
 
-        Les articles qu'il contenait ne sont PAS supprimés : ils sont dégroupés.
+        The articles it contained are NOT deleted: they are ungrouped.
         """
         return self._request("DELETE", f"/docs/groups/{group_id}")
 
-    # --- brouillons ---------------------------------------------------------
+    # --- drafts -------------------------------------------------------------
 
     def list_drafts(self, limit: Optional[int] = None,
                     cursor: Optional[str] = None,
@@ -162,11 +162,11 @@ class _DocsMixin:
                     created_before: Optional[str] = None,
                     updated_after: Optional[str] = None,
                     updated_before: Optional[str] = None) -> Any:
-        """GET /docs/drafts — brouillons en attente de relecture. Scope `docs:read`.
+        """GET /docs/drafts — drafts awaiting review. Scope `docs:read`.
 
-        ⚠️ `status` prend ici les valeurs de BROUILLON (`draft`, `open`,
-        `accepted`, `rejected`, `superseded`) — rien à voir avec le `status` d'un
-        fil (`open`/`snoozed`/`done`), qui porte le même nom ailleurs.
+        ⚠️ `status` takes DRAFT values here (`draft`, `open`,
+        `accepted`, `rejected`, `superseded`) — nothing to do with a thread's
+        `status` (`open`/`snoozed`/`done`), which has the same name elsewhere.
         """
         self._check_choice("kind", kind, DRAFT_KINDS)
         self._check_choice("status", status, DRAFT_STATUSES)
@@ -178,38 +178,38 @@ class _DocsMixin:
         })
 
     def get_draft(self, draft_id: str) -> Any:
-        """GET /docs/drafts/{id} — un brouillon. Scope `docs:read`."""
+        """GET /docs/drafts/{id} — one draft. Scope `docs:read`."""
         return self._request("GET", f"/docs/drafts/{draft_id}")
 
     def create_draft(self, payload: Dict[str, Any]) -> Any:
-        """POST /docs/drafts — propose un changement à relire. Scope `docs:write`.
+        """POST /docs/drafts — propose a change for review. Scope `docs:write`.
 
-        Requis : `kind` (`edit` | `create` | `delete`). Optionnels : `article_id`
-        (requis en pratique pour `edit`/`delete`), `title`, `content`,
+        Required: `kind` (`edit` | `create` | `delete`). Optional: `article_id`
+        (required in practice for `edit`/`delete`), `title`, `content`,
         `allow_image_removal`, `group_id`, `submit_for_review`.
         """
         self._check_choice("kind", payload.get("kind"), DRAFT_KINDS)
         if not payload.get("kind"):
             raise ValueError(
-                "`kind` requis : 'edit', 'create' ou 'delete'.")
+                "`kind` is required: 'edit', 'create' or 'delete'.")
         return self._request("POST", "/docs/drafts", json=dict(payload))
 
     def accept_draft(self, draft_id: str) -> Any:
-        """POST /docs/drafts/{id}/accept — applique le brouillon. Scope `docs:write`.
+        """POST /docs/drafts/{id}/accept — apply the draft. Scope `docs:write`.
 
-        `edit` écrit une nouvelle version de l'article, `create` matérialise un
-        article (non publié), `delete` soft-delete l'article.
+        `edit` writes a new version of the article, `create` materializes an
+        article (unpublished), `delete` soft-deletes the article.
 
-        ⚠️ **Peut répondre `superseded` au lieu de `accepted`** quand le brouillon
-        ne s'applique plus proprement : succès HTTP, rien d'appliqué. Lire le
-        statut rendu, pas seulement le code de retour.
+        ⚠️ **Can answer `superseded` instead of `accepted`** when the draft
+        no longer applies cleanly: HTTP success, nothing applied. Read the
+        returned status, not just the return code.
         """
         return self._request("POST", f"/docs/drafts/{draft_id}/accept")
 
     def decline_draft(self, draft_id: str) -> Any:
-        """POST /docs/drafts/{id}/decline — rejette le brouillon. Scope `docs:write`.
+        """POST /docs/drafts/{id}/decline — reject the draft. Scope `docs:write`.
 
-        La ligne est conservée pour l'audit, marquée `REJECTED`, et sort de la
-        file ouverte.
+        The row is kept for audit, marked `REJECTED`, and leaves the open
+        queue.
         """
         return self._request("POST", f"/docs/drafts/{draft_id}/decline")

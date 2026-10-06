@@ -1,11 +1,11 @@
-"""Accords d'entreprise (index ACCO) — client HTTP vers `/api/fr/accords/*`.
+"""Company agreements (ACCO index) — HTTP client for `/api/fr/accords/*`.
 
-L'index vit dans le service FOD, sur un réseau privé : un poste ne peut pas
-l'interroger directement. On passe donc par oto-mcp, qui le republie — même
-raison d'être que `SireneStock`, et même contrat d'authentification.
+The index lives in the FOD service, on a private network: a workstation cannot
+query it directly. We therefore go through oto-mcp, which republishes it — same
+reason for existing as `SireneStock`, and same authentication contract.
 
-Auth : token long-lived `OTO_API_KEY` (dashboard → « cli & api tokens »).
-Override d'URL : `OTO_API_URL`.
+Auth: long-lived `OTO_API_KEY` token (dashboard → "cli & api tokens").
+URL override: `OTO_API_URL`.
 """
 
 from .client import AccordsClient, AccordsError

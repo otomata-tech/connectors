@@ -1,6 +1,6 @@
-"""Familles d'appels GitHub, composées dans `GitHubClient`.
+"""GitHub call families, composed into `GitHubClient`.
 
-Un module par domaine d'API. Détail du contrat : `../client.py`.
+One module per API domain. Contract details: `../client.py`.
 """
 
 from .actions import _ActionsMixin

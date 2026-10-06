@@ -35,7 +35,7 @@ class RedditClient:
 
     def __init__(self, api_key: str, timeout: int = 20):
         if not api_key:
-            raise ValueError("reddit: clé API redditapis.com requise")
+            raise ValueError("reddit: redditapis.com API key required")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {api_key}"
         self.session.headers["Accept"] = "application/json"
@@ -43,12 +43,12 @@ class RedditClient:
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         r = self.session.get(f"{self.BASE_URL}{path}", params=params, timeout=self.timeout)
-        # Le proxy renvoie parfois 200 + {"error": ...} sur une requête invalide.
+        # The proxy sometimes returns 200 + {"error": ...} on an invalid request.
         try:
             data = r.json()
         except ValueError:
             r.raise_for_status()
-            raise RuntimeError(f"réponse redditapis non-JSON (HTTP {r.status_code})")
+            raise RuntimeError(f"non-JSON redditapis response (HTTP {r.status_code})")
         if isinstance(data, dict) and data.get("error"):
             raise RuntimeError(f"redditapis: {data['error']}")
         r.raise_for_status()

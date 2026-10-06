@@ -1,52 +1,52 @@
-"""HelloStock — client de l'API d'administration de la marketplace (`/api/admin`).
+"""HelloStock — client for the marketplace administration API (`/api/admin`).
 
-Contrat : OpenAPI 3.1 « HelloStock — API admin » `1.0.0`, servi par
-`GET /api/admin/openapi.json` derrière l'authentification. Chaque méthode ci-dessous
-est UN endpoint de ce contrat ; les corps et les réponses passent tels quels, le
-client n'invente aucune sémantique et ne re-type rien.
+Contract: OpenAPI 3.1 « HelloStock — admin API » `1.0.0`, served by
+`GET /api/admin/openapi.json` behind authentication. Each method below
+is ONE endpoint of this contract; bodies and responses pass through as-is, the
+client invents no semantics and re-types nothing.
 
-**Authentification** : `Authorization: Bearer hs_…`, un **jeton personnel** créé par
-chaque utilisateur depuis son compte HelloStock. Il porte les droits de SON
-utilisateur, et ces routes exigent un compte administrateur :
+**Authentication**: `Authorization: Bearer hs_…`, a **personal token** created by
+each user from their HelloStock account. It carries the rights of THEIR
+user, and these routes require an administrator account:
 
-- jeton inconnu ou révoqué → **401** ;
-- jeton valide d'un compte qui n'est pas administrateur → **403**.
+- unknown or revoked token → **401**;
+- valid token of a non-administrator account → **403**.
 
-Les deux arrivent en `UpstreamHTTPError` (`status_code`, `body = {"error": …}`) :
-c'est à la face servie de les dire à l'utilisateur, le client ne connaît pas l'écran
-où l'on recrée un jeton.
+Both arrive as `UpstreamHTTPError` (`status_code`, `body = {"error": …}`):
+it is up to the serving layer to tell the user, the client does not know the screen
+where a token is recreated.
 
-**Listes** : `limit` (1–200, défaut 50 côté serveur) + `cursor` opaque ; réponse
-`{items, nextCursor, total}`, `nextCursor` nul sur la dernière page, `total` = tout
-ce qui répond aux filtres. Demandes et offres vont du plus récent au plus ancien,
-membres et positionnements par identifiant croissant.
+**Lists**: `limit` (1–200, server default 50) + opaque `cursor`; response
+`{items, nextCursor, total}`, `nextCursor` null on the last page, `total` = everything
+matching the filters. Requests and offers go from newest to oldest,
+members and positionings by ascending identifier.
 
-**Filtres validés strictement par le serveur** : une valeur hors référentiel, une
-date mal formée ou une limite hors bornes répondent **400** avec un message — jamais
-une liste vide. Le client ne revalide donc pas les valeurs métier : il les relaie,
-et le refus du serveur est la réponse. Les référentiels publiés par le contrat sont
-exposés ci-dessous en constantes, pour que la face servie les annonce sans les
-recopier ; le code de service (`service`) n'en fait pas partie — le contrat renvoie
-à un catalogue qu'il ne publie pas.
+**Filters strictly validated by the server**: a value outside the reference list, a
+malformed date or an out-of-bounds limit answer **400** with a message — never
+an empty list. The client therefore does not revalidate business values: it relays them,
+and the server's refusal is the answer. The reference lists published by the contract are
+exposed below as constants, so that the serving layer announces them without
+copying them; the service code (`service`) is not part of them — the contract refers
+to a catalog it does not publish.
 
-**Écritures** — trois, et elles agissent sur la marketplace de production :
+**Writes** — three, and they act on the production marketplace:
 
-- `send_demande` : envoie un **courriel** aux membres choisis (les specs de la
-  demande, sans l'identité de l'acheteur), tracé au nom de l'administrateur dont
-  c'est le jeton. **Jamais re-tenté** : l'amont n'a pas de clé d'idempotence, une
-  réponse perdue en vol ferait écrire deux fois aux mêmes personnes ;
-- `update_demande_status`, `update_offre` : statut, et mots-clés pour une offre
-  (publics : ils alimentent la recherche ; normalisés et filtrés par le serveur).
+- `send_demande`: sends an **email** to the chosen members (the request's
+  specs, without the buyer's identity), traced under the name of the administrator whose
+  token it is. **Never retried**: upstream has no idempotency key, a
+  response lost in flight would make the same people be written to twice;
+- `update_demande_status`, `update_offre`: status, and keywords for an offer
+  (public: they feed the search; normalized and filtered by the server).
 
-**Délibérément absents** (à ne pas « compléter » sans décision) : la suppression d'un
-membre (`DELETE /users/{id}`, en cascade sur tout ce qu'il a déposé), le remplacement
-d'une section de contenu du site (`PUT /content/{slug}`) et le téléchargement du
-devis d'un positionnement (`GET /positionnements/{id}/devis`, un PDF).
+**Deliberately absent** (not to be « completed » without a decision): deleting a
+member (`DELETE /users/{id}`, cascading to everything they posted), replacing
+a site content section (`PUT /content/{slug}`) and downloading a
+positioning's quote (`GET /positionnements/{id}/devis`, a PDF).
 
-**Redirections refusées** : une 3xx n'est jamais suivie. Une adresse de base qui
-redirige (autre hôte, page de connexion) rendrait sinon une page HTML en 200, ou
-perdrait l'en-tête d'authentification en changeant d'hôte — les deux se liraient
-comme autre chose qu'une erreur de configuration.
+**Redirects refused**: a 3xx is never followed. A base address that
+redirects (other host, login page) would otherwise return an HTML page as a 200, or
+lose the authentication header by changing host — both would read
+as something other than a configuration error.
 
 Requires: requests
 """
@@ -64,10 +64,10 @@ SERVICE = "hellostock"
 DEFAULT_BASE_URL = "https://hellostock.fr"
 API_PREFIX = "/api/admin"
 
-# (connexion, lecture) — aucune attente illimitée.
+# (connect, read) — no unbounded wait.
 _HTTP_TIMEOUT = (10, 30)
 
-# Référentiels publiés par le contrat (énumérations OpenAPI).
+# Reference lists published by the contract (OpenAPI enumerations).
 STATUSES = ("declared", "qualified", "published", "closed")
 MATIERES = ("acier", "inox", "aluminium", "cuivre", "laiton", "autre")
 CERTIFICATS = ("dispo", "verifie", "sans-mots-cles")
@@ -77,28 +77,28 @@ SECTORS = (
     "industrie_fabricant", "autre",
 )
 
-# Seules les LECTURES sont re-tentées, sur débit et indisponibilité passagère.
+# Only READS are retried, on rate limiting and transient unavailability.
 _RETRY_STATUSES = frozenset({429, 502, 503, 504})
 _MAX_ATTEMPTS = 3
 
 
 class HelloStockProtocolError(Exception):
-    """Le serveur a répondu, mais pas comme l'API décrite par le contrat
-    (redirection, corps qui n'est pas du JSON). Un défaut de configuration ou de
-    déploiement, pas un refus métier : il ne se corrige pas en changeant l'appel."""
+    """The server answered, but not like the API described by the contract
+    (redirect, body that is not JSON). A configuration or deployment defect,
+    not a business refusal: it is not fixed by changing the call."""
 
 
 def _positive_id(value: Any, name: str) -> int:
-    """Un identifiant numérique entre dans le CHEMIN : il est exigé entier et
-    positif, jamais une chaîne qui pourrait porter un `/`."""
+    """A numeric identifier goes into the PATH: it is required to be an integer
+    and positive, never a string that could carry a `/`."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"`{name}` doit être un entier positif (reçu {value!r}).")
+        raise ValueError(f"`{name}` must be a positive integer (got {value!r}).")
     return value
 
 
 def _clean(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Paramètres à `None` retirés ; booléens en `true`/`false` (requests écrirait
-    `True`, que le serveur ne lit pas comme un booléen)."""
+    """Parameters set to `None` dropped; booleans as `true`/`false` (requests would write
+    `True`, which the server does not read as a boolean)."""
     out: Dict[str, Any] = {}
     for k, v in params.items():
         if v is None:
@@ -108,20 +108,20 @@ def _clean(params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class HelloStockAdminClient:
-    """Client de l'API admin HelloStock, auth Bearer par jeton personnel `hs_…`."""
+    """HelloStock admin API client, Bearer auth with personal token `hs_…`."""
 
     def __init__(self, token: Optional[str] = None,
                  base_url: Optional[str] = None):
         """
         Args:
-            token: jeton d'API personnel.
-            base_url: racine du site (défaut `https://hellostock.fr`).
+            token: personal API token.
+            base_url: site root (default `https://hellostock.fr`).
         """
         self.token = require(token, "HELLOSTOCK_API_TOKEN")
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.session = requests.Session()
-        # Jeton en EN-TÊTE uniquement : en query string il entrerait dans l'URL,
-        # donc dans le message de toute exception et dans les journaux d'accès.
+        # Token in the HEADER only: in a query string it would enter the URL,
+        # hence the message of any exception and the access logs.
         self.session.headers.update({
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
@@ -145,22 +145,22 @@ class HelloStockAdminClient:
             time.sleep(float(2 ** attempt))
         if 300 <= resp.status_code < 400:
             raise HelloStockProtocolError(
-                f"HelloStock a répondu par une redirection ({resp.status_code} vers "
-                f"{resp.headers.get('Location')!r}) au lieu de l'API : l'adresse de "
-                f"base {self.base_url!r} ne pointe pas sur l'API d'administration.")
+                f"HelloStock answered with a redirect ({resp.status_code} to "
+                f"{resp.headers.get('Location')!r}) instead of the API: the base "
+                f"address {self.base_url!r} does not point to the administration API.")
         raise_for_upstream(resp, service=SERVICE)
         try:
             return resp.json()
         except ValueError:
             ctype = resp.headers.get("Content-Type")
             raise HelloStockProtocolError(
-                f"HelloStock a répondu {resp.status_code} sans corps JSON "
-                f"(Content-Type {ctype!r}) sur {method} {API_PREFIX}{path}.") from None
+                f"HelloStock answered {resp.status_code} without a JSON body "
+                f"(Content-Type {ctype!r}) on {method} {API_PREFIX}{path}.") from None
 
     def _get(self, path: str, **params: Any) -> Any:
         return self._request("GET", path, params=params)
 
-    # --- demandes -----------------------------------------------------------
+    # --- requests (demandes) ------------------------------------------------
 
     def list_demandes(self, *, status: Optional[str] = None,
                       since: Optional[str] = None, until: Optional[str] = None,
@@ -168,40 +168,40 @@ class HelloStockAdminClient:
                       matiere: Optional[str] = None, service: Optional[str] = None,
                       q: Optional[str] = None, limit: Optional[int] = None,
                       cursor: Optional[str] = None) -> Dict[str, Any]:
-        """GET /demandes — du plus récent au plus ancien.
+        """GET /demandes — from newest to oldest.
 
-        `since`/`until` : `YYYY-MM-DD` ou datetime ISO 8601, sur `createdAt`
-        (`since` inclus, `until` exclu). `departement` est lu sur le code postal de
-        l'entreprise rattachée : une piste sans compte n'y répond pas.
+        `since`/`until`: `YYYY-MM-DD` or ISO 8601 datetime, on `createdAt`
+        (`since` inclusive, `until` exclusive). `departement` is read from the postal code
+        of the attached company: a lead without an account does not match it.
         """
         return self._get("/demandes", status=status, since=since, until=until,
                          departement=departement, matiere=matiere, service=service,
                          q=q, limit=limit, cursor=cursor)
 
     def get_demande(self, demande_id: int) -> Dict[str, Any]:
-        """GET /demandes/{id} — la forme du listing, plus ses positionnements et
-        ses envois (du plus récent au plus ancien)."""
+        """GET /demandes/{id} — the listing shape, plus its positionings and
+        its sends (from newest to oldest)."""
         return self._get(f"/demandes/{_positive_id(demande_id, 'demande_id')}")
 
     def update_demande_status(self, demande_id: int, status: str) -> Dict[str, Any]:
-        """PATCH /demandes/{id} `{status}` — rend `{success}`."""
+        """PATCH /demandes/{id} `{status}` — returns `{success}`."""
         return self._request(
             "PATCH", f"/demandes/{_positive_id(demande_id, 'demande_id')}",
             body={"status": status})
 
     def send_demande(self, demande_id: int, user_ids: Sequence[int],
                      message: Optional[str] = None) -> Dict[str, Any]:
-        """POST /demandes/{id}/envoyer `{userIds, message?}` — envoie un courriel à
-        chacun des membres désignés, et trace chaque envoi effectif.
+        """POST /demandes/{id}/envoyer `{userIds, message?}` — sends an email to
+        each of the designated members, and traces each effective send.
 
-        Rend `{success, envoyes, echecs, noop}` : `echecs` = les adresses dont
-        l'envoi a échoué, `noop` = le serveur n'a pas de messagerie configurée (envois
-        simulés, mais tracés). 502 si aucun courriel n'a pu partir. `message` part
-        tel quel dans le courriel.
+        Returns `{success, envoyes, echecs, noop}`: `echecs` = the addresses whose
+        send failed, `noop` = the server has no mail service configured (sends
+        simulated, but traced). 502 if no email could go out. `message` goes
+        into the email as-is.
         """
         ids = [_positive_id(u, "user_ids[]") for u in (user_ids or [])]
         if not ids:
-            raise ValueError("`user_ids` : au moins un membre destinataire.")
+            raise ValueError("`user_ids`: at least one recipient member.")
         body: Dict[str, Any] = {"userIds": ids}
         if message is not None:
             body["message"] = message
@@ -209,7 +209,7 @@ class HelloStockAdminClient:
             "POST", f"/demandes/{_positive_id(demande_id, 'demande_id')}/envoyer",
             body=body)
 
-    # --- offres -------------------------------------------------------------
+    # --- offers (offres) ----------------------------------------------------
 
     def list_offres(self, *, status: Optional[str] = None,
                     since: Optional[str] = None, until: Optional[str] = None,
@@ -217,27 +217,27 @@ class HelloStockAdminClient:
                     matiere: Optional[str] = None, certificat: Optional[str] = None,
                     q: Optional[str] = None, limit: Optional[int] = None,
                     cursor: Optional[str] = None) -> Dict[str, Any]:
-        """GET /offres — du plus récent au plus ancien.
+        """GET /offres — from newest to oldest.
 
-        `certificat=sans-mots-cles` est la file d'enrichissement : certificat joint
-        et aucun mot-clé, à traiter par `update_offre(keywords=…)`.
+        `certificat=sans-mots-cles` is the enrichment queue: certificate attached
+        and no keyword, to be handled by `update_offre(keywords=…)`.
         """
         return self._get("/offres", status=status, since=since, until=until,
                          departement=departement, matiere=matiere,
                          certificat=certificat, q=q, limit=limit, cursor=cursor)
 
     def get_offre(self, offre_id: int) -> Dict[str, Any]:
-        """GET /offres/{id} — la forme du listing, plus le détail du verdict
-        certificat (qui porte le numéro de coulée : surface admin seulement)."""
+        """GET /offres/{id} — the listing shape, plus the detail of the certificate
+        verdict (which carries the heat number: admin surface only)."""
         return self._get(f"/offres/{_positive_id(offre_id, 'offre_id')}")
 
     def update_offre(self, offre_id: int, *, status: Optional[str] = None,
                      keywords: Optional[List[str]] = None) -> Dict[str, Any]:
-        """PATCH /offres/{id} `{status?, keywords?}` — au moins l'un des deux.
+        """PATCH /offres/{id} `{status?, keywords?}` — at least one of the two.
 
-        `keywords` REMPLACE la liste existante ; le serveur normalise (espaces,
-        casse, doublons) et refuse en bloc une liste qui porte une identité
-        (aciériste, numéro de coulée ou de commande). Rend `{success}`.
+        `keywords` REPLACES the existing list; the server normalizes (spaces,
+        case, duplicates) and refuses outright a list that carries an identity
+        (steelmaker, heat or order number). Returns `{success}`.
         """
         body: Dict[str, Any] = {}
         if status is not None:
@@ -245,11 +245,11 @@ class HelloStockAdminClient:
         if keywords is not None:
             body["keywords"] = list(keywords)
         if not body:
-            raise ValueError("`status` ou `keywords` : au moins l'un des deux.")
+            raise ValueError("`status` or `keywords`: at least one of the two.")
         return self._request(
             "PATCH", f"/offres/{_positive_id(offre_id, 'offre_id')}", body=body)
 
-    # --- membres ------------------------------------------------------------
+    # --- members ------------------------------------------------------------
 
     def list_users(self, *, q: Optional[str] = None, sector: Optional[str] = None,
                    service: Optional[str] = None, is_admin: Optional[bool] = None,
@@ -257,26 +257,26 @@ class HelloStockAdminClient:
                    has_demandes: Optional[bool] = None,
                    limit: Optional[int] = None,
                    cursor: Optional[str] = None) -> Dict[str, Any]:
-        """GET /users — annuaire des comptes, par identifiant croissant (le tri
-        alphabétique est à faire côté appelant)."""
+        """GET /users — account directory, by ascending identifier (alphabetical
+        sorting is left to the caller)."""
         return self._get("/users", q=q, sector=sector, service=service,
                          isAdmin=is_admin, hasOffres=has_offres,
                          hasDemandes=has_demandes, limit=limit, cursor=cursor)
 
     def get_user(self, user_id: int) -> Dict[str, Any]:
-        """GET /users/{id} — le membre, son entreprise détaillée et son activité
-        (demandes, offres, fils de messagerie où il est acheteur)."""
+        """GET /users/{id} — the member, their detailed company and their activity
+        (requests, offers, messaging threads where they are the buyer)."""
         return self._get(f"/users/{_positive_id(user_id, 'user_id')}")
 
-    # --- positionnements ----------------------------------------------------
+    # --- positionings -------------------------------------------------------
 
     def list_positionnements(self, *, demande_id: Optional[int] = None,
                              user_id: Optional[int] = None,
                              since: Optional[str] = None,
                              limit: Optional[int] = None,
                              cursor: Optional[str] = None) -> Dict[str, Any]:
-        """GET /positionnements — les fournisseurs qui se sont proposés sur une
-        demande, par identifiant croissant."""
+        """GET /positionnements — the suppliers who offered themselves on a
+        request, by ascending identifier."""
         return self._get("/positionnements", demandeId=demande_id, userId=user_id,
                          since=since, limit=limit, cursor=cursor)
 

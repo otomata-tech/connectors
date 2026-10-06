@@ -84,7 +84,7 @@ def test_une_reponse_sans_json_lisible_leve_en_le_disant():
     """Avant, elle devenait un dict d'erreur ; maintenant elle nomme ce qui est
     arrivé, sinon l'appelant croit à un corps vide."""
     c = _client_repondant(_Reponse(200, b"<html>maintenance</html>"))
-    with pytest.raises(RuntimeError, match="sans JSON lisible"):
+    with pytest.raises(RuntimeError, match="without readable JSON"):
         c.fetch("me")
 
 

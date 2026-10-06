@@ -27,14 +27,14 @@ from ..common import raise_for_upstream
 from ..common.errors import UpstreamHTTPError
 from ..zoho.auth import ZohoAuthError, cred_key, get_access_token, invalidate
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
-# Endpoint Desk → scope OAuth qui le débloque. Zoho répond `403 SCOPE_MISMATCH` sans
-# JAMAIS dire quel scope manque — or c'est la seule information utile : le remède est de
-# régénérer le self-client avec ce scope. Un token Desk peut très bien authentifier avec
-# des scopes PARTIELS (cas vécu : les articles répondaient 200 pendant que tickets,
-# contacts et départements rendaient un 403 opaque). Signal d'usage #299.
+# Desk endpoint → OAuth scope that unlocks it. Zoho answers `403 SCOPE_MISMATCH` without
+# EVER saying which scope is missing — yet that is the only useful information: the remedy
+# is to regenerate the self-client with that scope. A Desk token can perfectly well
+# authenticate with PARTIAL scopes (real case: articles answered 200 while tickets,
+# contacts and departments returned an opaque 403). Usage signal #299.
 _SCOPE_BY_PREFIX = (
     ("tickets/search", "Desk.search.READ"),
     ("tickets", "Desk.tickets.{rw}"),
@@ -46,7 +46,7 @@ _SCOPE_BY_PREFIX = (
 
 
 def _required_scope(endpoint: str, method: str) -> Optional[str]:
-    """Scope attendu pour `endpoint`, ou None si l'endpoint n'est pas cartographié."""
+    """Expected scope for `endpoint`, or None if the endpoint is not mapped."""
     path = (endpoint or "").split("?", 1)[0].lstrip("/")
     rw = "READ" if method.upper() in ("GET", "HEAD") else "WRITE"
     for prefix, scope in _SCOPE_BY_PREFIX:
@@ -67,21 +67,21 @@ class ZohoDeskClient:
         api_domain: Optional[str] = None,
         accounts_url: Optional[str] = None,
     ):
-        """Initialise le client.
+        """Initializes the client.
 
-        Credentials toujours fournis par le consommateur (serveur multi-user).
-        Token d'accès caché **en mémoire** sur
-        l'instance — jamais sur un fichier partagé (fuite cross-user)."""
+        Credentials always provided by the consumer (multi-user server).
+        Access token cached **in memory** on the
+        instance — never on a shared file (cross-user leak)."""
         self.client_id = require(client_id, "ZOHO_DESK_CLIENT_ID")
         self.client_secret = require(client_secret, "ZOHO_DESK_CLIENT_SECRET")
-        # FACULTATIF à la construction : en mode server-based il est obtenu par le
-        # flux de consentement, pas collé. Son absence est signalée au moment
-        # du refresh (message actionnable) plutôt que par une erreur de config.
+        # OPTIONAL at construction: in server-based mode it is obtained by the
+        # consent flow, not pasted. Its absence is reported at refresh time
+        # (actionable message) rather than by a config error.
         self.refresh_token = refresh_token
-        # org_id (en-tête `orgId`) est OPTIONNEL : les endpoints KB articles
-        # résolvent le portail depuis le token mono-org (vérifié empiriquement) →
-        # pas de `require` qui forcerait le champ. Fourni si un endpoint le
-        # réclame (tickets…), omis de l'en-tête sinon.
+        # org_id (`orgId` header) is OPTIONAL: the KB articles endpoints
+        # resolve the portal from the single-org token (verified empirically) →
+        # no `require` that would force the field. Provided if an endpoint
+        # demands it (tickets…), omitted from the header otherwise.
         self.org_id = org_id
         self.api_domain = api_domain or "https://desk.zoho.com"
         self.accounts_url = accounts_url or "https://accounts.zoho.com"
@@ -91,8 +91,8 @@ class ZohoDeskClient:
     # --- Auth ---
 
     def _get_access_token(self) -> str:
-        """Token d'accès valide, rafraîchi au besoin — cache process-wide keyé par
-        credential (cf. `..zoho.auth`, #285)."""
+        """Valid access token, refreshed as needed — process-wide cache keyed by
+        credential (see `..zoho.auth`, #285)."""
         return get_access_token(self.accounts_url, self.client_id,
                                 self.client_secret, self.refresh_token,
                                 key=self._cred_key)
@@ -125,23 +125,23 @@ class ZohoDeskClient:
                 time.sleep(wait)
                 continue
 
-            # `403 SCOPE_MISMATCH` : nommer le scope manquant plutôt que de relayer le
-            # code opaque de Zoho (cf. `_SCOPE_BY_PREFIX`). L'appelant sait alors quoi
-            # régénérer, au lieu de deviner lequel des scopes `Desk.*` fait défaut.
+            # `403 SCOPE_MISMATCH`: name the missing scope rather than relaying
+            # Zoho's opaque code (see `_SCOPE_BY_PREFIX`). The caller then knows what to
+            # regenerate, instead of guessing which of the `Desk.*` scopes is lacking.
             if resp.status_code == 403:
                 try:
                     code = (resp.json() or {}).get("errorCode")
-                except Exception:  # noqa: BLE001 — corps illisible : on relaie tel quel
+                except Exception:  # noqa: BLE001 — unreadable body: relay as is
                     code = None
                 if code == "SCOPE_MISMATCH":
                     scope = _required_scope(endpoint, method)
-                    detail = (f"il manque le scope `{scope}`" if scope
-                              else "il manque un scope `Desk.*` pour cet appel")
+                    detail = (f"the scope `{scope}` is missing" if scope
+                              else "a `Desk.*` scope is missing for this call")
                     raise UpstreamHTTPError(
                         403,
-                        f"Zoho Desk refuse cet appel : {detail}. Régénère le self-client "
-                        f"avec ce scope (console api-console.zoho.com), puis rééchange le "
-                        f"grant token contre un refresh token.",
+                        f"Zoho Desk refuses this call: {detail}. Regenerate the self-client "
+                        f"with this scope (console api-console.zoho.com), then re-exchange the "
+                        f"grant token for a refresh token.",
                         service="zohodesk",
                     )
 

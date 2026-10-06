@@ -90,7 +90,7 @@ def test_site_id_zero_sites_raises_value_error(monkeypatch):
         webflow_client.requests, "request",
         lambda method, url, headers=None, **kwargs: _Resp({"sites": []}))
     c = WebflowClient(api_key="k")
-    with pytest.raises(ValueError, match="aucun site"):
+    with pytest.raises(ValueError, match="no site"):
         c.get_site()
 
 

@@ -92,7 +92,7 @@ def test_une_valeur_scalaire_sur_un_param_multivalue_est_aussi_suffixee(cli):
 
 def test_une_liste_sur_un_param_scalaire_est_refusee(cli):
     """Refus net plutôt qu'un écrasement silencieux côté serveur."""
-    with pytest.raises(ValueError, match="n'accepte pas plusieurs valeurs"):
+    with pytest.raises(ValueError, match="does not accept multiple values"):
         cli._encode_params({"source": ["a", "b"]})
 
 
@@ -106,7 +106,7 @@ def test_none_est_retire_et_les_booleens_sont_serialises(cli):
 
 @pytest.mark.parametrize("bad", [0, 101, 1000, -1])
 def test_items_hors_bornes_est_refuse_localement(cli, bad):
-    with pytest.raises(ValueError, match="entre 1 et 100"):
+    with pytest.raises(ValueError, match="between 1 and 100"):
         cli.list_calls(items=bad)
 
 
@@ -118,17 +118,17 @@ def test_items_dans_les_bornes_passe(cli, capture, ok):
 
 def test_items_booleen_est_refuse(cli):
     """`True` est un `int` en Python — sans garde, `items=True` partirait en 1."""
-    with pytest.raises(ValueError, match="doit être un entier"):
+    with pytest.raises(ValueError, match="must be an integer"):
         cli.list_calls(items=True)
 
 
 def test_ordre_inconnu_refuse_en_nommant_les_valides(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.list_calls(order="created_at sideways")
 
 
 def test_origine_de_reunion_inconnue_refusee(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.list_meeting_events(origin="telepathie")
 
 
@@ -200,7 +200,7 @@ def test_lister_des_notes_sans_call_uuid_est_refuse(cli):
 
 
 def test_note_mise_a_jour_exige_locale_et_texte(cli):
-    with pytest.raises(ValueError, match="requis"):
+    with pytest.raises(ValueError, match="required"):
         cli.update_call_note("n1", "fr", "")
 
 
@@ -320,7 +320,7 @@ def test_upload_rejoue_les_entetes_signes_hors_session(cli, monkeypatch):
 
 
 def test_upload_sans_url_est_refuse_en_nommant_les_cles_recues(cli):
-    with pytest.raises(ValueError, match="clés reçues"):
+    with pytest.raises(ValueError, match="keys received"):
         cli.upload_recording({"headers": {}}, b"audio")
 
 

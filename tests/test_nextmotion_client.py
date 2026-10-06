@@ -447,9 +447,9 @@ def test_bad_bodies_and_ids_are_refused_before_the_request(calls, client, fn, ar
 @pytest.mark.parametrize("fn,kwargs,match", [
     ("list_calendar_journeys", {"order": "patient_name"}, "order"),
     ("list_calendar_journeys", {"order": "-patient_name"}, "order"),
-    ("list_calendar_journeys", {"doctor_ids": A}, "liste"),
+    ("list_calendar_journeys", {"doctor_ids": A}, "must be a list"),
     ("list_calendar_journeys", {"visit_type_ids": ["42"]}, "UUID"),
-    ("list_object_labels", {"types": "lead_source"}, "liste"),
+    ("list_object_labels", {"types": "lead_source"}, "must be a list"),
     ("get_appointment_income_statistics", {"period_type": "quarter"}, "period_type"),
     ("list_payments", {"invoice_id": "../x"}, "UUID"),
 ])

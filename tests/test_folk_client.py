@@ -192,7 +192,7 @@ def test_relation_filter_wire_forms_146():
         "filter[groups][in][id]=grp_A&filter[groups][in][id]=grp_B")
     with pytest.raises(ValueError, match=r'\{"groups": \{"in": \["<id>"'):
         folk_client.filter_params({"groups": {"in": {"id": ["grp_A"]}}})
-    with pytest.raises(ValueError, match="pas un objet"):
+    with pytest.raises(ValueError, match="not an object"):
         folk_client.filter_params({"companies": {"not_in": {"id": "cpy_7"}}})
 
 
@@ -470,7 +470,7 @@ def test_list_tasks(c, calls):
 def test_list_tasks_filters_is_a_dict_not_a_splat(c, calls):
     """Un filtre nommé comme un paramètre de la méthode doit être VALIDÉ, pas
     avalé : `**filters` aurait posé `combinator=or` en silence."""
-    with pytest.raises(ValueError, match="filtre de tâche inconnu"):
+    with pytest.raises(ValueError, match="unknown task filter"):
         c.list_tasks({"combinator": "or"})
 
 
@@ -519,7 +519,7 @@ def test_create_task_assigned_users_ids_and_emails(c, calls):
 
 
 def test_create_task_rejects_mixed_ids_and_emails(c, calls):
-    with pytest.raises(ValueError, match="ids OU des emails"):
+    with pytest.raises(ValueError, match="ids OR emails"):
         c.create_task(entity_id="per_A", title="T", due_at="2026-09-01",
                       assigned_users=["usr_1", "a@b.co"])
 
@@ -584,19 +584,19 @@ def test_task_valueless_operators_send_empty_string():
 
 
 def test_task_filter_rejects_unknown_field():
-    with pytest.raises(ValueError, match="filtre de tâche inconnu"):
+    with pytest.raises(ValueError, match="unknown task filter"):
         folk_client.task_filter_params({"title": "Relancer"})
 
 
 def test_task_filter_rejects_illegal_operator():
     """`like` n'existe sur AUCUN champ de tâche — c'est pourtant le défaut de
     `filter_params`, d'où le refus de le réutiliser ici."""
-    with pytest.raises(ValueError, match="non supporté"):
+    with pytest.raises(ValueError, match="not supported"):
         folk_client.task_filter_params({"dueAt": {"like": "2026"}})
 
 
 def test_task_filter_demands_an_operator_when_ambiguous():
-    with pytest.raises(ValueError, match="préciser l'opérateur"):
+    with pytest.raises(ValueError, match="specify the operator"):
         folk_client.task_filter_params({"createdAt": "2026-01-01"})
 
 
@@ -649,7 +649,7 @@ def test_assigned_users_entry_with_both_id_and_email_is_refused():
     """La garde anti-mixte ne jouait qu'ENTRE entrées : un dict portant les
     DEUX clés partait tel quel vers Folk — le 422 opaque que le helper existe
     pour prévenir (relevé en revue de #61)."""
-    with pytest.raises(ValueError, match="un seul"):
+    with pytest.raises(ValueError, match="designates only one"):
         folk_client._assigned_users_payload([{"id": "usr_1", "email": "a@b.co"}])
 
 

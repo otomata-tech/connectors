@@ -202,7 +202,7 @@ def test_item_par_id_par_chemin_ou_racine(calls, client):
 
 
 def test_item_id_et_path_s_excluent(client):
-    with pytest.raises(ValueError, match="s'excluent"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         client.get_item("d1", item_id="i1", path="a")
 
 

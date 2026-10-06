@@ -1,11 +1,11 @@
 """
 Cloro client — AI-search monitoring & SERP-in-JSON (cloro.dev).
 
-Une seule API (Bearer) qui interroge les moteurs IA (ChatGPT, Gemini, Perplexity,
-Copilot, Grok, Google AI Mode) et Google (SERP organique + AI Overview + PAA,
-Google News), et renvoie du JSON structuré (texte/markdown + sources/citations).
-Usage métier : veille de marque « AI SEO » (ce que les moteurs IA disent d'une
-marque/produit), intelligence concurrentielle, SERP propre en JSON.
+A single API (Bearer) that queries AI engines (ChatGPT, Gemini, Perplexity,
+Copilot, Grok, Google AI Mode) and Google (organic SERP + AI Overview + PAA,
+Google News), and returns structured JSON (text/markdown + sources/citations).
+Business use: "AI SEO" brand monitoring (what AI engines say about a
+brand/product), competitive intelligence, clean SERP as JSON.
 
 Requires: requests
 """
@@ -18,14 +18,14 @@ from ..common.credentials import require
 
 
 class CloroClient:
-    """Client cloro.dev. Auth Bearer ; endpoints sync `POST /v1/monitor/{provider}`.
+    """cloro.dev client. Bearer auth; sync endpoints `POST /v1/monitor/{provider}`.
 
-    Les appels moteurs IA peuvent prendre ~30-45 s (timeout large par défaut).
+    AI engine calls can take ~30-45 s (generous default timeout).
     """
 
     BASE_URL = "https://api.cloro.dev/v1"
 
-    # Moteurs IA conversationnels (corps `prompt`).
+    # Conversational AI engines (`prompt` body).
     AI_PROVIDERS = ("chatgpt", "gemini", "grok", "copilot", "perplexity", "aimode")
 
     def __init__(self, api_key: str = None):
@@ -55,15 +55,15 @@ class CloroClient:
         include: Optional[Dict[str, bool]] = None,
         timeout: int = 180,
     ) -> Dict[str, Any]:
-        """Interroge un moteur IA (`provider` ∈ AI_PROVIDERS) avec `prompt`.
+        """Query an AI engine (`provider` ∈ AI_PROVIDERS) with `prompt`.
 
         Args:
             provider: 'chatgpt' | 'gemini' | 'perplexity' | 'copilot' | 'grok' | 'aimode'.
-            prompt: question/requête (1–10 000 caractères).
-            country: code pays ISO (ex. 'US', 'FR').
-            include: flags d'extraction (ex. {'markdown': True, 'searchQueries': True}).
+            prompt: question/query (1–10,000 characters).
+            country: ISO country code (e.g. 'US', 'FR').
+            include: extraction flags (e.g. {'markdown': True, 'searchQueries': True}).
 
-        Returns: payload Cloro `{success, result: {text, markdown, sources, ...}}`.
+        Returns: Cloro payload `{success, result: {text, markdown, sources, ...}}`.
         """
         body: Dict[str, Any] = {"prompt": prompt}
         if country:
@@ -82,9 +82,9 @@ class CloroClient:
         """Google SERP en JSON via Cloro (organique + AI Overview + People Also Ask).
 
         Args:
-            query: requête de recherche.
-            country: code pays ISO.
-            include: flags ex. {'aiOverview': True, 'organicResults': True,
+            query: search query.
+            country: ISO country code.
+            include: flags, e.g. {'aiOverview': True, 'organicResults': True,
                 'peopleAlsoAsk': True}.
         """
         body: Dict[str, Any] = {"query": query}
@@ -103,8 +103,8 @@ class CloroClient:
         """Google News en JSON via Cloro.
 
         Args:
-            query: requête.
-            country: code pays ISO.
+            query: query.
+            country: ISO country code.
         """
         body: Dict[str, Any] = {"query": query}
         if country:

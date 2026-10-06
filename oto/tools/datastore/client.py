@@ -1,9 +1,9 @@
-"""HTTP client vers `/api/datastore/*` du MCP server.
+"""HTTP client for the MCP server's `/api/datastore/*`.
 
-Auth via API token long-lived stocké dans le secret `OTO_API_KEY` (issu
-depuis `oto.ninja/account` ou via le script `issue_token.py` côté serveur).
+Auth via a long-lived API token stored in the `OTO_API_KEY` secret (issued
+from `oto.ninja/account` or via the server-side `issue_token.py` script).
 
-Base URL override : env `OTO_API_URL` (défaut `https://mcp.oto.cx`).
+Base URL override: env `OTO_API_URL` (default `https://mcp.oto.cx`).
 """
 from __future__ import annotations
 
@@ -55,19 +55,19 @@ class DatastoreClient:
 
     def create_namespace(self, namespace: str,
                          owner: Optional[dict] = None) -> dict:
-        """Crée un tableau. Rend `{namespace, id, url, owner_type, owner_id,
-        is_personal}` — et un `avertissement` si le contexte d'org était posé sans
+        """Creates a table. Returns `{namespace, id, url, owner_type, owner_id,
+        is_personal}` — plus an `avertissement` if an org context was set without
         `owner`.
 
-        ⚠️ Sans `owner`, le tableau est PERSONNEL : visible de vous seul, pas des
-        autres membres de votre organisation ni de ses administrateurs. Le contexte
-        d'org de l'appel n'y change RIEN — seul `owner` décide, et il ne se change
-        pas après coup. Passer `{"type": "org"|"group", "id": N}` pour un tableau
-        partagé.
+        ⚠️ Without `owner`, the table is PERSONAL: visible to you alone, not to the
+        other members of your organization nor to its administrators. The call's
+        org context changes NOTHING here — only `owner` decides, and it cannot be
+        changed afterwards. Pass `{"type": "org"|"group", "id": N}` for a shared
+        table.
 
-        Le paramètre manquait ici : un intégrateur qui passait par cette lib ne
-        POUVAIT PAS créer un tableau d'organisation, alors que la route l'accepte
-        depuis toujours (otomata-tech/oto#45).
+        This parameter used to be missing here: an integrator going through this
+        lib COULD NOT create an organization table, even though the route has
+        always accepted it (otomata-tech/oto#45).
         """
         corps: dict = {"namespace": namespace}
         if owner:

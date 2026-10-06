@@ -1,17 +1,17 @@
-"""Meta Ads (Marketing API) — LECTURE SEULE : comptes publicitaires, campagnes,
-ad sets, pubs, insights.
+"""Meta Ads (Marketing API) — READ-ONLY: ad accounts, campaigns,
+ad sets, ads, insights.
 
-Trois surfaces :
+Three surfaces:
 
-- `oauth` — obtenir l'autorisation (Facebook Login for Business). Seul module qui
-  connaît la `MetaAdsApp` (App ID, secret, configuration) ;
-- `client` — s'en servir. N'a besoin QUE du jeton ;
-- `errors` — les refus, séparés par le geste qu'ils appellent.
+- `oauth` — obtain the authorization (Facebook Login for Business). Only module that
+  knows the `MetaAdsApp` (App ID, secret, configuration);
+- `client` — use it. Needs ONLY the token;
+- `errors` — the refusals, separated by the action they call for.
 
-⚠️ Les coordonnées de l'application ne sont pas ici, et n'y seront pas : ce dépôt
-est public, et une application Meta appartient à celui qui l'a créée.
+⚠️ The application's credentials are not here, and never will be: this repo
+is public, and a Meta application belongs to whoever created it.
 
-Synchrone, sans dépendance au-delà de `requests`.
+Synchronous, no dependency beyond `requests`.
 """
 from __future__ import annotations
 

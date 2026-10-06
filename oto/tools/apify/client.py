@@ -1,17 +1,17 @@
-"""Apify client — exécution d'« actors » de scraping hébergés (apify.com).
+"""Apify client — running hosted scraping "actors" (apify.com).
 
-API v2, auth Bearer. Apify n'est pas UN scraper mais un **catalogue de scrapers**
-(les *actors*, ~5000 au Store : Google Maps, LinkedIn, Instagram, Amazon,
-Booking…) que l'on lance avec un JSON d'entrée et dont on lit la sortie dans un
-*dataset*. D'où le parcours métier :
+API v2, Bearer auth. Apify is not ONE scraper but a **catalog of scrapers**
+(the *actors*, ~5000 in the Store: Google Maps, LinkedIn, Instagram, Amazon,
+Booking…) that you launch with an input JSON and whose output you read from a
+*dataset*. Hence the business path:
 
-1. `store_search("google maps")` → repérer l'actor et son identifiant.
-2. `actor(actor_id)` → lire ses options par défaut avant de le lancer.
-3. `run_sync_dataset_items(actor_id, input)` → lancer ET récupérer les résultats
-   (jusqu'à 300 s), ou `run()` + `run_status()` + `dataset_items()` pour un job long.
+1. `store_search("google maps")` → spot the actor and its identifier.
+2. `actor(actor_id)` → read its default options before launching it.
+3. `run_sync_dataset_items(actor_id, input)` → launch AND fetch the results
+   (up to 300 s), or `run()` + `run_status()` + `dataset_items()` for a long job.
 
-Un actor se facture à l'usage : `max_items` / `timeout_secs` / `max_total_charge_usd`
-sont les garde-fous à poser au lancement, pas après.
+An actor is billed by usage: `max_items` / `timeout_secs` / `max_total_charge_usd`
+are the guardrails to set at launch, not afterwards.
 
 Requires: requests
 """
@@ -26,14 +26,14 @@ from ..common import raise_for_upstream
 
 
 class ApifyClient:
-    """Client Apify v2 (https://api.apify.com/v2), auth Bearer `apify_api_…`."""
+    """Apify v2 client (https://api.apify.com/v2), Bearer auth `apify_api_…`."""
 
     BASE_URL = "https://api.apify.com/v2"
 
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: token Apify.
+            api_key: Apify token.
         """
         self.api_key = require(api_key, "APIFY_API_KEY")
         self.session = requests.Session()
@@ -43,11 +43,11 @@ class ApifyClient:
 
     @staticmethod
     def _actor_path_id(actor_id: str) -> str:
-        """Normalise `username/actor-name` → `username~actor-name` (forme d'URL).
+        """Normalize `username/actor-name` → `username~actor-name` (URL form).
 
-        Le Store affiche l'actor en `apify/website-content-crawler`, l'API l'attend
-        en `apify~website-content-crawler` — un slash non converti donnerait un 404
-        sur une route qui n'existe pas.
+        The Store shows the actor as `apify/website-content-crawler`, the API expects it
+        as `apify~website-content-crawler` — an unconverted slash would give a 404
+        on a route that does not exist.
         """
         return actor_id.replace("/", "~")
 
@@ -60,7 +60,7 @@ class ApifyClient:
     def _compact(params: Dict[str, Any]) -> Dict[str, Any]:
         return {k: v for k, v in params.items() if v is not None}
 
-    # --- catalogue ----------------------------------------------------------
+    # --- catalog ------------------------------------------------------------
 
     def store_search(
         self,
@@ -70,16 +70,16 @@ class ApifyClient:
         category: Optional[str] = None,
         sort_by: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """GET /store — cherche un actor public dans le Store Apify.
+        """GET /store — search for a public actor in the Apify Store.
 
         Args:
-            search: termes libres (ex. "google maps reviews", "linkedin profile").
-            category: catégorie du Store (ex. "ECOMMERCE", "SOCIAL_MEDIA").
+            search: free terms (e.g. "google maps reviews", "linkedin profile").
+            category: Store category (e.g. "ECOMMERCE", "SOCIAL_MEDIA").
             sort_by: `"relevance"` | `"popularity"` | `"newest"` | `"lastUpdate"`.
 
         Returns: `{data: {items: [{id, name, username, title, description, stats,
-            pricingInfos, …}], total, …}}`. L'identifiant à lancer est
-            `username/name` (ou `id`).
+            pricingInfos, …}], total, …}}`. The identifier to run is
+            `username/name` (or `id`).
         """
         params = self._compact({
             "search": search, "limit": limit, "offset": offset,
@@ -89,18 +89,18 @@ class ApifyClient:
 
     def actors(self, limit: int = 50, offset: Optional[int] = None,
                desc: Optional[bool] = None) -> Dict[str, Any]:
-        """GET /actors — les actors du compte (les siens, pas le Store public)."""
+        """GET /actors — the account's actors (its own, not the public Store)."""
         params = self._compact({"limit": limit, "offset": offset,
                                 "desc": 1 if desc else None})
         return self._request("GET", "/actors", params=params)
 
     def actor(self, actor_id: str) -> Dict[str, Any]:
-        """GET /actors/{id} — fiche d'un actor : builds, `defaultRunOptions`
-        (mémoire et timeout par défaut), versions. À lire avant un premier
-        lancement pour dimensionner `memory_mbytes`/`timeout_secs`."""
+        """GET /actors/{id} — an actor's card: builds, `defaultRunOptions`
+        (default memory and timeout), versions. Read it before a first
+        launch to size `memory_mbytes`/`timeout_secs`."""
         return self._request("GET", f"/actors/{self._actor_path_id(actor_id)}")
 
-    # --- exécution ----------------------------------------------------------
+    # --- execution ----------------------------------------------------------
 
     def run_sync_dataset_items(
         self,
@@ -116,21 +116,21 @@ class ApifyClient:
         build: Optional[str] = None,
         timeout: int = 310,
     ) -> Any:
-        """POST /actors/{id}/run-sync-get-dataset-items — lance ET rend les résultats.
+        """POST /actors/{id}/run-sync-get-dataset-items — launches AND returns the results.
 
-        Le chemin nominal : un seul appel, les items du dataset en retour. L'API
-        **coupe à 300 s** (408 au-delà) — pour un scraping long, passer par `run()`
-        puis `run_status()`/`dataset_items()`.
+        The nominal path: a single call, the dataset items coming back. The API
+        **cuts off at 300 s** (408 beyond) — for a long scrape, go through `run()`
+        then `run_status()`/`dataset_items()`.
 
         Args:
-            run_input: JSON d'entrée de l'actor (ses champs sont propres à chaque
-                actor — voir sa fiche du Store).
-            max_items: plafond d'items FACTURÉS (actors pay-per-result).
-            limit / offset / fields: pagination et projection de la sortie.
-            timeout_secs / memory_mbytes: budget d'exécution côté Apify.
-            max_total_charge_usd: plafond de coût du run.
+            run_input: the actor's input JSON (its fields are specific to each
+                actor — see its Store page).
+            max_items: cap on BILLED items (pay-per-result actors).
+            limit / offset / fields: pagination and projection of the output.
+            timeout_secs / memory_mbytes: run budget on Apify's side.
+            max_total_charge_usd: cost ceiling for the run.
 
-        Returns: la LISTE des items du dataset (pas une enveloppe `{data: …}`).
+        Returns: the LIST of dataset items (not a `{data: …}` envelope).
         """
         params = self._compact({
             "maxItems": max_items, "limit": limit, "offset": offset,
@@ -155,14 +155,14 @@ class ApifyClient:
         wait_for_finish: Optional[int] = None,
         timeout: int = 90,
     ) -> Dict[str, Any]:
-        """POST /actors/{id}/runs — lance un actor SANS attendre sa fin.
+        """POST /actors/{id}/runs — launch an actor WITHOUT waiting for it to finish.
 
         Args:
-            wait_for_finish: secondes d'attente max avant de rendre la main (≤60) —
-                pratique pour capter un run très court sans repoller.
+            wait_for_finish: max seconds to wait before handing control back (≤60) —
+                handy to catch a very short run without re-polling.
 
         Returns: `{data: {id, actId, status, defaultDatasetId, startedAt, …}}` —
-            `id` pour `run_status`, `defaultDatasetId` pour `dataset_items`.
+            `id` for `run_status`, `defaultDatasetId` for `dataset_items`.
         """
         params = self._compact({
             "maxItems": max_items, "timeout": timeout_secs, "memory": memory_mbytes,
@@ -176,21 +176,21 @@ class ApifyClient:
 
     def run_status(self, run_id: str, wait_for_finish: Optional[int] = None,
                    timeout: int = 90) -> Dict[str, Any]:
-        """GET /actor-runs/{id} — état d'un run.
+        """GET /actor-runs/{id} — a run's state.
 
-        `status` ∈ READY, RUNNING, SUCCEEDED, FAILED, TIMED-OUT, ABORTED. La
-        réponse porte `defaultDatasetId` (où lire la sortie) et `usageTotalUsd`
-        (ce que le run a coûté).
+        `status` ∈ READY, RUNNING, SUCCEEDED, FAILED, TIMED-OUT, ABORTED. The
+        response carries `defaultDatasetId` (where to read the output) and `usageTotalUsd`
+        (what the run cost).
         """
         params = self._compact({"waitForFinish": wait_for_finish})
         return self._request("GET", f"/actor-runs/{run_id}", params=params, timeout=timeout)
 
     def abort_run(self, run_id: str, gracefully: Optional[bool] = None) -> Dict[str, Any]:
-        """POST /actor-runs/{id}/abort — arrête un run (stoppe la facturation)."""
+        """POST /actor-runs/{id}/abort — stop a run (stops billing)."""
         params = self._compact({"gracefully": "true" if gracefully else None})
         return self._request("POST", f"/actor-runs/{run_id}/abort", params=params)
 
-    # --- sortie -------------------------------------------------------------
+    # --- output -------------------------------------------------------------
 
     def dataset_items(
         self,
@@ -203,15 +203,15 @@ class ApifyClient:
         clean: Optional[bool] = None,
         timeout: int = 120,
     ) -> Any:
-        """GET /datasets/{id}/items — les résultats produits par un run.
+        """GET /datasets/{id}/items — the results produced by a run.
 
         Args:
-            dataset_id: `defaultDatasetId` du run.
-            fields / omit: projection (utile — certains actors rendent des objets
-                très larges).
-            clean: écarter les items vides / masqués.
+            dataset_id: the run's `defaultDatasetId`.
+            fields / omit: projection (useful — some actors return very wide
+                objects).
+            clean: drop empty / hidden items.
 
-        Returns: la LISTE des items (format JSON).
+        Returns: the LIST of items (JSON format).
         """
         params = self._compact({
             "limit": limit, "offset": offset,

@@ -1,8 +1,8 @@
-"""SireneClient — logique dans la lib partagée france-opendata (source unique).
+"""SireneClient — logic in the shared france-opendata lib (single source).
 
-Variante oto : la clé est toujours fournie par le consommateur. Le client amont
-se replie sur l'environnement du process quand une clé manque ; ce repli est
-neutralisé ici, la lib ne lit aucun secret.
+oto variant: the key is always supplied by the consumer. The upstream client
+falls back to the process environment when a key is missing; that fallback is
+neutralized here, the lib reads no secret.
 """
 from france_opendata.sirene import SireneClient as _BaseSireneClient, EMPLOYEE_RANGES
 

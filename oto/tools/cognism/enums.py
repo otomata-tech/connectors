@@ -1,26 +1,26 @@
 """
 Cognism Search API — allow-lists for closed-set filter fields.
 
-Ces valeurs sont copiées verbatim de la doc Cognism (developers.cognism.com,
-endpoint Search Contacts) — PAS dérivées d'un endpoint Filter API dynamique
-(celles-là — regions/countries/states/industries/sic/isic/naics/technologies/
-skills/companySizes — restent volontairement absentes d'ici : elles sont
-longues et évoluent côté Cognism, donc consommées en live via
-`CognismClient.filter_values(kind)`, jamais figées dans ce module).
+These values are copied verbatim from the Cognism docs (developers.cognism.com,
+Search Contacts endpoint) — NOT derived from a dynamic Filter API endpoint
+(those — regions/countries/states/industries/sic/isic/naics/technologies/
+skills/companySizes — are deliberately absent from here: they are
+long and evolve on Cognism's side, so they are consumed live via
+`CognismClient.filter_values(kind)`, never frozen in this module).
 
-But : transformer un enum typo (le mode d'échec le plus probable et le plus
-sournois avec une DSL à ~150 champs — l'API répond 200 avec une page vide,
-pas une erreur) en `ValueError` explicite AVANT l'appel réseau, plutôt que de
-laisser filer une requête qui « marche » mais ne matche jamais rien.
+Goal: turn an enum typo (the most likely and sneakiest failure mode
+with a ~150-field DSL — the API answers 200 with an empty page,
+not an error) into an explicit `ValueError` BEFORE the network call, rather than
+letting through a request that "works" but never matches anything.
 
-⚠️ Piège de nesting : les champs côté "société" (types/fundingEvent/
-hiringEvent/accountSearchOptions) vivent sous `account.*` dans le body de
-`search_contacts` (le contact est la racine, la société est imbriquée), mais
-à la RACINE (sans préfixe `account.`) dans le body de `search_accounts` (la
-société EST la racine, là). Même noms de champs, profondeur différente selon
-l'endpoint → deux tables de chemins (`_CONTACT_ENUM_FIELDS` /
-`_ACCOUNT_ENUM_FIELDS`), pas une seule, pour ne pas valider au mauvais niveau
-et laisser filer une valeur invalide côté `search_accounts`.
+⚠️ Nesting trap: the "account"-side fields (types/fundingEvent/
+hiringEvent/accountSearchOptions) live under `account.*` in the `search_contacts`
+body (the contact is the root, the account is nested), but
+at the ROOT (without the `account.` prefix) in the `search_accounts` body (the
+account IS the root, there). Same field names, different depth depending on the
+endpoint → two path tables (`_CONTACT_ENUM_FIELDS` /
+`_ACCOUNT_ENUM_FIELDS`), not a single one, so as not to validate at the wrong level
+and let an invalid value through on the `search_accounts` side.
 """
 from __future__ import annotations
 
@@ -67,9 +67,9 @@ EXISTS_MISSING = {"exists", "missing"}
 LOCATION_TYPE = {"ALL", "HQ"}
 AND_OR = {"AND", "OR"}
 
-# Champs "société" — mêmes noms, préfixés `account.` dans search_contacts,
-# à la racine dans search_accounts. Générés une seule fois pour éviter la
-# dérive entre les deux tables.
+# "Account" fields — same names, prefixed `account.` in search_contacts,
+# at the root in search_accounts. Generated once to avoid
+# drift between the two tables.
 _ACCOUNT_SIDE_FIELDS: Dict[str, set] = {
     "types": ACCOUNT_TYPES,
     "fundingEvent.fundingType": FUNDING_TYPES,
@@ -83,8 +83,8 @@ _ACCOUNT_SIDE_FIELDS: Dict[str, set] = {
     "accountSearchOptions.operators.excludedTechnologies": AND_OR,
 }
 
-# search_contacts : champs contact à la racine + champs société sous `account.`
-# + les 3 champs fermés dupliqués sous `previousAccounts.*` (sociétés passées).
+# search_contacts: contact fields at the root + account fields under `account.`
+# + the 3 closed fields duplicated under `previousAccounts.*` (past accounts).
 _CONTACT_ENUM_FIELDS: Dict[str, set] = {
     "seniority": SENIORITY,
     "jobFunctions": JOB_FUNCTIONS,
@@ -96,16 +96,16 @@ _CONTACT_ENUM_FIELDS: Dict[str, set] = {
     **{f"account.{k}": v for k, v in _ACCOUNT_SIDE_FIELDS.items()},
 }
 
-# search_accounts : les champs société sont à la racine (pas de préfixe
-# `account.` — l'objet racine EST déjà le filtre société).
+# search_accounts: account fields are at the root (no `account.`
+# prefix — the root object IS already the account filter).
 _ACCOUNT_ENUM_FIELDS: Dict[str, set] = dict(_ACCOUNT_SIDE_FIELDS)
 
 _MISSING = object()
 
 
 def _dig(obj: Any, path: list[str]):
-    """Descend un dot-path dans un dict imbriqué. Renvoie _MISSING si un
-    segment n'existe pas (dict absent ou pas un dict)."""
+    """Walk down a dot-path in a nested dict. Returns _MISSING if a
+    segment does not exist (absent dict or not a dict)."""
     cur = obj
     for seg in path:
         if not isinstance(cur, dict) or seg not in cur:
@@ -115,16 +115,16 @@ def _dig(obj: Any, path: list[str]):
 
 
 def validate_enum_filters(filters: Dict[str, Any] | None, *, scope: str = "contact") -> None:
-    """Valide les champs à valeurs fermées d'un dict de filtres Cognism.
-    Lève `ValueError` avec le champ, la valeur fautive et les valeurs
-    autorisées si une valeur hors liste est trouvée. Ne valide PAS les
-    champs absents (tous optionnels) ni les listes dynamiques
-    (regions/countries/.../technologies) — voir docstring module.
+    """Validate the closed-value fields of a Cognism filters dict.
+    Raises `ValueError` with the field, the offending value and the allowed
+    values if an out-of-list value is found. Does NOT validate absent
+    fields (all optional) nor the dynamic lists
+    (regions/countries/.../technologies) — see module docstring.
 
     Args:
-        scope: `"contact"` pour un body `search_contacts` (fields société
-            sous `account.*`), `"account"` pour un body `search_accounts`
-            (fields société à la racine, pas de préfixe).
+        scope: `"contact"` for a `search_contacts` body (account fields
+            under `account.*`), `"account"` for a `search_accounts` body
+            (account fields at the root, no prefix).
     """
     if not filters:
         return

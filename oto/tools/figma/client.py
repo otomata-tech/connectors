@@ -15,7 +15,7 @@ import requests
 from ..common.local_dirs import get_cache_dir
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
 class FigmaClient:

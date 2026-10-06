@@ -1,44 +1,44 @@
-"""Constantes du connecteur GitHub — en-têtes, bornes, énumérations.
+"""GitHub connector constants — headers, bounds, enumerations.
 
-Domicile unique : `client.py` les réexporte via son `__all__`, et les mixins de
-`_api/` les importent d'ici. Le backend épingle oto-core par tag et n'importe que
+Single home: `client.py` re-exports them via its `__all__`, and the mixins in
+`_api/` import them from here. The backend pins oto-core by tag and only imports
 `oto.tools.github.client`.
 """
 from __future__ import annotations
 
-# (connexion, lecture) — aucune attente illimitée. La lecture est large : un
-# `compare_commits` sur un gros dépôt, ou un téléchargement de logs de job,
-# prennent leur temps.
+# (connect, read) — no unbounded wait. The read timeout is generous: a
+# `compare_commits` on a big repository, or a job log download,
+# takes its time.
 HTTP_TIMEOUT = (10, 90)
 
 DEFAULT_BASE_URL = "https://api.github.com"
 
-#: Type de média attendu par la quasi-totalité des endpoints REST.
+#: Media type expected by almost all REST endpoints.
 DEFAULT_ACCEPT = "application/vnd.github+json"
 
-#: Version d'API envoyée à CHAQUE requête. Épinglée ici, jamais recopiée sur un
-#: site d'appel : GitHub date ses versions et en retirera d'anciennes, et il doit
-#: y avoir UN endroit à changer.
+#: API version sent on EVERY request. Pinned here, never copied to a
+#: call site: GitHub dates its versions and will retire old ones, and there must
+#: be ONE place to change.
 DEFAULT_API_VERSION = "2022-11-28"
 
-# ⚠️ `per_page` PLAFONNE À 100, et GitHub **rabote en silence** au-delà : pas
-# d'erreur, juste moins de lignes que demandé. C'est le piège nº 1 de cette API —
-# un appelant qui demande 500 croit tout avoir et n'a que les 100 premiers. D'où
-# un refus LOCAL, qui nomme la borne au lieu de la subir.
+# ⚠️ `per_page` CAPS AT 100, and GitHub **silently trims** anything above: no
+# error, just fewer rows than requested. This is trap no. 1 of this API —
+# a caller asking for 500 believes it has everything and only has the first 100. Hence
+# a LOCAL refusal, which names the limit instead of suffering it.
 MIN_PER_PAGE, MAX_PER_PAGE = 1, 100
 DEFAULT_PER_PAGE = 30
 
-#: La recherche a son propre plafond, plus bas, et un total borné à 1 000
-#: résultats quelle que soit la pagination.
+#: Search has its own, lower cap, and a total bounded to 1,000
+#: results regardless of pagination.
 SEARCH_MAX_RESULTS = 1000
 
-# Statuts retentés. GitHub a DEUX limites : la primaire (en-têtes
-# `x-ratelimit-*`, 403 ou 429) et une limite « secondaire » anti-abus, qui
-# répond aussi 403/429 et porte souvent `Retry-After`. Les deux se retentent.
+# Retried statuses. GitHub has TWO limits: the primary one (`x-ratelimit-*`
+# headers, 403 or 429) and an anti-abuse "secondary" limit, which
+# also answers 403/429 and often carries `Retry-After`. Both are retried.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_ATTEMPTS = 3
 
-# --- énumérations -----------------------------------------------------------
+# --- enumerations -----------------------------------------------------------
 
 ISSUE_STATES = ("open", "closed", "all")
 ISSUE_STATE_WRITES = ("open", "closed")
@@ -48,9 +48,9 @@ ISSUE_SORTS = ("created", "updated", "comments")
 PULL_STATES = ("open", "closed", "all")
 PULL_SORTS = ("created", "updated", "popularity", "long-running")
 
-#: ⚠️ `merge` fabrique un commit de fusion, `squash` écrase l'historique de la
-#: branche en un seul commit, `rebase` réécrit les commits. Les trois modifient
-#: la branche cible de façon différente, et aucun n'est annulable d'un clic.
+#: ⚠️ `merge` creates a merge commit, `squash` squashes the branch's history
+#: into a single commit, `rebase` rewrites the commits. All three change
+#: the target branch differently, and none can be undone with one click.
 MERGE_METHODS = ("merge", "squash", "rebase")
 
 REVIEW_EVENTS = ("APPROVE", "REQUEST_CHANGES", "COMMENT")
@@ -69,7 +69,7 @@ MEMBERSHIP_ROLES = ("admin", "member")
 MEMBER_FILTERS = ("2fa_disabled", "all")
 TEAM_ROLES = ("member", "maintainer")
 
-#: Permissions posables sur un collaborateur de dépôt.
+#: Permissions that can be set on a repository collaborator.
 COLLABORATOR_PERMISSIONS = ("pull", "triage", "push", "maintain", "admin")
 
 SEARCH_CODE_SORTS = ("indexed",)

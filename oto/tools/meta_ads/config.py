@@ -1,41 +1,41 @@
-"""Où l'on tape chez Meta, et sous quelle identité d'application.
+"""Where we call Meta, and under which application identity.
 
-Même partage qu'`instagram_meta` : les ADRESSES publiques de la Marketing API
-restent ici ; l'IDENTITÉ de l'application (App ID, secret, configuration Facebook
-Login for Business) est fournie par l'appelant, sans défaut — ce dépôt est public,
-et une application Meta appartient à qui l'a créée.
+Same split as `instagram_meta`: the public ADDRESSES of the Marketing API
+stay here; the application IDENTITY (App ID, secret, Facebook
+Login for Business configuration) is supplied by the caller, with no default — this repo is public,
+and a Meta application belongs to whoever created it.
 
-Le client de DONNÉES n'a besoin que du jeton : `MetaAdsApp` ne sert qu'à
-l'échange du code (`oauth.py`).
+The DATA client only needs the token: `MetaAdsApp` is only used for
+the code exchange (`oauth.py`).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
-#: Version de la Graph API — celle des exemples de Facebook Login for Business.
+#: Graph API version — the one in the Facebook Login for Business examples.
 GRAPH_API_VERSION = "v25.0"
 
 GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
-#: Le dialogue Facebook Login for Business. ⚠️ Il prend un `config_id`, PAS de
-#: `scope` : les permissions (`ads_read`, `business_management`) et le TYPE de jeton
-#: émis sont fixés dans la configuration créée côté application Meta.
+#: The Facebook Login for Business dialog. ⚠️ It takes a `config_id`, NOT a
+#: `scope`: the permissions (`ads_read`, `business_management`) and the TYPE of token
+#: issued are fixed in the configuration created on the Meta application side.
 DIALOG_URL = f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth"
 
-#: Échange du code contre un jeton.
+#: Exchange the code for a token.
 TOKEN_URL = f"{GRAPH_API_BASE}/oauth/access_token"
 
-#: Borne de chaque appel HTTP sortant.
+#: Limit on each outgoing HTTP call.
 HTTP_TIMEOUT = 30.0
 
-#: Niveaux de l'arbre publicitaire, et l'arête qui les liste sous un compte.
+#: Levels of the ad tree, and the edge that lists them under an account.
 LEVELS: dict[str, str] = {
     "campaign": "campaigns",
     "adset": "adsets",
     "ad": "ads",
 }
 
-#: Champs rendus par défaut, par niveau — une vue courte ; `fields` les remplace.
+#: Fields returned by default, per level — a short view; `fields` replaces them.
 DEFAULT_FIELDS: dict[str, str] = {
     "campaign": "id,name,status,effective_status,objective,daily_budget,"
                 "lifetime_budget,start_time,stop_time,created_time",
@@ -48,23 +48,23 @@ DEFAULT_FIELDS: dict[str, str] = {
 AD_ACCOUNT_FIELDS = ("id,account_id,name,account_status,currency,timezone_name,"
                      "amount_spent,business{id,name}")
 
-#: Métriques d'insights demandées quand l'appelant n'en choisit pas.
+#: Insight metrics requested when the caller picks none.
 DEFAULT_INSIGHT_FIELDS = ("spend,impressions,reach,frequency,clicks,cpc,cpm,ctr,"
                           "actions,cost_per_action_type")
 
-#: Fenêtre d'attribution par défaut du GET /insights chez Meta.
+#: Default attribution window of Meta's GET /insights.
 DEFAULT_ATTRIBUTION_WINDOWS = ("7d_click", "1d_view")
 
-#: Niveaux d'agrégation acceptés par `/insights`.
+#: Aggregation levels accepted by `/insights`.
 INSIGHT_LEVELS = ("account", "campaign", "adset", "ad")
 
 
 @dataclass(frozen=True)
 class MetaAdsApp:
-    """L'application Meta au nom de laquelle on demande le consentement.
+    """The Meta application on whose behalf consent is requested.
 
-    `config_id` = la configuration Facebook Login for Business (permissions + type
-    de jeton). `app_secret` est un VRAI secret : il n'apparaît dans aucun message.
+    `config_id` = the Facebook Login for Business configuration (permissions + token
+    type). `app_secret` is a REAL secret: it appears in no message.
     """
 
     app_id: str
@@ -72,8 +72,8 @@ class MetaAdsApp:
     config_id: str
 
     def __post_init__(self) -> None:
-        # Un champ vide lève ICI : plus tard, Meta rendrait un refus qu'on lirait
-        # comme « l'utilisatrice n'a pas autorisé ».
+        # An empty field raises HERE: later, Meta would return a refusal that we'd read
+        # as "the user did not authorize".
         vides = [f.name for f in fields(self) if not str(getattr(self, f.name)).strip()]
         if vides:
             raise ValueError(

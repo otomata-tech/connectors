@@ -2,13 +2,12 @@
 """
 Google Slides API client for generating presentations
 
-Structure du package (découpage 2026-08-27, surface publique INCHANGÉE) :
-`slides_client.py` porte la classe `SlidesClient` — résolution des
-credentials et construction des services — et compose les familles
-d'opérations de `_api/` (présentations & Drive, layouts, styles de texte,
-édition de texte, images, copie de slides). Les helpers de mise en forme
-vivent dans `markup.py` et restent **réexportés ici** : `slides_client` est
-le chemin d'import du connecteur.
+Package structure (split of 2026-08-27, public surface UNCHANGED):
+`slides_client.py` holds the `SlidesClient` class — credential resolution
+and service construction — and composes the operation families of `_api/`
+(presentations & Drive, layouts, text styles, text editing, images, slide
+copying). The formatting helpers live in `markup.py` and stay **re-exported
+here**: `slides_client` is the connector's import path.
 """
 import os
 import json
@@ -27,8 +26,8 @@ from ._api import (
 )
 from .markup import _hex_to_rgb, parse_bold_markdown
 
-# Surface figée : `parse_bold_markdown` / `_hex_to_rgb` restent importables
-# depuis ce module, comme avant le découpage.
+# Frozen surface: `parse_bold_markdown` / `_hex_to_rgb` stay importable
+# from this module, as before the split.
 __all__ = ["SlidesClient", "parse_bold_markdown", "_hex_to_rgb"]
 
 
@@ -51,12 +50,12 @@ class SlidesClient(
         """
         Initialize Slides client.
 
-        Les credentials sont fournis par le consommateur, l'un ou l'autre :
-        1. `credentials` — objet credentials Google (OAuth utilisateur, pour
-           manipuler le Drive personnel d'un utilisateur) ; prioritaire.
-        2. `credentials_json` (chemin ou chaîne JSON) — service account.
-        Aucun des deux → `MissingCredential('GOOGLE_CREDENTIALS')`. La lib ne
-        lit aucune variable d'environnement.
+        Credentials are supplied by the consumer, either one:
+        1. `credentials` — Google credentials object (user OAuth, to work on
+           a user's personal Drive); takes priority.
+        2. `credentials_json` (path or JSON string) — service account.
+        Neither → `MissingCredential('GOOGLE_CREDENTIALS')`. The lib reads no
+        environment variable.
 
         Args:
             credentials_json: Path to service account JSON or JSON string

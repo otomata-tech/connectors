@@ -1,14 +1,14 @@
-"""Zones géographiques OEWS — du nom lisible au code de zone BLS (7 caractères).
+"""OEWS geographic areas — from the readable name to the BLS area code (7 characters).
 
-Trois types de zone, chacun avec sa lettre dans l'identifiant de série :
-- `N` national : `0000000` ;
-- `S` État : FIPS sur 2 chiffres + `00000` (Illinois → `1700000`) ;
-- `M` aire métropolitaine : `00` + code CBSA sur 5 chiffres (Chicago-Naperville-Elgin
+Three area types, each with its letter in the series identifier:
+- `N` national: `0000000`;
+- `S` State: 2-digit FIPS + `00000` (Illinois → `1700000`);
+- `M` metropolitan area: `00` + 5-digit CBSA code (Chicago-Naperville-Elgin
   → `0016980`).
 
-Les États se résolvent par nom ou abréviation postale (table statique : les codes
-FIPS ne bougent pas). Les aires métropolitaines se passent **par code CBSA** : leur
-liste change à chaque redélimitation de l'OMB, elle ne s'embarque pas ici.
+States are resolved by name or postal abbreviation (static table: FIPS codes
+do not move). Metropolitan areas are passed **by CBSA code**: their
+list changes with every OMB redelineation, it is not embedded here.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Dict
 
 NATIONAL_CODE = "0000000"
 
-# (FIPS, abréviation postale, nom) — 50 États, DC et les territoires couverts par l'OEWS.
+# (FIPS, postal abbreviation, name) — 50 States, DC and the territories covered by the OEWS.
 _STATES = (
     ("01", "AL", "Alabama"), ("02", "AK", "Alaska"), ("04", "AZ", "Arizona"),
     ("05", "AR", "Arkansas"), ("06", "CA", "California"), ("08", "CO", "Colorado"),
@@ -55,19 +55,19 @@ _STATE_INDEX["washington dc"] = _STATE_INDEX["washington, dc"] = _STATE_INDEX["d
 
 
 def resolve_area(value: str) -> Dict[str, str]:
-    """Résout une zone saisie → `{"area_type", "area_code", "area"}`.
+    """Resolves an entered area → `{"area_type", "area_code", "area"}`.
 
-    Accepte `"US"` (ou `"national"`), un nom d'État ou son abréviation postale
-    (`"Illinois"`, `"IL"`), ou un **code CBSA à 5 chiffres** pour une aire
-    métropolitaine (`"16980"`). Un nom d'aire métropolitaine n'est pas résolu :
-    passer son code CBSA.
+    Accepts `"US"` (or `"national"`), a State name or its postal abbreviation
+    (`"Illinois"`, `"IL"`), or a **5-digit CBSA code** for a metropolitan
+    area (`"16980"`). A metropolitan area name is not resolved: pass its
+    CBSA code.
 
-    Lève `ValueError` sur une zone non reconnue.
+    Raises `ValueError` on an unrecognized area.
     """
     raw = str(value or "").strip()
     if not raw:
-        raise ValueError("zone vide — attendu 'US', un État (nom ou abréviation) "
-                         "ou un code CBSA à 5 chiffres")
+        raise ValueError("empty area — expected 'US', a State (name or abbreviation) "
+                         "or a 5-digit CBSA code")
     k = _key(raw)
     if k in _NATIONAL_ALIASES:
         return {"area_type": "N", "area_code": NATIONAL_CODE, "area": "US"}
@@ -77,6 +77,6 @@ def resolve_area(value: str) -> Dict[str, str]:
     if re.fullmatch(r"\d{5}", raw):
         return {"area_type": "M", "area_code": f"00{raw}", "area": f"CBSA {raw}"}
     raise ValueError(
-        f"zone non reconnue : {value!r} — attendu 'US', un État des États-Unis (nom "
-        "ou abréviation postale) ou le code CBSA à 5 chiffres d'une aire "
-        "métropolitaine (les noms d'aires métropolitaines ne sont pas résolus)")
+        f"unrecognized area: {value!r} — expected 'US', a US State (name "
+        "or postal abbreviation) or the 5-digit CBSA code of a "
+        "metropolitan area (metropolitan area names are not resolved)")

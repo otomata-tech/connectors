@@ -1,12 +1,12 @@
-"""Le client de DONNÉES — comptes publicitaires, arbre campagne → ad set → pub,
-insights. LECTURE SEULE.
+"""The DATA client — ad accounts, campaign → ad set → ad tree,
+insights. READ-ONLY.
 
-Il ne connaît que le jeton. Synchrone, comme le reste de la lib.
+It only knows the token. Synchronous, like the rest of the lib.
 
-Le brut de Meta est rendu tel quel ; la seule mise en forme est la pagination,
-ramenée à `{data, next_cursor}` — le curseur `paging.cursors.after` n'a de sens
-que s'il y a une page suivante (`paging.next`), et le rendre sinon ferait boucler
-un appelant sur une page vide.
+Meta's raw output is returned as is; the only shaping is pagination,
+reduced to `{data, next_cursor}` — the `paging.cursors.after` cursor only makes sense
+if there is a next page (`paging.next`), and returning it otherwise would make
+a caller loop on an empty page.
 """
 from __future__ import annotations
 
@@ -29,14 +29,14 @@ from .config import (
 )
 from .errors import MetaAdsApiError
 
-#: Code Graph « champ ou arête inexistant sur ce nœud ».
+#: Graph code "field or edge does not exist on this node".
 _CODE_ARETE_INCONNUE = 100
 
 
-#: Ce qu'un identifiant Graph peut être, ici : des chiffres (objet, rapport), ou
-#: `act_` + des chiffres (compte publicitaire). Rien d'autre ne va dans un chemin :
-#: un `/`, un `?` ou un `..` y viserait un AUTRE nœud ou une autre arête — avec le
-#: droit `business_management`, une écriture sur le portefeuille du client.
+#: What a Graph identifier can be, here: digits (object, report), or
+#: `act_` + digits (ad account). Nothing else goes in a path:
+#: a `/`, a `?` or a `..` would target ANOTHER node or edge — with the
+#: `business_management` right, a write on the client's portfolio.
 _ID_COMPTE = re.compile(r"^(act_)?\d+$")
 _ID_NUMERIQUE = re.compile(r"^\d+$")
 
@@ -51,21 +51,21 @@ def _verifier(valeur: Any, motif: re.Pattern, nom: str, forme: str) -> str:
 
 
 def ad_account_id(valeur: str) -> str:
-    """`act_<id>` — Graph exige le préfixe sur un compte publicitaire, et un id nu
-    y désignerait un AUTRE nœud (refus opaque « unsupported get request »)."""
+    """`act_<id>` — Graph requires the prefix on an ad account, and a bare id
+    would designate ANOTHER node (opaque "unsupported get request" refusal)."""
     v = _verifier(valeur, _ID_COMPTE, "ad_account_id",
                   "digits, optionally prefixed by act_")
     return v if v.startswith("act_") else f"act_{v}"
 
 
 def objet_id(valeur: str) -> str:
-    """Un objet de l'arbre (campagne, ad set, pub) ou un compte (`act_<id>`)."""
+    """An object of the tree (campaign, ad set, ad) or an account (`act_<id>`)."""
     return _verifier(valeur, _ID_COMPTE, "object_id",
                      "digits (a campaign, ad set or ad id) or act_<digits>")
 
 
 def rapport_id(valeur: str) -> str:
-    """Un rapport d'insights asynchrone : des chiffres seulement."""
+    """An async insights report: digits only."""
     return _verifier(valeur, _ID_NUMERIQUE, "report_run_id", "digits")
 
 
@@ -76,7 +76,7 @@ def _page(payload: dict) -> dict:
 
 
 def _json(valeur: Any) -> Optional[str]:
-    """Graph attend les paramètres structurés (`time_range`, `filtering`) en JSON."""
+    """Graph expects structured parameters (`time_range`, `filtering`) as JSON."""
     if valeur is None or isinstance(valeur, str):
         return valeur
     return json.dumps(valeur, separators=(",", ":"))
@@ -93,7 +93,7 @@ def _sans_vides(params: dict) -> dict:
 
 
 class MetaAdsClient:
-    """Lecture seule sur les comptes publicitaires que le jeton atteint."""
+    """Read-only on the ad accounts the token reaches."""
 
     def __init__(self, access_token: str, *,
                  session: Optional[requests.Session] = None):
@@ -104,8 +104,8 @@ class MetaAdsClient:
         self._http = session or requests
 
     def _entetes(self) -> dict:
-        # Le jeton part en en-tête, jamais dans l'URL : une URL finit dans les
-        # journaux et les messages d'exception.
+        # The token goes in a header, never in the URL: a URL ends up in the
+        # logs and exception messages.
         return {"Authorization": f"Bearer {self.access_token}"}
 
     def _get(self, chemin: str, geste: str, **params: Any) -> dict:
@@ -120,15 +120,15 @@ class MetaAdsClient:
                             timeout=HTTP_TIMEOUT)
         return _transport.lire(r, geste)
 
-    # --- comptes ---------------------------------------------------------------
+    # --- accounts -------------------------------------------------------------
 
     def list_ad_accounts(self, limit: int = 50, after: Optional[str] = None,
                          fields: Optional[str] = None) -> dict:
-        """Les comptes publicitaires que ce jeton atteint.
+        """The ad accounts this token reaches.
 
-        Jeton utilisateur → arête `adaccounts` ; jeton d'utilisateur SYSTÈME (BISU)
-        → `assigned_ad_accounts`. On essaie la première, et Graph répond code 100
-        sur le mauvais type de nœud : on bascule alors sur l'autre."""
+        User token → `adaccounts` edge; SYSTEM user token (BISU)
+        → `assigned_ad_accounts`. We try the first, and Graph answers code 100
+        on the wrong node type: we then switch to the other."""
         fields = fields or AD_ACCOUNT_FIELDS
         try:
             res = self._get("me/adaccounts", "listing ad accounts",
@@ -140,14 +140,14 @@ class MetaAdsClient:
                             fields=fields, limit=limit, after=after)
         return _page(res)
 
-    # --- l'arbre publicitaire ---------------------------------------------------
+    # --- the ad tree ---------------------------------------------------
 
     def list_objects(self, ad_account: str, level: str, *,
                      fields: Optional[str] = None,
                      effective_status: Optional[list[str]] = None,
                      filtering: Optional[list[dict]] = None,
                      limit: int = 50, after: Optional[str] = None) -> dict:
-        """Campagnes, ad sets ou pubs d'un compte."""
+        """Campaigns, ad sets or ads of an account."""
         arete = LEVELS.get(level)
         if not arete:
             raise ValueError(f"level must be one of {', '.join(LEVELS)}.")
@@ -158,7 +158,7 @@ class MetaAdsClient:
         return _page(res)
 
     def get_object(self, object_id: str, fields: Optional[str] = None) -> dict:
-        """Un objet (campagne, ad set, pub, compte) par son id."""
+        """An object (campaign, ad set, ad, account) by its id."""
         return self._get(objet_id(object_id), "reading the object",
                          fields=fields)
 
@@ -192,7 +192,7 @@ class MetaAdsClient:
                      filtering: Optional[list[dict]] = None,
                      sort: Optional[list[str]] = None,
                      limit: int = 100, after: Optional[str] = None) -> dict:
-        """Insights SYNCHRONES. Pour un gros volume, `start_insights_report`."""
+        """SYNCHRONOUS insights. For a large volume, `start_insights_report`."""
         params = self._insight_params(
             level=level, fields=fields, date_preset=date_preset,
             time_range=time_range, time_increment=time_increment,
@@ -211,11 +211,11 @@ class MetaAdsClient:
                               action_attribution_windows: Optional[list[str]] = None,
                               filtering: Optional[list[dict]] = None,
                               sort: Optional[list[str]] = None) -> str:
-        """Lance un rapport ASYNCHRONE ; rend son `report_run_id` (valable 30 jours).
+        """Start an ASYNCHRONOUS report; returns its `report_run_id` (valid 30 days).
 
-        ⚠️ Meta documente un défaut d'attribution DIFFÉRENT en POST (`7d_view,1d_click`)
-        de celui du GET (`7d_click,1d_view`) : on pose celui du GET explicitement,
-        sinon le même rapport donne deux chiffres selon le mode."""
+        ⚠️ Meta documents a DIFFERENT attribution default on POST (`7d_view,1d_click`)
+        than on GET (`7d_click,1d_view`): we set the GET one explicitly,
+        otherwise the same report gives two figures depending on the mode."""
         params = self._insight_params(
             level=level, fields=fields, date_preset=date_preset,
             time_range=time_range, time_increment=time_increment,
@@ -232,7 +232,7 @@ class MetaAdsClient:
         return str(run_id)
 
     def get_report_status(self, report_run_id: str) -> dict:
-        """`async_status` (« Job Completed », « Job Failed »…) et l'avancement."""
+        """`async_status` ("Job Completed", "Job Failed"…) and the progress."""
         return self._get(rapport_id(report_run_id),
                          "reading the report status",
                          fields="id,async_status,async_percent_completion,"

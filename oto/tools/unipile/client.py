@@ -1,50 +1,50 @@
 """Unipile API client — hosted LinkedIn search / scrape / messaging (API v2).
 
-Unipile maintient la session LinkedIn côté serveur (vrai Chrome + proxy
-résidentiel), ce qui contourne les deux contraintes du browser local : empreinte
-TLS et isolation de session (le cookie ne vit pas sur notre IP datacenter, donc
-n'expose ni ne déconnecte la session de l'utilisateur). Cf. oto-mcp#5.
+Unipile keeps the LinkedIn session server-side (real Chrome + residential
+proxy), which sidesteps the two constraints of the local browser: TLS
+fingerprint and session isolation (the cookie doesn't live on our datacenter IP,
+so it neither exposes nor disconnects the user's session). See oto-mcp#5.
 
 Requires: requests
 
-Paramètres, toujours fournis par le consommateur :
-- api_key    (requis) — clé X-API-KEY du compte Unipile
-- dsn        (def. api.unipile.com) — host de l'instance
-- account_id (optionnel) — sinon, 1er compte LINKEDIN connecté
+Parameters, always supplied by the consumer:
+- api_key    (required) — X-API-KEY of the Unipile account
+- dsn        (default api.unipile.com) — instance host
+- account_id (optional) — otherwise, the first connected LINKEDIN account
 
-Spécificités API v2 (par rapport à l'ancienne API v1, retirée) :
-- **base** : `https://{dsn}/v2`.
-- **`account_id` dans le PATH** (`/v2/{account_id}/…`), plus en query param — donc
-  ne fuite plus dans les query strings, mais peut apparaître dans une URL d'erreur
-  → on le **caviarde** dans les messages (`_sanitize`, feedback oto #178).
-- **enveloppe de liste** `{data, total_count, next_cursor}`. On **normalise** chaque
-  réponse de liste vers `items`/`cursor` EN PLUS de garder `data`/`next_cursor` →
-  l'aval oto-mcp (feed sync, wrappers, attendus de l'agent) reste stable.
-- **surface éclatée** : search people/companies séparés + par produit
-  (classic/recruiter/sales-navigator) ; invitations = `users/me/relation-requests` ;
-  attendees d'un fil = `participants` ; réactions de message sous le chat ;
-  solde InMail = `inmail-credits`.
+API v2 specifics (compared to the old, retired API v1):
+- **base**: `https://{dsn}/v2`.
+- **`account_id` in the PATH** (`/v2/{account_id}/…`), no longer a query param — so
+  it no longer leaks into query strings, but may appear in an error URL
+  → we **redact** it in messages (`_sanitize`, oto feedback #178).
+- **list envelope** `{data, total_count, next_cursor}`. We **normalize** every
+  list response to `items`/`cursor` IN ADDITION to keeping `data`/`next_cursor` →
+  the downstream oto-mcp (feed sync, wrappers, agent expectations) stays stable.
+- **split surface**: separate people/companies search + per product
+  (classic/recruiter/sales-navigator); invitations = `users/me/relation-requests`;
+  attendees of a thread = `participants`; message reactions under the chat;
+  InMail balance = `inmail-credits`.
 
-Fixes feedback fold-in (au-delà de l'API brute) :
-- **garde anti-mismatch** identifier↔réponse sur `get_profile`/`get_company`
-  (feedback #144-149/#153 : sous concurrence, l'API a rendu le profil d'un AUTRE
-  membre / un CompanyProfile à la place). On vérifie que l'objet rendu correspond
-  bien au type ET à l'identifiant demandés, sinon `UnipileError` **actionnable et
-  retryable** — jamais de donnée fausse renvoyée en silence.
-- **erreurs réseau propres** : les exceptions `requests` (DNS/timeout) sont mappées
-  en `UnipileError` stable au lieu de fuiter `net::ERR_NAME_NOT_RESOLVED` (#177).
-- **résolution de slug tolérante** sur `get_company` (#176) : un nom de marque
-  passé comme slug (`mooniz`) qui tombe en 404 est retenté via une recherche
-  société → `public_identifier` canonique (`mooniz1`) ; échec → 404 propre
-  enrichi des candidats proches, jamais l'erreur brute.
+Feedback fold-in fixes (beyond the raw API):
+- **anti-mismatch guard** identifier↔response on `get_profile`/`get_company`
+  (feedback #144-149/#153: under concurrency, the API returned the profile of ANOTHER
+  member / a CompanyProfile instead). We check that the returned object matches
+  both the type AND the requested identifier, otherwise an **actionable and
+  retryable** `UnipileError` — never wrong data returned silently.
+- **clean network errors**: `requests` exceptions (DNS/timeout) are mapped
+  to a stable `UnipileError` instead of leaking `net::ERR_NAME_NOT_RESOLVED` (#177).
+- **tolerant slug resolution** on `get_company` (#176): a brand name
+  passed as a slug (`mooniz`) that 404s is retried via a company
+  search → canonical `public_identifier` (`mooniz1`); on failure → clean 404
+  enriched with close candidates, never the raw error.
 
-Structure du package (découpage 2026-08-27, surface publique INCHANGÉE) :
-`client.py` porte la classe `UnipileClient` — construction, transport et
-normalisation — et compose les familles d'appels de `_api/` (comptes, recherche,
-profils, messagerie, réseau, contenu, premium). Les constantes/helpers vivent
-dans `const.py`, les erreurs dans `errors.py`, le parsing du feed dans `feed.py`
-— tous **réexportés ici**, car `oto.tools.unipile.client` est le chemin d'import
-que le backend et les tests utilisent.
+Package structure (split of 2026-08-27, public surface UNCHANGED):
+`client.py` holds the `UnipileClient` class — construction, transport and
+normalization — and composes the call families of `_api/` (accounts, search,
+profiles, messaging, network, content, premium). The constants/helpers live
+in `const.py`, the errors in `errors.py`, the feed parsing in `feed.py`
+— all **re-exported here**, because `oto.tools.unipile.client` is the import path
+that the backend and the tests use.
 """
 
 from __future__ import annotations
@@ -111,13 +111,13 @@ from .feed import (
 
 logger = logging.getLogger(__name__)
 
-# Surface figée de `oto.tools.unipile.client` : ce module reste LE point d'import
-# du connecteur. Tout ce qui y était importable avant le découpage l'est encore —
-# le backend prend `UnipileError`/`UnipileRateLimited` ici, et la suite de tests
+# Frozen surface of `oto.tools.unipile.client`: this module remains THE import point
+# of the connector. Everything that was importable before the split still is —
+# the backend takes `UnipileError`/`UnipileRateLimited` from here, and the test suite
 # `cursor_with_limit`, `parse_feed`, `_parse_retry_after`, `_activity_urn_from`…
-# Les noms préfixés d'un `_` sont listés parce qu'ils sont IMPORTÉS AILLEURS, pas
-# parce qu'ils seraient publics : `tests/test_unipile_surface_frozen.py` verrouille
-# cette liste.
+# Names prefixed with `_` are listed because they are IMPORTED ELSEWHERE, not
+# because they would be public: `tests/test_unipile_surface_frozen.py` locks
+# this list.
 __all__ = [
     "DEFAULT_DSN",
     "FEED_QUERY_ID",
@@ -169,7 +169,7 @@ class UnipileClient(
     _ContentMixin,
     _PremiumMixin,
 ):
-    """Client Unipile API v2 — hosted LinkedIn (et autres IM)."""
+    """Unipile API v2 client — hosted LinkedIn (and other IMs)."""
 
     def __init__(
         self,
@@ -182,8 +182,8 @@ class UnipileClient(
         self.dsn = dsn or DEFAULT_DSN
         self.base_url = f"https://{self.dsn}/v2"
         self._account_id = account_id
-        # Canal du compte opéré (LINKEDIN, WHATSAPP, …). Sert la forme d'endpoint de
-        # messagerie (cf. `_INBOX_PROVIDERS`) ; None = supposé LinkedIn (compat).
+        # Channel of the operated account (LINKEDIN, WHATSAPP, …). Determines the
+        # messaging endpoint shape (see `_INBOX_PROVIDERS`); None = assumed LinkedIn (compat).
         self.provider = (provider or "").strip().upper() or None
         self.session = requests.Session()
         self.session.headers.update(
@@ -193,8 +193,8 @@ class UnipileClient(
     # ---- transport -------------------------------------------------------
 
     def _sanitize(self, msg: str) -> str:
-        """Caviarde l'account_id dans un message d'erreur (il vit dans le path v2 →
-        remonterait sinon dans une URL 404, feedback #178)."""
+        """Redact the account_id in an error message (it lives in the v2 path →
+        would otherwise surface in a 404 URL, feedback #178)."""
         acct = self._account_id
         if acct and isinstance(msg, str):
             return msg.replace(acct, "<account>")
@@ -214,9 +214,9 @@ class UnipileClient(
                 method, url, params=params, json=json,
                 timeout=timeout or _REQUEST_TIMEOUT)
         except requests.RequestException as e:
-            # DNS/timeout/reset : erreur stable au lieu de fuiter net::ERR_* (#177).
+            # DNS/timeout/reset: stable error instead of leaking net::ERR_* (#177).
             raise UnipileError(
-                self._sanitize(f"Unipile: erreur réseau ({type(e).__name__}).")
+                self._sanitize(f"Unipile: network error ({type(e).__name__}).")
             ) from e
         if resp.status_code >= 400:
             try:
@@ -226,10 +226,10 @@ class UnipileClient(
             except (ValueError, AttributeError):
                 msg = resp.text or f"{resp.status_code} {resp.reason}"
             full = self._sanitize(f"Unipile {resp.status_code}: {msg}")
-            # 429 = quota amont (LinkedIn cappe fiches société/profil ~100/12h par
-            # compte) → type dédié + délai parsé, l'appelant STOPPE (cf. UnipileRateLimited).
-            # Le délai vient de l'en-tête `Retry-After` quand l'amont le pose (secondes),
-            # sinon du corps (« Retry in 3 seconds ») — oto#177.
+            # 429 = upstream quota (LinkedIn caps company/profile pages ~100/12h per
+            # account) → dedicated type + parsed delay, the caller STOPS (see UnipileRateLimited).
+            # The delay comes from the `Retry-After` header when upstream sets it (seconds),
+            # otherwise from the body ("Retry in 3 seconds") — oto#177.
             if resp.status_code == 429:
                 raise UnipileRateLimited(full, retry_after=(
                     _retry_after_header(resp.headers) or _parse_retry_after(msg)))
@@ -239,27 +239,27 @@ class UnipileClient(
         return resp.json()
 
     def _acct(self, sub_path: str) -> str:
-        """Préfixe un sous-chemin par `/{account_id}` (path param v2)."""
+        """Prefix a sub-path with `/{account_id}` (v2 path param)."""
         return f"/{quote(self.account_id(), safe='')}{sub_path}"
 
     def uses_inboxes(self) -> bool:
-        """Le provider de ce compte range-t-il sa messagerie par inbox ? (cf.
-        `_INBOX_PROVIDERS`). Provider non déclaré → supposé LinkedIn."""
+        """Does this account's provider organize its messaging by inbox? (see
+        `_INBOX_PROVIDERS`). Undeclared provider → assumed LinkedIn."""
         return (self.provider or _DEFAULT_PROVIDER) in _INBOX_PROVIDERS
 
     def _by_shape(self, inbox_call, plain_call, what: str) -> Any:
-        """Appelle la forme d'endpoint DÉCLARÉE pour ce provider, et bascule sur
-        l'autre si Unipile répond **501**.
+        """Call the endpoint shape DECLARED for this provider, and fall back to
+        the other one if Unipile answers **501**.
 
-        Le 501 d'Unipile n'est pas une panne : c'est l'amont qui NOMME la forme
-        attendue (« Use List inbox Chats endpoint », « Use Start a Chat in the given
-        inbox endpoint for this provider », et le symétrique pour un provider sans
-        inbox). Le rattrapage vaut donc dans les deux sens et ne masque rien
-        d'autre — tout autre statut remonte tel quel, et la bascule est
-        JOURNALISÉE : si Unipile reclasse un provider, ça se lit dans les logs au
-        lieu de casser un canal en silence, comme le 2026-07-06 côté LinkedIn puis
-        ce jour-là côté WhatsApp. L'identité (`account_id`) est dans le path des
-        deux formes : rien ne bascule ici que la ROUTE."""
+        Unipile's 501 is not an outage: it is upstream NAMING the expected shape
+        ("Use List inbox Chats endpoint", "Use Start a Chat in the given
+        inbox endpoint for this provider", and the symmetric one for a provider without
+        inbox). The fallback therefore works in both directions and masks nothing
+        else — any other status bubbles up as is, and the switch is
+        LOGGED: if Unipile reclassifies a provider, it shows in the logs instead
+        of silently breaking a channel, as on 2026-07-06 for LinkedIn and then
+        the same day for WhatsApp. The identity (`account_id`) is in the path of
+        both shapes: only the ROUTE switches here."""
         inbox_first = self.uses_inboxes()
         first, second = ((inbox_call, plain_call) if inbox_first
                          else (plain_call, inbox_call))
@@ -269,19 +269,19 @@ class UnipileClient(
             if e.status_code != 501:
                 raise
             logger.warning(
-                "unipile %s: 501 sur la forme %s pour provider=%s — bascule sur "
-                "la forme %s. Si ça se répète, `_INBOX_PROVIDERS` a dérivé du "
-                "modèle Unipile.",
-                what, "inbox" if inbox_first else "plate",
-                self.provider or f"{_DEFAULT_PROVIDER} (supposé)",
-                "plate" if inbox_first else "inbox")
+                "unipile %s: 501 on the %s shape for provider=%s — switching to "
+                "the %s shape. If this repeats, `_INBOX_PROVIDERS` has drifted from the "
+                "Unipile model.",
+                what, "inbox" if inbox_first else "flat",
+                self.provider or f"{_DEFAULT_PROVIDER} (assumed)",
+                "flat" if inbox_first else "inbox")
             return second()
 
     @staticmethod
     def _norm(data: Any) -> Any:
-        """Normalise une enveloppe de liste v2 `{data, next_cursor, total_count}`
-        vers la forme `items`/`cursor` attendue par l'aval SANS perdre les champs
-        natifs. No-op si `data` n'est pas une enveloppe de liste."""
+        """Normalize a v2 list envelope `{data, next_cursor, total_count}`
+        to the `items`/`cursor` shape expected downstream WITHOUT losing the native
+        fields. No-op if `data` is not a list envelope."""
         if not isinstance(data, dict):
             return data
         if "data" in data and isinstance(data.get("data"), list):

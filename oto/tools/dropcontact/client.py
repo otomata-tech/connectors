@@ -21,10 +21,10 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-# Plafond batch documenté (dépassement → l'API rejette la requête entière).
+# Documented batch cap (exceeding it → the API rejects the whole request).
 MAX_CONTACTS_PER_BATCH = 250
-# "Single contact data must not exceed 15 kB" — vérifié client-side pour éviter
-# un aller-retour HTTP voué à échouer sur un item surdimensionné.
+# "Single contact data must not exceed 15 kB" — checked client-side to avoid
+# an HTTP round trip doomed to fail on an oversized item.
 MAX_CONTACT_BYTES = 15_000
 
 
@@ -48,33 +48,33 @@ class DropcontactClient:
         language: str | None = None,
         custom_callback_url: str | None = None,
     ) -> dict:
-        """Soumet un batch d'enrichissement. Retourne immédiatement l'accusé de
-        réception Dropcontact (`request_id`, `credits_left`, et l'écho par-item de
-        `data` — chaque item peut porter ses propres `errors`/`warnings` de
-        validation, Dropcontact traite le reste du batch malgré un item invalide).
-        Le job tourne côté Dropcontact ; récupérer via `fetch(request_id)`.
+        """Submits an enrichment batch. Returns Dropcontact's acknowledgement
+        immediately (`request_id`, `credits_left`, and the per-item echo of
+        `data` — each item may carry its own validation `errors`/`warnings`,
+        Dropcontact processes the rest of the batch despite an invalid item).
+        The job runs on Dropcontact's side; collect it via `fetch(request_id)`.
 
-        contacts: 1-250 objets. Chacun doit porter de quoi identifier un contact
-        (email, OU linkedin, OU first_name+last_name+company, OU full_name+company)
-        — Dropcontact traite quand même un item incomplet mais le rapporte en
-        `errors`/`warnings` dans la réponse plutôt que de faire échouer le batch.
-        Champs reconnus par item : email, first_name, last_name, full_name, phone,
+        contacts: 1-250 objects. Each must carry enough to identify a contact
+        (email, OR linkedin, OR first_name+last_name+company, OR full_name+company)
+        — Dropcontact still processes an incomplete item but reports it in
+        `errors`/`warnings` in the response rather than failing the batch.
+        Recognized fields per item: email, first_name, last_name, full_name, phone,
         company, website, num_siren, siret, linkedin, company_linkedin, country,
-        job, custom_fields (préservé tel quel dans le résultat).
+        job, custom_fields (preserved as-is in the result).
         """
         if not contacts:
-            raise ValueError("Dropcontact submit: aucun contact fourni.")
+            raise ValueError("Dropcontact submit: no contact provided.")
         if len(contacts) > MAX_CONTACTS_PER_BATCH:
             raise ValueError(
-                f"Dropcontact submit: {len(contacts)} contacts > plafond "
-                f"{MAX_CONTACTS_PER_BATCH}/requête — découper en plusieurs appels."
+                f"Dropcontact submit: {len(contacts)} contacts > limit "
+                f"{MAX_CONTACTS_PER_BATCH}/request — split into several calls."
             )
         for i, c in enumerate(contacts):
             size = len(json.dumps(c, ensure_ascii=False).encode("utf-8"))
             if size > MAX_CONTACT_BYTES:
                 raise ValueError(
-                    f"Dropcontact submit: contact #{i} pèse {size} octets > "
-                    f"plafond {MAX_CONTACT_BYTES} octets/contact."
+                    f"Dropcontact submit: contact #{i} weighs {size} bytes > "
+                    f"limit {MAX_CONTACT_BYTES} bytes/contact."
                 )
 
         payload: dict = {"data": contacts}
@@ -94,26 +94,26 @@ class DropcontactClient:
         raise_for_upstream(resp, service="dropcontact")
         body = resp.json()
         if not body.get("request_id"):
-            raise RuntimeError(f"Dropcontact POST: pas de request_id dans la réponse: {resp.text[:200]}")
+            raise RuntimeError(f"Dropcontact POST: no request_id in the response: {resp.text[:200]}")
         return body
 
-    # Sous-chaîne du SEUL libellé "pending" documenté ("Request not ready yet,
-    # try again in 30 seconds") — le comportement de `reason` pour un
-    # request_id inconnu/expiré n'est PAS documenté (peut être un 404, géré par
-    # `raise_for_upstream`, ou un autre texte ici). Ne jamais dire à l'appelant
-    # de réessayer sur un `reason` qu'on ne reconnaît pas.
+    # Substring of the ONLY documented "pending" label ("Request not ready yet,
+    # try again in 30 seconds") — the behaviour of `reason` for an unknown/expired
+    # request_id is NOT documented (could be a 404, handled by
+    # `raise_for_upstream`, or some other text here). Never tell the caller
+    # to retry on a `reason` we don't recognize.
     _PENDING_MARKER = "not ready"
 
     def fetch(self, request_id: str, *, force_results: bool = False) -> dict:
-        """Un GET de statut, sans attente. Tant que le traitement n'est pas fini,
-        Dropcontact répond 200 avec `success: false` (PAS une erreur HTTP) — on le
-        traduit en `{"done": False, "pending": <bool>, "reason": <str>}` (`pending`
-        distingue le SEUL cas "not ready yet" documenté d'un `reason` inconnu, que
-        l'appelant ne doit pas traiter comme "réessaie plus tard"). Une fois fini :
+        """A single status GET, no waiting. While processing is not finished,
+        Dropcontact answers 200 with `success: false` (NOT an HTTP error) — we
+        translate that into `{"done": False, "pending": <bool>, "reason": <str>}` (`pending`
+        distinguishes the ONLY documented "not ready yet" case from an unknown `reason`, which
+        the caller must not treat as "retry later"). Once finished:
         `{"done": True, "data": [...], "credits_left": <int>}`.
 
-        force_results: renvoie les résultats partiels (items non encore traités
-        laissés tels quels) au lieu d'attendre que le batch entier soit fini.
+        force_results: returns partial results (items not yet processed
+        left as-is) instead of waiting for the whole batch to finish.
         """
         params = {"forceResults": "true"} if force_results else None
         resp = requests.get(
@@ -140,6 +140,6 @@ class DropcontactClient:
         }
 
     def check_credits(self) -> dict:
-        """Sonde 0-crédit (POST avec un contact vide) — authentifie la clé et
-        renvoie `credits_left` sans consommer de quota."""
+        """0-credit probe (POST with an empty contact) — authenticates the key and
+        returns `credits_left` without consuming quota."""
         return self.submit([{}])

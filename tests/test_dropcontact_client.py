@@ -48,11 +48,11 @@ def test_submit_payload_and_headers(monkeypatch):
 
 def test_submit_guards():
     c = dc.DropcontactClient(api_key="k")
-    with pytest.raises(ValueError, match="aucun contact"):
+    with pytest.raises(ValueError, match="no contact"):
         c.submit([])
-    with pytest.raises(ValueError, match="plafond"):
+    with pytest.raises(ValueError, match="limit"):
         c.submit([{"email": "a@acme.fr"}] * (dc.MAX_CONTACTS_PER_BATCH + 1))
-    with pytest.raises(ValueError, match="octets"):
+    with pytest.raises(ValueError, match="bytes"):
         c.submit([{"custom_fields": {"blob": "x" * (dc.MAX_CONTACT_BYTES + 1)}}])
 
 
@@ -131,7 +131,7 @@ def test_submit_raises_if_no_request_id(monkeypatch):
         lambda url, headers=None, json=None, timeout=None: _Resp(
             200, {"error": False, "success": True, "credits_left": 10, "data": []}),
     )
-    with pytest.raises(RuntimeError, match="pas de request_id"):
+    with pytest.raises(RuntimeError, match="no request_id"):
         dc.DropcontactClient(api_key="k").submit([{"email": "a@acme.fr"}])
 
 

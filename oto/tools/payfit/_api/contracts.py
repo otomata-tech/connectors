@@ -1,24 +1,24 @@
-"""Les contrats de travail : lecture (deux variantes), création, temps de travail
-réalisé, affiliation à la mutuelle et à la prévoyance.
+"""Employment contracts: reading (two variants), creation, worked time,
+health insurance and provident fund affiliation.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `PayfitClient`, qui
-fournit le transport (`_get`, `_post`, `_put`, `_company_path`).
+This mixin is never instantiated on its own: it is composed into `PayfitClient`,
+which provides the transport (`_get`, `_post`, `_put`, `_company_path`).
 
-⚠️ **`/contracts-fr` n'est pas `/contracts` + des champs optionnels** : c'est une
-autre collection, et c'est la SEULE qui rende la nature du contrat
-(`natureContratDsn` — 01 CDI, 02 CDD…), le statut conventionnel, l'IDCC de la
-convention collective, le motif de rupture, la modalité de temps de travail
-(`standard`, `forfait_heures`, `forfait_jours`…), le statut de cadre dirigeant,
-les contrats de mutuelle et de prévoyance affiliés, et le NIR. Pour une
-entreprise française, c'est elle qu'il faut lire ; `country` de l'entreprise le
-dit.
+⚠️ **`/contracts-fr` is not `/contracts` + optional fields**: it is a
+different collection, and it is the ONLY one that returns the contract nature
+(`natureContratDsn` — 01 CDI, 02 CDD…), the collective-agreement status, the IDCC of the
+collective agreement, the termination reason, the working-time arrangement
+(`standard`, `forfait_heures`, `forfait_jours`…), the executive-officer status,
+the affiliated health insurance and provident fund contracts, and the NIR. For a
+French company, it is the one to read; the company's `country`
+says so.
 
-⚠️ Le paramètre `fields=securite-sociale` de `/contracts-fr` est **déprécié** et
-n'est jamais envoyé : le NIR arrive aujourd'hui avec le scope de la clé.
+⚠️ The `fields=securite-sociale` parameter of `/contracts-fr` is **deprecated** and
+is never sent: the NIR now arrives with the key's scope.
 
-**Ce que l'API ne sait pas faire sur un contrat** : il n'y a ni historique des
-avenants, ni modification d'un contrat existant, ni coefficient hiérarchique
-séparé, ni endpoint de rupture. La seule écriture est la CRÉATION.
+**What the API cannot do on a contract**: there is no amendment history,
+no modification of an existing contract, no separate classification
+coefficient, and no termination endpoint. The only write is CREATION.
 """
 from __future__ import annotations
 
@@ -31,20 +31,20 @@ from ..params import page as _page
 
 
 def _ids(values: Any, name: str) -> list:
-    """Une liste d'identifiants, chacun passé à la même garde qu'un segment
-    d'URL. Ils ne voyagent pas dans le chemin ici, mais un id malformé envoyé en
-    corps produit un 400 opaque — autant le nommer."""
+    """A list of identifiers, each passed through the same guard as a URL
+    segment. They do not travel in the path here, but a malformed id sent in
+    the body produces an opaque 400 — better to name it."""
     if isinstance(values, str) or not isinstance(values, Sequence):
-        raise ValueError(f"{name} doit être une LISTE d'identifiants — reçu {values!r}.")
+        raise ValueError(f"{name} must be a LIST of identifiers — got {values!r}.")
     if not values:
-        raise ValueError(f"{name} ne peut pas être vide.")
+        raise ValueError(f"{name} cannot be empty.")
     return [_id(v, name) for v in values]
 
 
 class _ContractsMixin:
-    """Contrats, temps de travail, affiliations mutuelle/prévoyance."""
+    """Contracts, worked time, health insurance/provident fund affiliations."""
 
-    # --- lecture ------------------------------------------------------------
+    # --- reading ------------------------------------------------------------
 
     def list_contracts(self, *, limit: int = 50, cursor: Optional[str] = None,
                        include_in_progress: Optional[bool] = None,
@@ -52,7 +52,7 @@ class _ContractsMixin:
         """GET /companies/{companyId}/contracts (or /contracts-fr when `fr`).
 
         Scope `contracts:read`. Active, pending and last year's archived
-        contracts — **pas l'historique complet** de l'entreprise.
+        contracts — **not the company's full history**.
 
         Args:
             include_in_progress: also contracts still being created.
@@ -71,52 +71,52 @@ class _ContractsMixin:
 
     def list_worked_time(self, date: str, *, limit: int = 50,
                          cursor: Optional[str] = None) -> Any:
-        """GET /companies/{companyId}/contracts/time — 🇫🇷, le temps du mois.
+        """GET /companies/{companyId}/contracts/time — 🇫🇷, the month's time.
 
-        Scope `time:read`. Par contrat : `effectiveWorkedTime` (réalisé),
-        `payedWorkedTime` (payé) et `workTimeUnit`.
+        Scope `time:read`. Per contract: `effectiveWorkedTime` (actual),
+        `payedWorkedTime` (paid) and `workTimeUnit`.
 
-        ⚠️ C'est un **agrégat mensuel**, pas un planning : l'API ne sert ni
-        horaires, ni pointages, ni jours travaillés un par un.
+        ⚠️ This is a **monthly aggregate**, not a schedule: the API serves no
+        working hours, no clock-ins, and no individual worked days.
 
         Args:
-            date: le mois, AAAAMM.
+            date: the month, AAAAMM.
         """
         return self._get(self._company_path("/contracts/time"),
                          date=_month(date), **_page(limit, cursor))
 
-    # --- création -----------------------------------------------------------
+    # --- creation -----------------------------------------------------------
 
     def create_contract(self, collaborator_id: str, *, job_title: str,
                         start_date: str) -> Any:
         """POST /companies/{companyId}/collaborators/{collaboratorId}/contracts — 🇫🇷.
 
-        Scope `collaborators:contracts:write`. Crée le contrat d'un collaborateur
-        déjà existant ; c'est lui qui le fait entrer dans la paie.
+        Scope `collaborators:contracts:write`. Creates the contract of an
+        already existing collaborator; it is what brings them into payroll.
 
         Args:
-            job_title: l'intitulé du poste.
-            start_date: AAAA-MM-JJ.
+            job_title: the job title.
+            start_date: YYYY-MM-DD.
         """
         col = _id(collaborator_id, "collaborator_id")
         return self._post(self._company_path(f"/collaborators/{col}/contracts"),
                           {"jobTitle": job_title, "startDate": start_date})
 
-    # --- mutuelle et prévoyance d'UN contrat ---------------------------------
+    # --- health insurance and provident fund of ONE contract -----------------
 
     def set_health_insurance(self, contract_id: str, *,
                              health_insurance_contract_ids: Sequence[str],
                              employee_is_exempted: Optional[bool] = None) -> Any:
         """PUT /companies/{companyId}/contracts-fr/{contractId}/health-insurance.
 
-        Scope `health-insurance:write`. **Remplace** l'affiliation mutuelle du
-        contrat par la liste fournie : ce n'est pas un ajout, une liste qui omet
-        un contrat l'en désaffilie.
+        Scope `health-insurance:write`. **Replaces** the contract's health
+        insurance affiliation with the list provided: it is not an addition, a
+        list that omits a contract unaffiliates it.
 
         Args:
-            health_insurance_contract_ids: ids de
+            health_insurance_contract_ids: ids from
                 `list_health_insurance_contracts`.
-            employee_is_exempted: le salarié est dispensé d'adhésion.
+            employee_is_exempted: the employee is exempt from joining.
         """
         con = _id(contract_id, "contract_id")
         return self._put(
@@ -129,11 +129,11 @@ class _ContractsMixin:
                            provident_fund_contract_ids: Sequence[str]) -> Any:
         """PUT /companies/{companyId}/contracts-fr/{contractId}/provident-fund.
 
-        Scope `health-insurance:write` (le même que la mutuelle). **Remplace**
-        l'affiliation prévoyance du contrat.
+        Scope `health-insurance:write` (the same as health insurance). **Replaces**
+        the contract's provident fund affiliation.
 
         Args:
-            provident_fund_contract_ids: ids de `list_provident_fund_contracts`.
+            provident_fund_contract_ids: ids from `list_provident_fund_contracts`.
         """
         con = _id(contract_id, "contract_id")
         return self._put(
@@ -147,12 +147,12 @@ class _ContractsMixin:
             effective_date: str) -> Any:
         """POST /companies/{companyId}/contracts-fr/{contractId}/regularization.
 
-        Scope `health-insurance:write`. Demande une régularisation rétroactive
-        des cotisations mutuelle : elle **recalcule des cotisations déjà passées
-        en paie** et se répercute sur un bulletin.
+        Scope `health-insurance:write`. Requests a retroactive regularization
+        of health insurance contributions: it **recalculates contributions already
+        passed through payroll** and flows into a payslip.
 
         Args:
-            effective_date: AAAA-MM-JJ, la date d'effet de la régularisation.
+            effective_date: YYYY-MM-DD, the regularization's effective date.
         """
         con = _id(contract_id, "contract_id")
         return self._post(

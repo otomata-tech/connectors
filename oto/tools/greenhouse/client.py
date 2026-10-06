@@ -1,14 +1,14 @@
 """Greenhouse Harvest API client (ATS).
 
-Auth = **Harvest API key** en Basic auth (la clé est le *username*, mot de passe
-vide). Créée dans Greenhouse : Configure → Dev Center → API Credentials →
-Harvest. Passée en clair au constructeur.
+Auth = **Harvest API key** via Basic auth (the key is the *username*, empty
+password). Created in Greenhouse: Configure → Dev Center → API Credentials →
+Harvest. Passed in clear to the constructor.
 
-Surface lecture (candidats, jobs, candidatures, users) + écriture ciblée
-(création de candidat, note d'activité). Les écritures Greenhouse exigent un
-**`On-Behalf-Of`** (id d'un utilisateur Greenhouse) — passé par `on_behalf_of`.
+Read surface (candidates, jobs, applications, users) + targeted writes
+(candidate creation, activity note). Greenhouse writes require an
+**`On-Behalf-Of`** (id of a Greenhouse user) — passed via `on_behalf_of`.
 
-Docs : https://developers.greenhouse.io/harvest.html
+Docs: https://developers.greenhouse.io/harvest.html
 
 Requires: requests
 """
@@ -22,19 +22,19 @@ from ..common.credentials import require
 
 
 class GreenhouseClient:
-    """Client Greenhouse Harvest v1 — sourcing & suivi de candidats (ATS)."""
+    """Client Greenhouse Harvest v1 — candidate sourcing & tracking (ATS)."""
 
     BASE_URL = "https://harvest.greenhouse.io/v1"
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: Harvest API key.
         """
         self.api_key = require(api_key, "GREENHOUSE_API_KEY")
         self.session = requests.Session()
-        # Basic auth : la clé est le username, mot de passe vide.
+        # Basic auth: the key is the username, empty password.
         self.session.auth = (self.api_key, "")
         self.session.headers.update({"Content-Type": "application/json"})
 
@@ -53,7 +53,7 @@ class GreenhouseClient:
             raise Exception(f"Greenhouse HTTP {resp.status_code}: {body}")
         return resp.json() if resp.content else {}
 
-    # --- Candidats ----------------------------------------------------------
+    # --- Candidates ---------------------------------------------------------
 
     def list_candidates(
         self,
@@ -64,7 +64,7 @@ class GreenhouseClient:
         created_after: Optional[str] = None,
         updated_after: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Liste les candidats (paginé). Filtres : `job_id`, `email`,
+        """List candidates (paginated). Filters: `job_id`, `email`,
         `created_after`/`updated_after` (ISO 8601)."""
         params: Dict[str, Any] = {"per_page": min(per_page, 500), "page": page}
         if job_id:
@@ -78,19 +78,19 @@ class GreenhouseClient:
         return self._request("GET", "/candidates", params=params)
 
     def get_candidate(self, candidate_id: int) -> Dict[str, Any]:
-        """Récupère un candidat par id (avec ses candidatures)."""
+        """Fetch a candidate by id (with their applications)."""
         return self._request("GET", f"/candidates/{candidate_id}")
 
     def add_candidate(
         self, candidate: Dict[str, Any], on_behalf_of: int,
     ) -> Dict[str, Any]:
-        """Crée un candidat (ou prospect).
+        """Create a candidate (or prospect).
 
         Args:
-            candidate: objet candidat Greenhouse (`first_name`, `last_name`,
+            candidate: Greenhouse candidate object (`first_name`, `last_name`,
                 `email_addresses`, `applications`, `phone_numbers`, …).
-            on_behalf_of: id de l'utilisateur Greenhouse au nom de qui créer
-                (header `On-Behalf-Of`, obligatoire en écriture).
+            on_behalf_of: id of the Greenhouse user on whose behalf to create
+                (`On-Behalf-Of` header, mandatory for writes).
         """
         return self._request("POST", "/candidates", json=candidate,
                              on_behalf_of=on_behalf_of)
@@ -99,11 +99,11 @@ class GreenhouseClient:
         self, candidate_id: int, body: str, user_id: int,
         visibility: str = "public",
     ) -> Dict[str, Any]:
-        """Ajoute une note au fil d'activité d'un candidat.
+        """Add a note to a candidate's activity feed.
 
         Args:
-            user_id: id de l'utilisateur Greenhouse auteur de la note (aussi
-                utilisé comme `On-Behalf-Of`).
+            user_id: id of the Greenhouse user who authors the note (also
+                used as `On-Behalf-Of`).
             visibility: "admin_only" | "private" | "public".
         """
         body_obj = {"user_id": user_id, "body": body, "visibility": visibility}
@@ -116,23 +116,23 @@ class GreenhouseClient:
     def list_jobs(
         self, per_page: int = 50, page: int = 1, status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Liste les jobs (postes). `status` : "open" | "closed" | "draft"."""
+        """List jobs (positions). `status`: "open" | "closed" | "draft"."""
         params: Dict[str, Any] = {"per_page": min(per_page, 500), "page": page}
         if status:
             params["status"] = status
         return self._request("GET", "/jobs", params=params)
 
     def get_job(self, job_id: int) -> Dict[str, Any]:
-        """Récupère un job par id."""
+        """Fetch a job by id."""
         return self._request("GET", f"/jobs/{job_id}")
 
-    # --- Candidatures -------------------------------------------------------
+    # --- Applications -------------------------------------------------------
 
     def list_applications(
         self, per_page: int = 50, page: int = 1, job_id: Optional[int] = None,
         status: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Liste les candidatures. `status` : "active" | "rejected" | "hired"."""
+        """List applications. `status`: "active" | "rejected" | "hired"."""
         params: Dict[str, Any] = {"per_page": min(per_page, 500), "page": page}
         if job_id:
             params["job_id"] = job_id
@@ -141,12 +141,12 @@ class GreenhouseClient:
         return self._request("GET", "/applications", params=params)
 
     def get_application(self, application_id: int) -> Dict[str, Any]:
-        """Récupère une candidature par id."""
+        """Fetch an application by id."""
         return self._request("GET", f"/applications/{application_id}")
 
-    # --- Users (recruteurs) -------------------------------------------------
+    # --- Users (recruiters) -------------------------------------------------
 
     def list_users(self, per_page: int = 50, page: int = 1) -> List[Dict[str, Any]]:
-        """Liste les utilisateurs Greenhouse (recruteurs) — pour `on_behalf_of`."""
+        """List Greenhouse users (recruiters) — for `on_behalf_of`."""
         return self._request("GET", "/users",
                              params={"per_page": min(per_page, 500), "page": page})

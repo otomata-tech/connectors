@@ -1,29 +1,29 @@
 """
-LightOn API client (v3, api.lighton.ai) — plateforme d'indexation documentaire
-souveraine : ingestion (upload/parse/extract) + retrieval (search hybride,
-ask RAG groundé).
+LightOn API client (v3, api.lighton.ai) — sovereign document indexing
+platform: ingestion (upload/parse/extract) + retrieval (hybrid search,
+grounded RAG ask).
 
-⚠️ v3 = la plateforme cible (post-Paradigm). L'ancienne API v2
-`paradigm.lighton.ai/api/v2` (applicatif Paradigm : chat alfred, query,
-ask-question) est en cours de dépréciation — ce client ne la couvre plus.
-La même clé Console (console.lighton.ai) vaut pour les deux.
+⚠️ v3 = the target platform (post-Paradigm). The old v2 API
+`paradigm.lighton.ai/api/v2` (Paradigm app: chat alfred, query,
+ask-question) is being deprecated — this client no longer covers it.
+The same Console key (console.lighton.ai) works for both.
 
-Auth = Bearer. Base par défaut = `https://api.lighton.ai` ; une instance
-privée/on-prem se cible via `base_url`.
+Auth = Bearer. Default base = `https://api.lighton.ai`; a private/on-prem
+instance is targeted via `base_url`.
 
-Endpoints couverts (spec 3.12.0, developers.lighton.ai) :
-- POST /api/v3/search           — retrieval hybride (dense + BM25 + rerank
-                                  multivectoriel), mode vision, facettes
-- POST /api/v3/ask              — RAG complet : search + réponse LLM groundée
+Endpoints covered (spec 3.12.0, developers.lighton.ai):
+- POST /api/v3/search           — hybrid retrieval (dense + BM25 + multivector
+                                  rerank), vision mode, facets
+- POST /api/v3/ask              — full RAG: search + grounded LLM answer
 - POST /api/v3/parse (+GET {id})— document → Markdown (sync/async)
-- POST /api/v3/extract (+GET)   — extraction structurée par JSON Schema
-- GET/POST /api/v3/files        — liste (filtres + recherche sémantique) / upload
-- GET/DELETE /api/v3/files/{id} — fiche / suppression
-- GET /api/v3/workspaces        — workspaces accessibles (manual ou synced
+- POST /api/v3/extract (+GET)   — structured extraction by JSON Schema
+- GET/POST /api/v3/files        — list (filters + semantic search) / upload
+- GET/DELETE /api/v3/files/{id} — record / deletion
+- GET /api/v3/workspaces        — accessible workspaces (manual or synced
                                   SharePoint/Google Drive)
 
-Facturation LightOn : ingestion par page, retrieval par requête (search/ask),
-stockage vectoriel au Go — cf. lighton.ai/pricing.
+LightOn billing: ingestion per page, retrieval per query (search/ask),
+vector storage per GB — see lighton.ai/pricing.
 
 Requires: requests
 """
@@ -39,7 +39,7 @@ from ..common.credentials import require
 
 
 class LightOnClient:
-    """Client pour l'API LightOn v3 (indexation + retrieval documentaire)."""
+    """Client for the LightOn v3 API (document indexing + retrieval)."""
 
     DEFAULT_BASE_URL = "https://api.lighton.ai"
     TIMEOUT = 60
@@ -47,9 +47,9 @@ class LightOnClient:
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         """
         Args:
-            api_key: clé API LightOn (Bearer, créée sur console.lighton.ai).
-            base_url: base de l'API pour une instance privée/on-prem
-                (défaut = SaaS `https://api.lighton.ai`).
+            api_key: LightOn API key (Bearer, created on console.lighton.ai).
+            base_url: API base for a private/on-prem instance
+                (default = SaaS `https://api.lighton.ai`).
         """
         self.api_key = require(api_key, "LIGHTON_API_KEY")
         self.base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
@@ -77,8 +77,8 @@ class LightOnClient:
             files=files, data=data, timeout=timeout or self.TIMEOUT,
         )
         if not resp.ok:
-            # LightOn renvoie {"code", "error", "detail"} (ou un dict de
-            # validation DRF) — surfacer le plus parlant.
+            # LightOn returns {"code", "error", "detail"} (or a DRF
+            # validation dict) — surface the most telling one.
             try:
                 body = resp.json()
                 if isinstance(body, dict):
@@ -109,20 +109,20 @@ class LightOnClient:
         include_image: bool = False,
         include_bboxes: bool = False,
     ) -> Dict[str, Any]:
-        """Retrieval de chunks (hybride dense + BM25, rerank multivectoriel).
-        1 crédit retrieval par requête. Pas de génération LLM.
+        """Chunk retrieval (hybrid dense + BM25, multivector rerank).
+        1 retrieval credit per query. No LLM generation.
 
         Args:
-            query: requête en langage naturel (max 1500 caractères).
-            workspace_ids / tag_ids / file_ids: scoping (file_ids exclusif
-                des deux autres). Sans filtre = tout le corpus autorisé.
-            max_results: nombre de chunks après rerank (1-50).
-            mode: `text` (défaut) ou `vision` (pages images VLM).
-            relevance_scoring: `scoring_and_filtering` (défaut) /
+            query: natural-language query (max 1500 characters).
+            workspace_ids / tag_ids / file_ids: scoping (file_ids exclusive
+                with the other two). No filter = the whole authorized corpus.
+            max_results: number of chunks after rerank (1-50).
+            mode: `text` (default) or `vision` (VLM page images).
+            relevance_scoring: `scoring_and_filtering` (default) /
                 `scoring_only` / `none`.
-            content_type / attribute: filtres facettes (cf. doc LightOn).
-            include_image: joint l'image de page en base64 par résultat.
-            include_bboxes: joint les bounding boxes PDF par résultat.
+            content_type / attribute: facet filters (see LightOn docs).
+            include_image: attaches the page image in base64 per result.
+            include_bboxes: attaches the PDF bounding boxes per result.
         """
         payload: Dict[str, Any] = {"query": query}
         if workspace_ids:
@@ -157,16 +157,16 @@ class LightOnClient:
         max_results: Optional[int] = None,
         model: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """RAG complet : search sur le corpus puis réponse LLM groundée dans
-        les passages retrouvés (avec provenance). Mode synchrone (pas de SSE).
+        """Full RAG: search over the corpus then an LLM answer grounded in
+        the retrieved passages (with provenance). Synchronous mode (no SSE).
 
         Args:
-            query: question en langage naturel (max 1500 caractères).
-            workspace_ids / tag_ids / file_ids: scoping (mêmes règles que
+            query: natural-language question (max 1500 characters).
+            workspace_ids / tag_ids / file_ids: scoping (same rules as
                 `search`).
-            max_results: nombre de chunks de contexte (1-50).
-            model: LLM de génération (ex. `mistral-large-latest`) — défaut
-                plateforme si omis.
+            max_results: number of context chunks (1-50).
+            model: generation LLM (e.g. `mistral-large-latest`) — platform
+                default if omitted.
         """
         payload: Dict[str, Any] = {"query": query, "stream": False}
         if workspace_ids:
@@ -181,16 +181,16 @@ class LightOnClient:
             payload["model"] = model
         return self._request("POST", "ask", json=payload, timeout=120)
 
-    # ---- parse / extract (traitement de document, hors index) ---------------
+    # ---- parse / extract (document processing, outside the index) -----------
 
     def parse_bytes(
         self, data: bytes, filename: str, *, async_: bool = False,
     ) -> Dict[str, Any]:
-        """Parse un document (upload direct) → Markdown structuré.
+        """Parse a document (direct upload) → structured Markdown.
 
         Args:
-            async_: True = job async (gros fichiers, 202 + job id à poller
-                via `parse_job`). Sync : ~20 MB / 15 pages max.
+            async_: True = async job (large files, 202 + job id to poll
+                via `parse_job`). Sync: ~20 MB / 15 pages max.
         """
         form = {"options": _json.dumps({"async": True})} if async_ else None
         return self._request(
@@ -199,25 +199,25 @@ class LightOnClient:
         )
 
     def parse_url(self, document_url: str, *, async_: bool = False) -> Dict[str, Any]:
-        """Parse un document accessible par URL publique → Markdown."""
+        """Parse a document reachable by public URL → Markdown."""
         payload: Dict[str, Any] = {"document": document_url}
         if async_:
             payload["options"] = {"async": True}
         return self._request("POST", "parse", json=payload, timeout=300)
 
     def parse_job(self, job_id: str) -> Dict[str, Any]:
-        """Statut/résultat d'un job de parse async."""
+        """Status/result of an async parse job."""
         return self._request("GET", f"parse/{job_id}")
 
     def extract_bytes(
         self, data: bytes, filename: str, schema: dict, *, async_: bool = False,
     ) -> Dict[str, Any]:
-        """Extraction structurée : sort les champs décrits par un JSON Schema
-        depuis un document (upload direct).
+        """Structured extraction: pulls the fields described by a JSON Schema
+        out of a document (direct upload).
 
         Args:
-            schema: JSON Schema objet des champs à extraire.
-            async_: True = job async (poll via `extract_job`).
+            schema: JSON Schema object of the fields to extract.
+            async_: True = async job (poll via `extract_job`).
         """
         form: Dict[str, Any] = {"schema": _json.dumps(schema)}
         if async_:
@@ -230,17 +230,17 @@ class LightOnClient:
     def extract_url(
         self, document_url: str, schema: dict, *, async_: bool = False,
     ) -> Dict[str, Any]:
-        """Extraction structurée depuis un document accessible par URL."""
+        """Structured extraction from a document reachable by URL."""
         payload: Dict[str, Any] = {"document": document_url, "schema": schema}
         if async_:
             payload["options"] = {"async": True}
         return self._request("POST", "extract", json=payload, timeout=300)
 
     def extract_job(self, job_id: str) -> Dict[str, Any]:
-        """Statut/résultat d'un job d'extract async (`ext_…`)."""
+        """Status/result of an async extract job (`ext_…`)."""
         return self._request("GET", f"extract/{job_id}")
 
-    # ---- files (l'index) ----------------------------------------------------
+    # ---- files (the index) --------------------------------------------------
 
     def list_files(
         self,
@@ -253,14 +253,14 @@ class LightOnClient:
         page: Optional[int] = None,
         page_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Documents indexés accessibles à la clé (paginé).
+        """Indexed documents accessible to the key (paginated).
 
         Args:
-            workspace_ids / tag_ids: filtres.
-            search: recherche sémantique — les résultats sont ordonnés par
-                pertinence (léger « find my doc » sans passer par `search`).
-            status: filtre statut d'ingestion (ex. `pending,embedded`).
-            filename: filtre par nom (partiel, insensible à la casse).
+            workspace_ids / tag_ids: filters.
+            search: semantic search — results are ordered by
+                relevance (a light "find my doc" without going through `search`).
+            status: ingestion status filter (e.g. `pending,embedded`).
+            filename: filter by name (partial, case-insensitive).
         """
         params: Dict[str, Any] = {}
         if workspace_ids:
@@ -280,7 +280,7 @@ class LightOnClient:
         return self._request("GET", "files", params=params or None)
 
     def get_file(self, file_id: int) -> Dict[str, Any]:
-        """Fiche d'un document (métadonnées, statut d'ingestion)."""
+        """Record of a document (metadata, ingestion status)."""
         return self._request("GET", f"files/{file_id}")
 
     def upload_file_bytes(
@@ -292,13 +292,13 @@ class LightOnClient:
         title: Optional[str] = None,
         tag_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        """Upload + indexation d'un document dans un workspace (multipart).
-        Facturé à la page ingérée.
+        """Upload + indexing of a document into a workspace (multipart).
+        Billed per ingested page.
 
         Args:
-            workspace_id: workspace de destination (REQUIS en v3).
-            title: titre affiché (défaut = filename sans extension).
-            tag_ids: tags à poser à la création.
+            workspace_id: destination workspace (REQUIRED in v3).
+            title: displayed title (default = filename without extension).
+            tag_ids: tags to set on creation.
         """
         form: Dict[str, Any] = {"workspace_id": str(workspace_id)}
         if title:
@@ -311,7 +311,7 @@ class LightOnClient:
         )
 
     def delete_file(self, file_id: int) -> None:
-        """Supprime définitivement un document et son index."""
+        """Permanently deletes a document and its index."""
         return self._request("DELETE", f"files/{file_id}")
 
     # ---- workspaces ---------------------------------------------------------
@@ -324,7 +324,7 @@ class LightOnClient:
         page: Optional[int] = None,
         page_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Workspaces accessibles à la clé (⚠️ endpoint marqué alpha par
+        """Workspaces accessible to the key (⚠️ endpoint marked alpha by
         LightOn). `workspace_type`: shared | personal | public."""
         params: Dict[str, Any] = {}
         if name:

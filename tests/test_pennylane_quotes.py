@@ -83,9 +83,9 @@ def test_list_quotes_sans_filtre():
 
 def test_un_statut_inconnu_est_refuse_avant_l_appel():
     c = _client()
-    with pytest.raises(ValueError, match="statut de devis inconnu"):
+    with pytest.raises(ValueError, match="unknown quote status"):
         c.list_quotes(status="draft")
-    with pytest.raises(ValueError, match="statut de devis inconnu"):
+    with pytest.raises(ValueError, match="unknown quote status"):
         c.update_quote_status(7, "signed")
     assert c.appels == []
 

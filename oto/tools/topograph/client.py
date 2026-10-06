@@ -1,10 +1,10 @@
 """Topograph API Client — KYB data & documents for European public registers.
 
-Topograph (https://www.topograph.co) normalise 100+ registres publics européens
-derrière une seule API REST (KYB onboarding + vérification). Doc :
+Topograph (https://www.topograph.co) normalizes 100+ European public registries
+behind a single REST API (KYB onboarding + verification). Docs:
 https://docs.topograph.co.
 
-Auth : clé API dans l'en-tête `x-api-key` (Dashboard → Settings → API Keys).
+Auth: API key in the `x-api-key` header (Dashboard → Settings → API Keys).
 
 Requires: requests
 """
@@ -18,11 +18,11 @@ from ..common.credentials import require
 
 
 class TopographClient:
-    """Client de l'API Topograph v2.
+    """Client for the Topograph v2 API.
 
-    - `search` : recherche d'entreprise par nom ou n° d'immatriculation (GET /v2/search).
-    - `company` : données entreprise normalisées (POST /v2/company), mode
-      `onboarding` (rapide/économique) ou `verification` (rigoureux).
+    - `search`: company search by name or registration number (GET /v2/search).
+    - `company`: normalized company data (POST /v2/company), mode
+      `onboarding` (fast/cheap) or `verification` (rigorous).
     """
 
     BASE_URL = "https://api.topograph.co/v2"
@@ -30,7 +30,7 @@ class TopographClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé API Topograph.
+            api_key: Topograph API key.
         """
         self.api_key = require(api_key, "TOPOGRAPH_API_KEY")
 
@@ -60,15 +60,15 @@ class TopographClient:
         country: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Recherche d'entreprises par nom ou n° d'immatriculation.
+        """Search companies by name or registration number.
 
         Args:
-            query: nom de société ou numéro d'immatriculation.
-            country: code pays ISO 3166-1 alpha-2 (ex. "FR", "GB", "DE").
-            limit: nombre maximum de résultats.
+            query: company name or registration number.
+            country: ISO 3166-1 alpha-2 country code (e.g. "FR", "GB", "DE").
+            limit: maximum number of results.
 
         Returns:
-            Résultats de recherche (candidats avec identité + n° d'immatriculation).
+            Search results (candidates with identity + registration number).
         """
         params: Dict[str, Any] = {"query": query}
         if country:
@@ -84,19 +84,19 @@ class TopographClient:
         company_id: Optional[str] = None,
         mode: str = "onboarding",
     ) -> Dict[str, Any]:
-        """Données entreprise normalisées (POST /v2/company).
+        """Normalized company data (POST /v2/company).
 
-        Identifier l'entreprise par (`country` + `registration_number`) — les deux
-        renvoyés par `search` — ou par `company_id`.
+        Identify the company by (`country` + `registration_number`) — both
+        returned by `search` — or by `company_id`.
 
         Args:
-            country: code pays ISO 3166-1 alpha-2.
-            registration_number: numéro d'immatriculation (SIREN/SIRET, etc.).
-            company_id: identifiant Topograph (alternative au n° d'immatriculation).
-            mode: "onboarding" (rapide/économique) ou "verification" (rigoureux).
+            country: ISO 3166-1 alpha-2 country code.
+            registration_number: registration number (SIREN/SIRET, etc.).
+            company_id: Topograph identifier (alternative to the registration number).
+            mode: "onboarding" (fast/cheap) or "verification" (rigorous).
 
         Returns:
-            Fiche entreprise normalisée (identité, forme juridique, dirigeants…).
+            Normalized company record (identity, legal form, directors…).
         """
         body: Dict[str, Any] = {"mode": mode}
         if country:

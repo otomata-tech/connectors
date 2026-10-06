@@ -32,7 +32,7 @@ Usage:
     reqs = client.list_leave_requests()
     one = client.get_leave_request(1234)
 
-    # Notes de frais (expense claims)
+    # Expense claims
     claims = client.list_expense_claims(status_id="Approved")
 
     # Organisation
@@ -57,7 +57,7 @@ import requests
 from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
-# (connexion, lecture) — un host injoignable ne doit jamais bloquer indéfiniment.
+# (connect, read) — an unreachable host must never block indefinitely.
 _HTTP_TIMEOUT = (10, 60)
 
 
@@ -90,9 +90,9 @@ class LuccaClient:
     # --- HTTP ---
 
     def _headers(self) -> dict:
-        # La clé part en HEADER, jamais en query string (elle atterrirait dans
-        # l'URL de toute exception requests, donc dans les logs/Sentry — fuite
-        # vécue #284). Pas de "Bearer" : Lucca v3 veut ce format exact.
+        # The key goes in a HEADER, never in the query string (it would land in
+        # the URL of any requests exception, hence in the logs/Sentry — leak
+        # experienced, #284). No "Bearer": Lucca v3 wants this exact format.
         return {
             "Authorization": f"lucca application={self.api_key}",
             "Accept": "application/json",
@@ -123,9 +123,9 @@ class LuccaClient:
     def _list_org_structure(self, path: str, params: Optional[dict] = None) -> list:
         """GET an `/organization/structure/api/...` list endpoint.
 
-        ⚠️ Pas la même enveloppe que le reste de la v3 legacy : les items sont
-        à plat (`{"items": [...], "prev":..., "next":...}`, sans clé `data`).
-        Même en-tête d'auth `lucca application=`, base différente.
+        ⚠️ Not the same envelope as the rest of legacy v3: the items are
+        flat (`{"items": [...], "prev":..., "next":...}`, no `data` key).
+        Same `lucca application=` auth header, different base.
         """
         return self._get(path, params).get("items", [])
 
@@ -133,27 +133,27 @@ class LuccaClient:
     def _paging(offset: int, limit: int) -> str:
         """Build Lucca's `paging` query param: `"{offset},{limit}"`, max 1000."""
         if offset < 0:
-            raise ValueError(f"offset doit être >= 0 — reçu {offset}.")
+            raise ValueError(f"offset must be >= 0 — got {offset}.")
         if not (0 < limit <= 1000):
-            raise ValueError(f"limit doit être entre 1 et 1000 (Lucca) — reçu {limit}.")
+            raise ValueError(f"limit must be between 1 and 1000 (Lucca) — got {limit}.")
         return f"{offset},{limit}"
 
     @staticmethod
     def _bool_param(value: Optional[Union[bool, str]]) -> Optional[str]:
         """`True`/`False` Python -> `"true"`/`"false"`.
 
-        `requests` sérialiserait sinon un bool Python en "True"/"False"
-        (majuscule) — même piège que `onlyAssignedToMe` chez Folk. Non vérifié
-        EN DIRECT sur Lucca (pas de clé de test) : normalisation défensive,
-        conforme à la convention REST/OpenAPI habituelle pour un booléen de
-        query string. Une chaîne déjà formée (ex. "true,false" pour
-        isArchived) passe telle quelle.
+        `requests` would otherwise serialize a Python bool as "True"/"False"
+        (capitalized) — same trap as `onlyAssignedToMe` at Folk. Not verified
+        LIVE on Lucca (no test key): defensive normalization,
+        in line with the usual REST/OpenAPI convention for a query-string
+        boolean. An already-formed string (e.g. "true,false" for
+        isArchived) passes through as-is.
         """
         if value is None or isinstance(value, str):
             return value
         return "true" if value else "false"
 
-    # --- Directory (annuaire) ---
+    # --- Directory ---
 
     def list_users(
         self,
@@ -210,7 +210,7 @@ class LuccaClient:
         params = {"fields": fields} if fields else None
         return self._get_v3(f"/api/v3/users/{user_id}", params)
 
-    # --- Congés / absences (Timmi Absences) ---
+    # --- Leaves / absences (Timmi Absences) ---
 
     def list_leaves(
         self,
@@ -266,7 +266,7 @@ class LuccaClient:
         """Fetch one leave request by id. `GET /api/v3/leaveRequests/{id}`."""
         return self._get_v3(f"/api/v3/leaveRequests/{leave_request_id}")
 
-    # --- Notes de frais (Cleemy Expenses) ---
+    # --- Expense claims (Cleemy Expenses) ---
 
     def list_expense_claims(
         self,

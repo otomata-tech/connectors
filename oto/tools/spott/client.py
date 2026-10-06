@@ -1,23 +1,23 @@
-"""Spott ATS/CRM API client (agences de recrutement).
+"""Spott ATS/CRM API client (recruitment agencies).
 
-Auth = **clé API** passée en header `x-api-key` (Spott : Settings → API Keys).
-Base URL `https://api.gospott.com` (déclarée par la spec OpenAPI officielle).
+Auth = **API key** passed in the `x-api-key` header (Spott: Settings → API Keys).
+Base URL `https://api.gospott.com` (declared by the official OpenAPI spec).
 
-Vocabulaire Spott — deux mots à ne pas confondre :
-- une **vacancy** = un **job** (poste ouvert). L'API garde `/vacancies` dans ses
-  chemins, ses libellés disent « job » : on expose « job ».
-- un **client** = l'entreprise cliente du cabinet (avec ses **client contacts**,
-  les interlocuteurs). Un **candidate** postule via une **application**, qui vit
-  dans un **stage** de pipeline. Une **placement** = un placement conclu.
+Spott vocabulary — two words not to be confused:
+- a **vacancy** = a **job** (open position). The API keeps `/vacancies` in its
+  paths, its labels say "job": we expose "job".
+- a **client** = the agency's client company (with its **client contacts**,
+  the counterparts). A **candidate** applies via an **application**, which lives
+  in a pipeline **stage**. A **placement** = a concluded placement.
 
-Deux régimes de pagination cohabitent, et on garde ce fait visible :
-- les `list_*` (GET) paginent par **curseur** (`limit` ≤ 50, `cursor` renvoyé
-  dans la réponse précédente) ;
-- les `search_*` (POST `_search`) paginent par **page** (`page`/`pageSize`) et
-  prennent un tableau de **filtres structurés** (`type`/`operator`/`path`/`value`)
-  — passés bruts, l'agent compose ce dont il a besoin.
+Two pagination regimes coexist, and we keep that fact visible:
+- the `list_*` (GET) paginate by **cursor** (`limit` ≤ 50, `cursor` returned
+  in the previous response);
+- the `search_*` (POST `_search`) paginate by **page** (`page`/`pageSize`) and
+  take an array of **structured filters** (`type`/`operator`/`path`/`value`)
+  — passed raw, the agent composes what it needs.
 
-Docs : https://api-docs.spott.io
+Docs: https://api-docs.spott.io
 
 Requires: requests
 """
@@ -30,29 +30,29 @@ import requests
 from ..common.credentials import require
 from ..common import FieldFilter, raise_for_upstream
 
-# Entités qui ont un pipeline de stages (`GET /pipeline/<entity>/stages`).
-# `applications`/`vacancies` = les deux pipelines du quotidien recrutement ;
-# `clients`/`opportunities` = le côté CRM (développement commercial du cabinet).
+# Entities that have a stage pipeline (`GET /pipeline/<entity>/stages`).
+# `applications`/`vacancies` = the two everyday recruiting pipelines;
+# `clients`/`opportunities` = the CRM side (the agency's business development).
 PIPELINE_ENTITIES = ("applications", "vacancies", "clients", "opportunities")
 
-# Entités auxquelles une note peut être rattachée (`links[].entityType`).
+# Entities a note can be attached to (`links[].entityType`).
 NOTE_ENTITY_TYPES = ("candidate", "vacancy", "client", "application",
                      "clientContact", "interview", "opportunity")
 
 
 class SpottClient:
-    """Client Spott — candidats, jobs, candidatures, notes, clients, placements."""
+    """Spott client — candidates, jobs, applications, notes, clients, placements."""
 
     BASE_URL = "https://api.gospott.com"
 
     def __init__(self, api_key: Optional[str] = None,
                  field_filter: Optional[FieldFilter] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
-            api_key: clé API Spott.
-            field_filter: redaction de champs (défaut = politique `spott`) — les
-                réponses portent de la PII candidat (emails, téléphones, salaires).
+            api_key: Spott API key.
+            field_filter: field redaction (default = `spott` policy) — responses
+                carry candidate PII (emails, phone numbers, salaries).
         """
         self.api_key = require(api_key, "SPOTT_API_KEY")
         self.field_filter = field_filter or FieldFilter.from_config("spott")
@@ -75,18 +75,18 @@ class SpottClient:
 
     @staticmethod
     def _clean(params: Dict[str, Any]) -> Dict[str, Any]:
-        """Retire les paramètres non renseignés (l'API rejette un `null` explicite).
+        """Remove unset parameters (the API rejects an explicit `null`).
 
-        Note : `include` est déclaré `required` dans la spec alors qu'il porte un
-        défaut `[]` (artefact zod→OpenAPI : un champ à `.default()` reste optionnel
-        en entrée) — on l'omet donc quand l'appelant n'en demande pas.
+        Note: `include` is declared `required` in the spec although it carries
+        a default `[]` (zod→OpenAPI artifact: a field with `.default()` stays
+        optional on input) — so we omit it when the caller does not ask for it.
         """
         return {k: v for k, v in params.items() if v not in (None, [], ())}
 
     @staticmethod
     def _page(page: Optional[int], page_size: Optional[int],
               filters: Optional[List[dict]]) -> Dict[str, Any]:
-        """Corps commun des endpoints `_search` (filtres + pagination par page)."""
+        """Common body of the `_search` endpoints (filters + page pagination)."""
         body: Dict[str, Any] = {"filters": filters or []}
         if page is not None:
             body["page"] = page
@@ -94,7 +94,7 @@ class SpottClient:
             body["pageSize"] = page_size
         return body
 
-    # --- Candidats ----------------------------------------------------------
+    # --- Candidates ---------------------------------------------------------
 
     def list_candidates(
         self,
@@ -105,12 +105,12 @@ class SpottClient:
         list_ids: Optional[List[str]] = None,
         include: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidats (curseur, `limit` ≤ 50).
+        """List candidates (cursor, `limit` ≤ 50).
 
         Args:
-            modified_since / modified_until: bornes ISO-8601 sur la modification.
-            list_ids: restreint à des listes Spott (≤ 25).
-            include: relations à embarquer — `skills`.
+            modified_since / modified_until: ISO-8601 bounds on modification.
+            list_ids: restrict to Spott lists (≤ 25).
+            include: relations to embed — `skills`.
         """
         return self._request("GET", "/candidates", params=self._clean({
             "limit": min(limit, 50), "cursor": cursor,
@@ -119,7 +119,7 @@ class SpottClient:
         }))
 
     def get_candidate(self, candidate_id: str) -> Dict[str, Any]:
-        """Récupère un candidat (identité, contacts, contacts clients liés)."""
+        """Fetch a candidate (identity, contacts, linked client contacts)."""
         return self._request("GET", f"/candidates/{candidate_id}")
 
     def search_candidates(
@@ -128,26 +128,26 @@ class SpottClient:
         page: Optional[int] = None,
         page_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Cherche des candidats par filtres structurés (pagination par page).
+        """Search candidates by structured filters (page pagination).
 
         Args:
-            filters: liste de filtres `{type, operator, path, value}`. Champs
-                natifs : `candidate.firstName` / `candidate.lastName` (type
-                `text`, opérateurs contains|equals|startsWith|notEquals),
+            filters: list of `{type, operator, path, value}` filters. Native
+                fields: `candidate.firstName` / `candidate.lastName` (type
+                `text`, operators contains|equals|startsWith|notEquals),
                 `candidate.mainContact` (`entitySelect`, in|notIn),
-                `candidate.createdAt` (`date`). Les attributs personnalisés
-                passent par les types `custom*` (cf. doc Spott).
+                `candidate.createdAt` (`date`). Custom attributes
+                go through the `custom*` types (see Spott docs).
         """
         return self._request("POST", "/candidates/_search",
                              json=self._page(page, page_size, filters))
 
     def create_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
-        """Crée un candidat.
+        """Create a candidate.
 
         Args:
-            candidate: objet candidat — `firstName` et `lastName` obligatoires ;
-                puis `emails` / `phoneNumbers` (`{email|phoneNumber, purpose,
-                isPrimary}`), `locations`, `socialMedia` (`{url, type}` avec type
+            candidate: candidate object — `firstName` and `lastName` required;
+                then `emails` / `phoneNumbers` (`{email|phoneNumber, purpose,
+                isPrimary}`), `locations`, `socialMedia` (`{url, type}` with type
                 LINKEDIN|TWITTER|FACEBOOK|INSTAGRAM), `education`,
                 `workExperiences`, `certifications`, `languages`, `skills`,
                 `compensation`, `status`, `customAttributes`…
@@ -156,7 +156,7 @@ class SpottClient:
 
     def update_candidate(self, candidate_id: str,
                          patch: Dict[str, Any]) -> Dict[str, Any]:
-        """Met à jour un candidat (PATCH partiel : seuls les champs fournis)."""
+        """Update a candidate (partial PATCH: only the provided fields)."""
         return self._request("PATCH", f"/candidates/{candidate_id}", json=patch)
 
     # --- Jobs (vacancies) ---------------------------------------------------
@@ -171,12 +171,12 @@ class SpottClient:
         modified_until: Optional[str] = None,
         include: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les jobs (postes ; endpoint `/vacancies`, curseur, `limit` ≤ 50).
+        """List jobs (positions; `/vacancies` endpoint, cursor, `limit` ≤ 50).
 
         Args:
-            company_ids: restreint aux jobs de ces entreprises clientes.
-            candidate_emails: jobs où ces candidats (≤ 25 emails) ont postulé.
-            include: relations à embarquer — `jobBoards`.
+            company_ids: restrict to the jobs of these client companies.
+            candidate_emails: jobs these candidates (≤ 25 emails) applied to.
+            include: relations to embed — `jobBoards`.
         """
         return self._request("GET", "/vacancies", params=self._clean({
             "limit": min(limit, 50), "cursor": cursor,
@@ -186,7 +186,7 @@ class SpottClient:
         }))
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
-        """Récupère un job (détail, attributs personnalisés, métadonnées)."""
+        """Fetch a job (detail, custom attributes, metadata)."""
         return self._request("GET", f"/vacancies/{job_id}")
 
     def search_jobs(
@@ -195,18 +195,18 @@ class SpottClient:
         page: Optional[int] = None,
         page_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Cherche des jobs par filtres structurés (pagination par page).
+        """Search jobs by structured filters (page pagination).
 
         Args:
-            filters: champs natifs `vacancy.name` / `vacancy.client.company.name`
+            filters: native fields `vacancy.name` / `vacancy.client.company.name`
                 (`text`), `vacancy.client.company` / `vacancy.team` /
                 `vacancy.stage` (`entitySelect`, in|notIn),
-                `vacancy.stage.isOpen` (`boolean`) — « les postes ouverts ».
+                `vacancy.stage.isOpen` (`boolean`) — "the open positions".
         """
         return self._request("POST", "/vacancies/_search",
                              json=self._page(page, page_size, filters))
 
-    # --- Candidatures (applications) ----------------------------------------
+    # --- Applications -------------------------------------------------------
 
     def list_applications(
         self,
@@ -219,12 +219,12 @@ class SpottClient:
         modified_until: Optional[str] = None,
         include: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidatures (curseur, `limit` ≤ 50).
+        """List applications (cursor, `limit` ≤ 50).
 
         Args:
-            job_ids: restreint à ces jobs (`vacancyIds` côté API).
-            candidate_emails: ≤ 25 emails de candidats.
-            is_inbound: True = candidatures spontanées/entrantes seulement.
+            job_ids: restrict to these jobs (`vacancyIds` on the API side).
+            candidate_emails: ≤ 25 candidate emails.
+            is_inbound: True = spontaneous/inbound applications only.
             include: `lastActivity`, `candidate.latestWorkExperience`,
                 `candidate.locations`, `candidate.emailAddresses`,
                 `candidate.phoneNumbers`, `vacancy.clientContactTeam`,
@@ -240,17 +240,17 @@ class SpottClient:
 
     def get_application(self, application_id: str,
                         include: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Récupère une candidature."""
+        """Fetch an application."""
         return self._request("GET", f"/applications/{application_id}",
                              params=self._clean({"include": include}))
 
     def applications_by_candidate(self, candidate_id: str) -> Dict[str, Any]:
-        """Candidatures d'un candidat (jobs + spontanées vers un client),
-        de l'activité la plus récente à la plus ancienne."""
+        """A candidate's applications (jobs + spontaneous ones to a client),
+        from most recent activity to oldest."""
         return self._request("GET", f"/applications/candidate/{candidate_id}")
 
     def applications_by_job(self, job_id: str) -> Dict[str, Any]:
-        """Candidatures d'un job (candidat, statut, avancement dans le pipeline)."""
+        """A job's applications (candidate, status, progress in the pipeline)."""
         return self._request("GET", f"/applications/vacancy/{job_id}")
 
     def create_application(
@@ -262,13 +262,13 @@ class SpottClient:
         client_id: Optional[str] = None,
         **extra: Any,
     ) -> Dict[str, Any]:
-        """Fait postuler un candidat — à un job, ou à un client (spontanée).
+        """Have a candidate apply — to a job, or to a client (spontaneous).
 
         Args:
-            stage_id: étape de pipeline de départ (cf. `pipeline_stages`).
-            job_id: le job visé ; `None` + `client_id` = candidature spontanée.
-            status_id: statut dans l'étape (optionnel).
-            **extra: champs bruts de l'API (`teamUserIds`, `clientTeamContactIds`,
+            stage_id: starting pipeline stage (see `pipeline_stages`).
+            job_id: the targeted job; `None` + `client_id` = spontaneous application.
+            status_id: status within the stage (optional).
+            **extra: raw API fields (`teamUserIds`, `clientTeamContactIds`,
                 `owner`, `position`).
         """
         body: Dict[str, Any] = {
@@ -282,7 +282,7 @@ class SpottClient:
 
     def move_application(self, application_id: str, stage_id: str,
                          status_id: Optional[str] = None) -> Dict[str, Any]:
-        """Déplace une candidature vers une autre étape du pipeline du job."""
+        """Move an application to another stage of the job's pipeline."""
         body: Dict[str, Any] = {"stageId": stage_id}
         if status_id is not None:
             body["statusId"] = status_id
@@ -290,20 +290,20 @@ class SpottClient:
                              json=body)
 
     def application_activities(self, application_id: str) -> Dict[str, Any]:
-        """Journal d'activité d'une candidature (changements d'étape, actions)."""
+        """An application's activity log (stage changes, actions)."""
         return self._request("GET", f"/applications/{application_id}/activities")
 
     def pipeline_stages(self, entity: str = "applications",
                         template_id: Optional[str] = None) -> Dict[str, Any]:
-        """Étapes ordonnées d'un pipeline.
+        """Ordered stages of a pipeline.
 
         Args:
             entity: applications | vacancies | clients | opportunities.
-            template_id: pipeline d'un template précis (applications seulement).
+            template_id: pipeline of a specific template (applications only).
         """
         if entity not in PIPELINE_ENTITIES:
             raise ValueError(
-                f"pipeline Spott inconnu : {entity!r} — attendu "
+                f"unknown Spott pipeline: {entity!r} — expected "
                 f"{', '.join(PIPELINE_ENTITIES)}")
         return self._request("GET", f"/pipeline/{entity}/stages",
                              params=self._clean({"templateId": template_id}))
@@ -321,7 +321,7 @@ class SpottClient:
         modified_since: Optional[str] = None,
         modified_until: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les notes (curseur, `limit` ≤ 50).
+        """List notes (cursor, `limit` ≤ 50).
 
         Args:
             source: phone | phoneInbound | phoneOutbound | inPerson |
@@ -342,19 +342,19 @@ class SpottClient:
         source: Optional[str] = None,
         label_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Crée une note, éventuellement rattachée à des enregistrements.
+        """Create a note, optionally attached to records.
 
         Args:
-            links: `[{"entityType": …, "entityId": …}]` — entityType parmi
+            links: `[{"entityType": …, "entityId": …}]` — entityType among
                 candidate, vacancy, client, application, clientContact,
                 interview, opportunity.
-            source: canal de l'échange (cf. `list_notes`).
+            source: channel of the exchange (see `list_notes`).
         """
         for link in links or []:
             kind = link.get("entityType")
             if kind not in NOTE_ENTITY_TYPES:
                 raise ValueError(
-                    f"entityType Spott inconnu : {kind!r} — attendu "
+                    f"unknown Spott entityType: {kind!r} — expected "
                     f"{', '.join(NOTE_ENTITY_TYPES)}")
         body: Dict[str, Any] = {"title": title, "content": content}
         if links:
@@ -365,7 +365,7 @@ class SpottClient:
             body["labelIds"] = label_ids
         return self._request("POST", "/notes", json=body)
 
-    # --- Clients (entreprises clientes du cabinet) --------------------------
+    # --- Clients (the agency's client companies) ----------------------------
 
     def list_clients(
         self,
@@ -375,14 +375,14 @@ class SpottClient:
         modified_since: Optional[str] = None,
         modified_until: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les clients (entreprises ; curseur, `limit` ≤ 50)."""
+        """List clients (companies; cursor, `limit` ≤ 50)."""
         return self._request("GET", "/clients", params=self._clean({
             "limit": min(limit, 50), "cursor": cursor, "listIds": list_ids,
             "modifiedSince": modified_since, "modifiedUntil": modified_until,
         }))
 
     def get_client(self, client_id: str) -> Dict[str, Any]:
-        """Récupère un client (société, contacts, secteur, taille, hiérarchies)."""
+        """Fetch a client (company, contacts, industry, size, hierarchies)."""
         return self._request("GET", f"/clients/{client_id}")
 
     def search_clients(
@@ -391,10 +391,10 @@ class SpottClient:
         page: Optional[int] = None,
         page_size: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Cherche des clients par filtres structurés (pagination par page).
+        """Search clients by structured filters (page pagination).
 
         Args:
-            filters: champs natifs `client.company.name` / `.domain` /
+            filters: native fields `client.company.name` / `.domain` /
                 `.description` (`text`), `client.stage` / `client.contacts`
                 (`entitySelect`).
         """
@@ -410,7 +410,7 @@ class SpottClient:
         modified_since: Optional[str] = None,
         modified_until: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les contacts clients (interlocuteurs ; curseur, `limit` ≤ 50)."""
+        """List client contacts (counterparts; cursor, `limit` ≤ 50)."""
         return self._request("GET", "/clients/contacts", params=self._clean({
             "limit": min(limit, 50), "cursor": cursor,
             "client_ids": client_ids, "listIds": list_ids,
@@ -427,9 +427,9 @@ class SpottClient:
         modified_since: Optional[str] = None,
         modified_until: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les placements (candidat, société, job, honoraires).
+        """List placements (candidate, company, job, fees).
 
-        ⚠️ Pagination par **page** ici (pas de curseur) : `page` (0-based),
+        ⚠️ **Page** pagination here (no cursor): `page` (0-based),
         `pageSize` ≤ 100.
         """
         return self._request("GET", "/placements", params=self._clean({
@@ -438,16 +438,16 @@ class SpottClient:
             "modifiedSince": modified_since, "modifiedUntil": modified_until,
         }))
 
-    # --- Transverse ---------------------------------------------------------
+    # --- Cross-cutting ------------------------------------------------------
 
     def search_people(self, query: str, limit: int = 25) -> Dict[str, Any]:
-        """Cherche une personne (candidats ∪ contacts clients) par nom, email ou
-        téléphone — matching flou, classé par pertinence. `limit` ≤ 100."""
+        """Search a person (candidates ∪ client contacts) by name, email or
+        phone — fuzzy matching, ranked by relevance. `limit` ≤ 100."""
         return self._request("GET", "/search/people", params={
             "query": query, "limit": min(limit, 100)})
 
     def list_users(self, include_deactivated: bool = False) -> Dict[str, Any]:
-        """Liste les utilisateurs Spott (recruteurs). Sert aussi de sonde de
-        connexion : le plus petit appel authentifié de l'API."""
+        """List Spott users (recruiters). Also serves as a connection
+        probe: the smallest authenticated call of the API."""
         return self._request("GET", "/users", params=self._clean({
             "includeDeactivated": include_deactivated or None}))

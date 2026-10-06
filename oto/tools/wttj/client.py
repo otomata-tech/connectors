@@ -130,7 +130,7 @@ class WTTJClient:
                     parsed = self._parse_job(job_data)
                     all_jobs.append(parsed)
 
-                print(f"  {len(jobs)} offres sur la page, {len(all_jobs)} total", file=sys.stderr)
+                print(f"  {len(jobs)} jobs on the page, {len(all_jobs)} total", file=sys.stderr)
 
                 if found_seen:
                     break
@@ -145,7 +145,7 @@ class WTTJClient:
                     await browser.goto(next_url)
                     await asyncio.sleep(scroll_delay)
 
-            print(f"Terminé: {len(all_jobs)} offres scrapées", file=sys.stderr)
+            print(f"Done: {len(all_jobs)} jobs scraped", file=sys.stderr)
 
             return {
                 "timestamp": datetime.now().isoformat(),

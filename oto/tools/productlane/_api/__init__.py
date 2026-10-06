@@ -1,6 +1,6 @@
-"""Familles d'appels Productlane, composées dans `ProductlaneClient`.
+"""Productlane call families, composed into `ProductlaneClient`.
 
-Un module par domaine d'API. Détail du contrat : `../client.py`.
+One module per API domain. Contract details: `../client.py`.
 """
 
 from .changelogs import _ChangelogsMixin

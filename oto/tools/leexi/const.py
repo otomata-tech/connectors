@@ -1,34 +1,34 @@
-"""Constantes du connecteur Leexi — bornes, énumérations, réglages de transport.
+"""Constants of the Leexi connector — bounds, enumerations, transport settings.
 
-Domicile unique : `client.py` les réexporte via son `__all__`, et les mixins de
-`_api/` les importent d'ici. Un tag oto-core fige ce chemin d'import pour le
-backend, qui n'épingle que `oto.tools.leexi.client`.
+Single home: `client.py` re-exports them via its `__all__`, and the `_api/`
+mixins import them from here. An oto-core tag freezes this import path for the
+backend, which only pins `oto.tools.leexi.client`.
 """
 from __future__ import annotations
 
-# (connexion, lecture) — aucune attente illimitée.
+# (connect, read) — no unbounded wait.
 HTTP_TIMEOUT = (10, 60)
 
-# Bornes de pagination imposées par l'API (doc « Pagination »).
+# Pagination bounds imposed by the API (« Pagination » docs).
 MIN_ITEMS, MAX_ITEMS = 1, 100
 DEFAULT_ITEMS = 10
 
-# Les paramètres que l'amont attend en `nom[]=…`, répétés (Rails). Sans le
-# suffixe, seule la DERNIÈRE valeur est lue et le filtre ment — cf. l'en-tête de
-# `client.py`. Les six sont écrits avec leurs crochets dans la doc éditeur.
+# The parameters upstream expects as `name[]=…`, repeated (Rails). Without the
+# suffix, only the LAST value is read and the filter lies — see the header of
+# `client.py`. All six are written with their brackets in the vendor docs.
 ARRAY_PARAMS = frozenset({
     "source_id", "owner_uuid", "participating_user_uuid",
     "customer_phone_number", "customer_email_address", "roles",
 })
 
-# Statuts retentés : rate limit (50/min, 10/min sur la création d'appel) et
-# indisponibilités passagères. Un 4xx de validation n'est jamais retenté.
+# Retried statuses: rate limit (50/min, 10/min on call creation) and
+# transient outages. A validation 4xx is never retried.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_ATTEMPTS = 3
 
-# Ordres et filtres acceptés, relevés dans l'OpenAPI de chaque page de liste.
-# Refuser localement une valeur hors liste évite un 400 dont le message ne dit
-# pas lesquelles sont valides.
+# Accepted orders and filters, collected from the OpenAPI of each list page.
+# Refusing an out-of-list value locally avoids a 400 whose message does not say
+# which ones are valid.
 CALL_ORDERS = ("created_at desc", "created_at asc", "performed_at desc",
                "performed_at asc", "updated_at desc", "updated_at asc")
 CALL_DATE_FILTERS = ("created_at", "performed_at", "updated_at")

@@ -1,23 +1,23 @@
-"""Lire une réponse de Meta, et traduire un refus dans le vocabulaire d'`errors`.
+"""Read a Meta response, and translate a refusal into the vocabulary of `errors`.
 
-Trois modules appellent Meta (l'échange du code, le renouvellement, les données)
-et les trois reçoivent des corps d'erreur de DEUX formes différentes selon
-l'hôte :
+Three modules call Meta (the code exchange, the renewal, the data)
+and all three receive error bodies of TWO different shapes depending on the
+host:
 
     {"error": {"message": …, "type": "OAuthException", "code": 190}}   graph.instagram.com
     {"error_type": "OAuthException", "code": 400, "error_message": …}  api.instagram.com
 
-Recopier la lecture trois fois, c'est se donner deux occasions de ne reconnaître
-un jeton mort que sur l'un des trois chemins — et un jeton mort non reconnu se
-présente à l'utilisatrice comme une panne passagère qu'elle réessaiera.
+Copying the reading three times gives two chances to recognize a dead
+token on only one of the three paths — and an unrecognized dead token
+shows up to the user as a transient outage that she will retry.
 
-⚠️ **Le corps de la réponse ne traverse jamais cette frontière.** Sur cette API
-le jeton voyage en paramètre d'URL (c'est le protocole de Meta, pas notre choix),
-donc l'URL et parfois l'écho de la requête se retrouvent dans les corps d'erreur.
-On rend le STATUT et, quand il est présent, le message rédigé par Meta pour
-l'humain (`error.message` / `error_message`) — jamais le corps brut, jamais
-l'URL. C'est aussi pourquoi aucun appel de ce paquet n'utilise
-`raise_for_status()` : son message porte l'URL appelée.
+⚠️ **The response body never crosses this boundary.** On this API
+the token travels as a URL parameter (that is Meta's protocol, not our choice),
+so the URL and sometimes the request echo end up in error bodies.
+We return the STATUS and, when present, the message written by Meta for the
+human (`error.message` / `error_message`) — never the raw body, never the
+URL. This is also why no call in this package uses
+`raise_for_status()`: its message carries the called URL.
 """
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ from typing import Any, Optional
 
 from .errors import InstagramApiError, InstagramAuthExpired, InstagramAuthRefused
 
-#: Codes d'erreur Meta qui signifient « ce jeton ne vaut plus rien ». 190 =
-#: jeton expiré, changé ou révoqué ; 102 = session invalidée.
+#: Meta error codes meaning "this token is worthless". 190 =
+#: token expired, changed or revoked; 102 = session invalidated.
 _CODES_JETON_MORT = (190, 102)
 
 
 def _erreur(payload: Any) -> dict:
-    """Le bloc d'erreur, quelle que soit la forme rendue par l'hôte. `{}` si aucun."""
+    """The error block, whatever shape the host returns. `{}` if none."""
     if not isinstance(payload, dict):
         return {}
     bloc = payload.get("error")
@@ -51,11 +51,11 @@ def _entier(valeur: Any) -> Optional[int]:
 
 
 def jeton_mort(status: int, payload: Any) -> bool:
-    """Meta dit-il que le JETON est mort — par opposition à « l'appel a raté » ?
+    """Does Meta say the TOKEN is dead — as opposed to "the call failed"?
 
-    La distinction garde un geste destructeur du point de vue de l'utilisatrice :
-    l'appelant lui demande un nouveau consentement. Un 400 pour un paramètre
-    invalide n'a pas à déclencher ça."""
+    The distinction guards a destructive gesture from the user's point of view:
+    the caller asks her for a new consent. A 400 for an invalid
+    parameter must not trigger that."""
     if status == 401:
         return True
     bloc = _erreur(payload)
@@ -65,11 +65,11 @@ def jeton_mort(status: int, payload: Any) -> bool:
 
 
 def lire(reponse, geste: str, *, expires_at: Optional[str] = None) -> dict:
-    """Le corps JSON d'une réponse OK, ou l'erreur d'`errors` qui convient.
+    """The JSON body of an OK response, or the fitting `errors` error.
 
-    `geste` est la phrase qu'on met dans le message (« la lecture du profil »,
-    « le renouvellement de l'autorisation ») : une erreur qui ne dit pas ce qui a
-    échoué envoie chercher au mauvais endroit."""
+    `geste` is the phrase put into the message ("reading the profile",
+    "renewing the authorization"): an error that doesn't say what
+    failed sends people looking in the wrong place."""
     try:
         payload = reponse.json()
     except ValueError:
@@ -77,28 +77,28 @@ def lire(reponse, geste: str, *, expires_at: Optional[str] = None) -> dict:
     if reponse.status_code == 200:
         if not isinstance(payload, dict):
             raise InstagramApiError(
-                f"Réponse illisible d'Instagram sur {geste} (corps non JSON).",
+                f"Unreadable Instagram response while {geste} (non-JSON body).",
                 reponse.status_code)
         return payload
     bloc = _erreur(payload)
     dit = str(bloc.get("message") or "").strip()
     if jeton_mort(reponse.status_code, payload):
         raise InstagramAuthExpired(
-            f"Instagram a refusé {geste} : l'autorisation du compte n'est plus "
-            f"valable{f' ({dit})' if dit else ''}.", expires_at)
+            f"Instagram refused {geste}: the account's authorization is no longer "
+            f"valid{f' ({dit})' if dit else ''}.", expires_at)
     raise InstagramApiError(
-        f"Instagram a refusé {geste} (HTTP {reponse.status_code})"
-        f"{f' : {dit}' if dit else ''}.", reponse.status_code)
+        f"Instagram refused {geste} (HTTP {reponse.status_code})"
+        f"{f': {dit}' if dit else ''}.", reponse.status_code)
 
 
 def refus_de_consentement(reponse, geste: str) -> None:
-    """Comme `lire`, mais pour les étapes d'ACQUISITION du jeton.
+    """Like `lire`, but for the token ACQUISITION steps.
 
-    Un refus y a une autre cause dominante que « le jeton est mort » — il n'y a
-    pas encore de jeton : c'est le consentement lui-même que Meta refuse (compte
-    non invité comme testeur tant que l'application n'est pas publiée, code déjà
-    consommé, URL de retour non déclarée). D'où une erreur distincte : l'appelant
-    a un tout autre message à composer, et il ne s'adresse pas à la même personne."""
+    A refusal there has another dominant cause than "the token is dead" — there is
+    no token yet: it is the consent itself that Meta refuses (account
+    not invited as a tester while the application is unpublished, code already
+    consumed, undeclared return URL). Hence a distinct error: the caller
+    has a completely different message to compose, and it is not addressed to the same person."""
     try:
         payload = reponse.json()
     except ValueError:
@@ -106,5 +106,5 @@ def refus_de_consentement(reponse, geste: str) -> None:
     bloc = _erreur(payload)
     dit = str(bloc.get("message") or "").strip()
     raise InstagramAuthRefused(
-        f"Meta a refusé {geste} (HTTP {reponse.status_code})"
-        f"{f' : {dit}' if dit else ''}.", str(bloc.get("type") or ""))
+        f"Meta refused {geste} (HTTP {reponse.status_code})"
+        f"{f': {dit}' if dit else ''}.", str(bloc.get("type") or ""))

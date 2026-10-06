@@ -4,16 +4,16 @@ AI Ark API Client — B2B company & people data (search + contact enrichment).
 Synchronous REST API (docs.ai-ark.com). Auth = API key in the `X-TOKEN` header.
 Base: https://api.ai-ark.com/api/developer-portal
 
-Endpoints couverts (v1 = SYNCHRONES uniquement) :
-- POST /v1/companies              — recherche de sociétés (filtres firmographiques)
-- POST /v1/people                 — recherche de personnes (filtres société + contact)
-- POST /v1/people/export/single   — export d'UNE personne + recherche d'email (sync)
-- POST /v1/people/reverse-lookup  — retrouver une personne depuis email/téléphone
-- POST /v1/people/mobile-phone-finder — trouver le mobile d'une personne
-- GET  /v1/payments/credits       — crédits restants
+Endpoints covered (v1 = SYNCHRONOUS only):
+- POST /v1/companies              — company search (firmographic filters)
+- POST /v1/people                 — people search (company + contact filters)
+- POST /v1/people/export/single   — export ONE person + email lookup (sync)
+- POST /v1/people/reverse-lookup  — find a person from an email/phone
+- POST /v1/people/mobile-phone-finder — find a person's mobile
+- GET  /v1/payments/credits       — remaining credits
 
-Les exports/find-emails EN LOT répondent par webhook (asynchrone) : hors périmètre
-v1 (itération suivante si besoin). Le single-person export ci-dessus est synchrone.
+BULK exports/find-emails answer by webhook (asynchronous): out of scope for
+v1 (next iteration if needed). The single-person export above is synchronous.
 
 Requires: requests
 """
@@ -28,7 +28,7 @@ from ..common.credentials import require
 
 
 class AiArkClient:
-    """Client pour l'API AI Ark (Company & People Data)."""
+    """Client for the AI Ark API (Company & People Data)."""
 
     BASE_URL = "https://api.ai-ark.com/api/developer-portal"
     TIMEOUT = 30
@@ -36,7 +36,7 @@ class AiArkClient:
     def __init__(self, api_key: str | None = None):
         """
         Args:
-            api_key: clé AI Ark (`X-TOKEN`).
+            api_key: AI Ark key (`X-TOKEN`).
         """
         self.api_key = require(api_key, "AIARK_API_KEY")
 
@@ -54,8 +54,8 @@ class AiArkClient:
         json: Optional[dict] = None,
         allow_404: bool = False,
     ) -> Any:
-        """Appel API. `allow_404=True` renvoie None sur 404 (lookup infructueux =
-        cas normal, pas une erreur) au lieu de lever."""
+        """API call. `allow_404=True` returns None on 404 (unsuccessful lookup =
+        normal case, not an error) instead of raising."""
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
         resp = requests.request(
             method, url, headers=self._headers(), json=json, timeout=self.TIMEOUT
@@ -63,24 +63,24 @@ class AiArkClient:
         if allow_404 and resp.status_code == 404:
             return None
         resp.raise_for_status()
-        # Certains endpoints (204/corps vide) ne renvoient pas de JSON.
+        # Some endpoints (204/empty body) return no JSON.
         if not resp.content:
             return None
         return resp.json()
 
-    # ---- crédits / auth ----------------------------------------------------
+    # ---- credits / auth ----------------------------------------------------
 
     def credits(self) -> Dict[str, Any]:
-        """Crédits restants du compte : `{"total": <int>}`."""
+        """Remaining credits of the account: `{"total": <int>}`."""
         return self._request("GET", "v1/payments/credits")
 
     def verify_key(self) -> Dict[str, Any]:
-        """Valide la clé via un appel crédits. `{"valid": True, "credits": <int>}`
-        si OK, sinon lève la HTTPError (401 = clé invalide)."""
+        """Validates the key via a credits call. `{"valid": True, "credits": <int>}`
+        if OK, otherwise raises the HTTPError (401 = invalid key)."""
         data = self.credits() or {}
         return {"valid": True, "credits": data.get("total")}
 
-    # ---- recherche ---------------------------------------------------------
+    # ---- search ------------------------------------------------------------
 
     def search_companies(
         self,
@@ -91,16 +91,16 @@ class AiArkClient:
         page: int = 0,
         size: int = 10,
     ) -> Dict[str, Any]:
-        """Recherche de sociétés (firmographie). Renvoie la page brute AI Ark
+        """Company search (firmographics). Returns the raw AI Ark page
         (`content[]`, `totalElements`, `totalPages`, `pageable`, …).
 
         Args:
-            account: filtres firmographiques (nom, domaine, secteur, localisation,
-                effectif, CA, technologies, funding…). Structure AI Ark, ex.
+            account: firmographic filters (name, domain, industry, location,
+                headcount, revenue, technologies, funding…). AI Ark structure, e.g.
                 `{"name": {"any": {"include": {"mode": "SMART", "content": ["Amazon"]}}}}`.
-            lists: exclusion de sociétés déjà dans des listes sauvegardées.
-            lookalike_domains: jusqu'à 5 URLs pour trouver des sociétés similaires.
-            page: numéro de page (0-based). size: 0-100.
+            lists: exclusion of companies already in saved lists.
+            lookalike_domains: up to 5 URLs to find similar companies.
+            page: page number (0-based). size: 0-100.
         """
         body: Dict[str, Any] = {"page": page, "size": size}
         if account is not None:
@@ -120,16 +120,16 @@ class AiArkClient:
         page: int = 0,
         size: int = 10,
     ) -> Dict[str, Any]:
-        """Recherche de personnes. Renvoie la page brute AI Ark (`content[]`,
+        """People search. Returns the raw AI Ark page (`content[]`,
         `totalElements`, `totalPages`, `trackId`, …).
 
         Args:
-            account: filtres sur la société de rattachement (domaine, secteur,
-                effectif…), même DSL que `search_companies`.
-            contact: filtres sur la personne (séniorité, département, poste,
-                localisation…), ex. `{"seniority": {"any": {"include": ["founder"]}}}`.
-            lists: exclusion de personnes déjà dans des listes sauvegardées.
-            page: numéro de page (0-based). size: 0-100.
+            account: filters on the person's company (domain, industry,
+                headcount…), same DSL as `search_companies`.
+            contact: filters on the person (seniority, department, job title,
+                location…), e.g. `{"seniority": {"any": {"include": ["founder"]}}}`.
+            lists: exclusion of people already in saved lists.
+            page: page number (0-based). size: 0-100.
         """
         body: Dict[str, Any] = {"page": page, "size": size}
         if account is not None:
@@ -140,21 +140,21 @@ class AiArkClient:
             body["lists"] = lists
         return self._request("POST", "v1/people", json=body)
 
-    # ---- enrichissement (synchrone) ---------------------------------------
+    # ---- enrichment (synchronous) -----------------------------------------
 
     def export_person(
         self, *, id: Optional[str] = None, url: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
-        """Export d'UNE personne + recherche d'email (synchrone). Renvoie le profil
-        avec `email.output[]` (`address`/`status`/`domainType`), ou None si aucun
-        email/profil trouvé (404).
+        """Export ONE person + email lookup (synchronous). Returns the profile
+        with `email.output[]` (`address`/`status`/`domainType`), or None if no
+        email/profile found (404).
 
         Args:
-            id: AI Ark id d'une personne (issu d'une recherche `search_people`).
-            url: OU une URL de profil LinkedIn. Au moins l'un des deux requis.
+            id: AI Ark id of a person (from a `search_people` search).
+            url: OR a LinkedIn profile URL. At least one of the two is required.
         """
         if not id and not url:
-            raise ValueError("export_person exige `id` ou `url`.")
+            raise ValueError("export_person requires `id` or `url`.")
         body: Dict[str, Any] = {}
         if id:
             body["id"] = id
@@ -165,11 +165,11 @@ class AiArkClient:
         )
 
     def reverse_lookup(self, search: str) -> Optional[Dict[str, Any]]:
-        """Retrouve une personne depuis une info de contact (email, téléphone…).
-        Renvoie le profil complet, ou None si introuvable (404).
+        """Finds a person from a piece of contact info (email, phone…).
+        Returns the full profile, or None if not found (404).
 
         Args:
-            search: l'info de contact à résoudre (email, téléphone…).
+            search: the contact info to resolve (email, phone…).
         """
         return self._request(
             "POST",
@@ -185,16 +185,16 @@ class AiArkClient:
         domain: Optional[str] = None,
         name: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Trouve le(s) mobile(s) d'une personne. Renvoie `{"id", "linkedin",
-        "data": [["+..."]]}` ou None si introuvable (404).
+        """Finds a person's mobile(s). Returns `{"id", "linkedin",
+        "data": [["+..."]]}` or None if not found (404).
 
         Args:
-            linkedin: URL du profil LinkedIn (seul), OU…
-            domain + name: domaine de la société ET nom de la personne (ensemble).
+            linkedin: LinkedIn profile URL (alone), OR…
+            domain + name: the company's domain AND the person's name (together).
         """
         if not linkedin and not (domain and name):
             raise ValueError(
-                "mobile_phone exige `linkedin` OU (`domain` ET `name`)."
+                "mobile_phone requires `linkedin` OR (`domain` AND `name`)."
             )
         body: Dict[str, Any] = {}
         if linkedin:

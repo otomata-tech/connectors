@@ -1,22 +1,22 @@
-"""Client de l'API PUBLIQUE Brevo v3 (ex-Sendinblue).
+"""Client for the Brevo v3 PUBLIC API (formerly Sendinblue).
 
-Auth = **clé API v3** en header `api-key`, créée dans Brevo :
-Paramètres → SMTP & API → Clés API. Une clé porte tout le compte (pas de scope).
+Auth = **v3 API key** in the `api-key` header, created in Brevo:
+Settings → SMTP & API → API Keys. A key covers the whole account (no scope).
 
-Couvre le cœur de la plateforme : contacts/listes/segments, email transactionnel
-et templates, campagnes email, CRM natif (deals/companies/tasks/notes).
+Covers the core of the platform: contacts/lists/segments, transactional email
+and templates, email campaigns, native CRM (deals/companies/tasks/notes).
 
-⚠️ **À ne pas confondre avec le connecteur `brevoauto`** (`workflow-apis.brevo.com`),
-qui pilote les *automations* via l'API privée de l'éditeur et une session navigateur.
-Les deux surfaces sont disjointes : la clé API v3 ne donne aucun accès à l'authoring
-d'automations, et la session navigateur ne sert pas ici.
+⚠️ **Not to be confused with the `brevoauto` connector** (`workflow-apis.brevo.com`),
+which drives *automations* through the vendor's private API and a browser session.
+The two surfaces are disjoint: the v3 API key gives no access to automation
+authoring, and the browser session is not used here.
 
-**Écritures volontairement absentes** (un appel LLM malheureux coûterait cher) :
-envoi d'une campagne (`sendNow`, passage du statut à `sent`), suppression de
-contact/liste/campagne/template, purge des hard bounces. La conception et la mesure
-sont exposées ; le départ d'un envoi de masse et les suppressions restent dans l'UI.
+**Deliberately absent writes** (an unlucky LLM call would be costly):
+sending a campaign (`sendNow`, switching the status to `sent`), deleting a
+contact/list/campaign/template, purging hard bounces. Design and measurement
+are exposed; launching a mass send and deletions stay in the UI.
 
-Docs : https://developers.brevo.com/reference
+Docs: https://developers.brevo.com/reference
 
 Requires: requests
 """
@@ -33,14 +33,14 @@ from .email import TransactionalEmailMixin
 
 class BrevoClient(ContactsMixin, TransactionalEmailMixin, CampaignsMixin,
                   CrmMixin, _BrevoBase):
-    """Client Brevo v3 — contacts, transactionnel, campagnes, CRM."""
+    """Brevo v3 client — contacts, transactional, campaigns, CRM."""
 
     def get_account(self) -> Dict[str, Any]:
-        """Compte Brevo : société, plan(s), crédits email/SMS restants."""
+        """Brevo account: company, plan(s), remaining email/SMS credits."""
         return self._request("GET", "/account")
 
     def list_senders(self, ip: Optional[str] = None,
                      domain: Optional[str] = None) -> Dict[str, Any]:
-        """Expéditeurs vérifiés du compte — leur `email`/`id` est requis pour envoyer."""
+        """The account's verified senders — their `email`/`id` is required to send."""
         params = self._clean({"ip": ip, "domain": domain})
         return self._request("GET", "/senders", params=params or None)

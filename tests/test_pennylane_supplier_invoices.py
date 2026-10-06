@@ -54,8 +54,8 @@ def test_update_pose_le_vat_rate_d_une_ligne_existante_et_le_libelle():
 
 
 @pytest.mark.parametrize("lignes, motif", [
-    ([{"id": 9}], "objet"),
-    ({"modifier": [{"id": 9}]}, "inconnue"),
+    ([{"id": 9}], "object"),
+    ({"modifier": [{"id": 9}]}, "unknown"),
     ({"update": [{"vat_rate": "exempt"}]}, "id"),
     ({"delete": [{}]}, "id"),
 ])
@@ -68,7 +68,7 @@ def test_update_refuse_une_forme_de_lignes_que_l_api_rejetterait(lignes, motif):
 
 def test_update_refuse_une_modification_vide():
     c = _client()
-    with pytest.raises(ValueError, match="rien à modifier"):
+    with pytest.raises(ValueError, match="nothing to change"):
         c.update_supplier_invoice(42)
     assert c.appels == []
 

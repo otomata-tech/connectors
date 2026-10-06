@@ -1,6 +1,6 @@
-"""Familles d'opérations Slides, composées dans `SlidesClient`.
+"""Slides operation families, composed into `SlidesClient`.
 
-Un module par famille. Détail du contrat : `../slides_client.py`.
+One module per family. Contract details: `../slides_client.py`.
 """
 
 from .copy import _CopyMixin

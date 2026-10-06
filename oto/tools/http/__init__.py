@@ -1,8 +1,8 @@
-"""Connecteur `http` générique — nœud HTTP lecture seule multi-auth (ADR 0037).
+"""Generic `http` connector — read-only multi-auth HTTP node (ADR 0037).
 
-Consommé par l'adaptateur `oto_mcp/tools/http.py` (connecteur `http` d'oto-backend).
-Pur (`requests` seul). La protection SSRF est un contrôle
-d'egress réseau au niveau plateforme, pas du code ici."""
+Consumed by the `oto_mcp/tools/http.py` adapter (oto-backend's `http` connector).
+Pure (`requests` only). SSRF protection is a network egress
+control at the platform level, not code here."""
 from .client import (
     AUTH_MODES,
     ApiKeyHeader,

@@ -47,12 +47,12 @@ def _client(**kw):
 def test_project_api_key_is_refused():
     """`phc_` est la clé que PostHog met le plus en avant, et l'API de lecture la
     rejette par un 401 indistinguable d'une clé morte — d'où le refus ici."""
-    with pytest.raises(ValueError, match="Clé de PROJET"):
+    with pytest.raises(ValueError, match="PROJECT key"):
         ph.PostHogClient(api_key="phc_abc")
 
 
 def test_project_secret_key_is_refused():
-    with pytest.raises(ValueError, match="Clé secrète de projet"):
+    with pytest.raises(ValueError, match="project secret key"):
         ph.PostHogClient(api_key="phs_abc")
 
 
@@ -103,7 +103,7 @@ def test_project_id_is_discovered_from_the_key(monkeypatch):
 def test_a_key_that_sees_no_project_says_so(monkeypatch):
     monkeypatch.setattr(ph.requests.Session, "request",
                         lambda self, m, u, **k: _Resp(200, {"organization": {"teams": []}}))
-    with pytest.raises(ValueError, match="ne voit aucun projet"):
+    with pytest.raises(ValueError, match="sees no project"):
         ph.PostHogClient(api_key="phx_test").resolve_project_id()
 
 
@@ -156,7 +156,7 @@ def test_run_insight_replays_the_saved_query_with_an_overridden_window(monkeypat
 def test_run_insight_on_a_legacy_insight_explains_instead_of_failing_opaquely(monkeypatch):
     monkeypatch.setattr(ph.requests.Session, "request",
                         lambda self, m, u, **k: _Resp(200, {"id": 7, "filters": {}}))
-    with pytest.raises(ValueError, match="format hérité"):
+    with pytest.raises(ValueError, match="legacy-format"):
         _client().run_insight(7)
 
 
@@ -178,7 +178,7 @@ def test_next_page_follows_a_url_on_the_configured_host(monkeypatch):
 def test_next_page_refuses_a_url_off_host():
     """`next` vient de l'amont : le suivre sans le valider enverrait notre
     en-tête Authorization vers un hôte arbitraire (SSRF)."""
-    with pytest.raises(ValueError, match="hors du host configuré"):
+    with pytest.raises(ValueError, match="outside the configured host"):
         _client().next_page("https://evil.example.com/api/projects/1/insights/")
 
 

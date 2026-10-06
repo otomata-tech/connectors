@@ -1,4 +1,4 @@
-"""Make (ex-Integromat) REST API v2 client (scénarios, exécutions)."""
+"""Make (ex-Integromat) REST API v2 client (scenarios, executions)."""
 
 from .client import MakeClient
 

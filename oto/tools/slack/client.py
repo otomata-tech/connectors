@@ -15,46 +15,46 @@ from .text import MAX_TEXT_LEN as _MAX_TEXT_LEN
 from .text import chunk_text as _chunk_text
 from .text import escape_false_emoji_shortcodes as _escape_false_emoji_shortcodes
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
-# Slack répond HTTP 200 avec `{"ok": false, "error": "<code>"}` pour les rejets
-# logiques (raise_for_status ne les voit pas). On les traduit en erreur amont
-# TYPÉE portant `.status` (même contrat que les autres connecteurs oto-core, ex.
-# NinjaError) : un code de rejet client (channel introuvable, droits, scope…) est
-# un 4xx amont — pas un bug backend — donc trié comme tel en aval (calllog,
-# Sentry). Les vrais incidents Slack (internal_error…) restent en 5xx → reportés.
+# Slack answers HTTP 200 with `{"ok": false, "error": "<code>"}` for logical
+# rejections (raise_for_status does not see them). We translate them into a TYPED
+# upstream error carrying `.status` (same contract as the other oto-core connectors, e.g.
+# NinjaError): a client rejection code (channel not found, permissions, scope…) is
+# an upstream 4xx — not a backend bug — so triaged as such downstream (calllog,
+# Sentry). Real Slack incidents (internal_error…) stay 5xx → reported.
 _SLACK_ERROR_STATUS = {
     # 401 — authentification
     "not_authed": 401, "invalid_auth": 401, "account_inactive": 401,
     "token_revoked": 401, "token_expired": 401,
-    # 403 — autorisation / périmètre
+    # 403 — authorization / scope
     "missing_scope": 403, "not_allowed_token_type": 403, "ekm_access_denied": 403,
     "not_in_channel": 403, "is_archived": 403, "restricted_action": 403,
     "cant_post_message": 403, "no_permission": 403,
-    # 404 — cible absente
+    # 404 — target missing
     "channel_not_found": 404, "user_not_found": 404, "users_not_found": 404,
     "message_not_found": 404, "thread_not_found": 404, "file_not_found": 404,
     # 429 — quota
     "ratelimited": 429, "rate_limited": 429,
-    # 5xx — incident côté Slack (à reporter, vrai bug amont)
+    # 5xx — incident on Slack's side (to report, real upstream bug)
     "internal_error": 502, "fatal_error": 502, "service_unavailable": 503,
     "request_timeout": 504,
 }
 
 
 class SlackError(RuntimeError):
-    """Erreur API Slack (`ok:false`). `status` = équivalent HTTP du code Slack
-    (défaut 400 = rejet client), `error` = le code Slack brut.
+    """Slack API error (`ok:false`). `status` = HTTP equivalent of the Slack code
+    (default 400 = client rejection), `error` = the raw Slack code.
 
-    `needed` / `provided` : sur un `missing_scope`, Slack NOMME lui-même le droit
-    qui manque et ceux qu'il a vus sur le token. Sondé le 2026-08-28 —
-    `conversations.replies` sur un canal privé avec un token sans `groups:history`
-    rend `needed=groups:history, provided=identify,im:history,…`. Les jeter
-    obligeait l'aval à deviner le scope, et un refus qu'on ne sait pas traduire en
-    geste bloque l'appelant (deux orgs immobilisées, oto-backend #510/#532).
-    `needed` peut être une LISTE séparée par virgules = « l'un de ceux-là suffit »
-    (observé : `channels:read,groups:read,mpim:read,im:read`).
+    `needed` / `provided`: on a `missing_scope`, Slack ITSELF NAMES the missing
+    right and those it saw on the token. Probed on 2026-08-28 —
+    `conversations.replies` on a private channel with a token lacking `groups:history`
+    returns `needed=groups:history, provided=identify,im:history,…`. Discarding them
+    forced downstream to guess the scope, and a refusal that cannot be translated into an
+    action blocks the caller (two orgs stuck, oto-backend #510/#532).
+    `needed` can be a comma-separated LIST = "any one of these is enough"
+    (observed: `channels:read,groups:read,mpim:read,im:read`).
     """
 
     def __init__(self, error: Optional[str], status: Optional[int] = None,
@@ -386,13 +386,13 @@ class SlackClient:
     ) -> Dict[str, Any]:
         """
         Read recent messages from a channel (or DM/group). TOP-LEVEL ONLY —
-        les réponses de fil s'obtiennent par `replies()`.
+        thread replies are obtained via `replies()`.
 
-        Bornes sondées le 2026-08-28 : `oldest`/`latest` sont **exclusives**
-        (mesuré par différentiel : 10 messages sans borne, 4 avec `oldest`), et
-        `inclusive=True` inclut le message posé exactement sur la borne.
-        ⚠️ Un ts invalide rend `invalid_ts_oldest` — donc ne jamais laisser
-        partir un `None` converti en chaîne.
+        Bounds probed on 2026-08-28: `oldest`/`latest` are **exclusive**
+        (measured by differential: 10 messages with no bound, 4 with `oldest`), and
+        `inclusive=True` includes the message sitting exactly on the bound.
+        ⚠️ An invalid ts returns `invalid_ts_oldest` — so never let a
+        `None` converted to a string go out.
 
         Args:
             channel: Channel ID
@@ -433,42 +433,42 @@ class SlackClient:
     ) -> Dict[str, Any]:
         """Read the REPLIES of a thread (`conversations.replies`).
 
-        `conversations.history` ne rend que le premier niveau : sur un parent il
-        annonce `reply_count`/`reply_users`/`latest_reply` et **jamais un corps de
-        réponse**. C'est le manque signalé quatre fois en huit jours par trois
-        personnes (oto-backend #567/#576/#584/#592) : une décision ou un désaccord
-        vit presque toujours dans le fil.
+        `conversations.history` only returns the first level: on a parent it
+        reports `reply_count`/`reply_users`/`latest_reply` and **never a reply
+        body**. This is the gap reported four times in eight days by three
+        people (oto-backend #567/#576/#584/#592): a decision or a disagreement
+        almost always lives in the thread.
 
-        Contrat SONDÉ en direct le 2026-08-28 (et non déduit de la doc) :
-        - le paramètre Slack s'appelle **`ts`** — envoyer `thread_ts=` seul est
-          rejeté (`invalid_arguments`) ; l'argument garde ici le nom que porte le
-          message côté appelant, la traduction se fait au transport ;
-        - le **parent est toujours rendu en `messages[0]`**, et il est **répété à
-          chaque page** : concaténer deux pages le compte deux fois ;
-        - `limit` borne les RÉPONSES (le parent est en sus : `limit=2` → 3
-          messages) et la pagination remonte le fil **du plus récent au plus
-          ancien** ;
-        - `oldest`/`latest` sont des bornes **exclusives** ; `inclusive=True` les
-          inclut ;
-        - un `ts` sans réponse rend le seul parent (`ok:true`, n=1) — ce n'est pas
-          une erreur ; un `ts` inconnu rend `thread_not_found` ;
-        - ⚠️ Slack **AVALE un paramètre inconnu en rendant `ok:true`** (mesuré :
-          `zzz_inconnu=x` rend exactement le résultat nu). N'envoyer que des
-          paramètres prouvés par différentiel — c'est le cas des six ci-dessus.
+        Contract PROBED live on 2026-08-28 (not deduced from the docs):
+        - Slack's parameter is called **`ts`** — sending `thread_ts=` alone is
+          rejected (`invalid_arguments`); the argument keeps here the name the
+          message carries on the caller's side, the translation happens at the transport;
+        - the **parent is always returned as `messages[0]`**, and it is **repeated on
+          every page**: concatenating two pages counts it twice;
+        - `limit` bounds the REPLIES (the parent comes on top: `limit=2` → 3
+          messages) and pagination goes up the thread **from most recent to
+          oldest**;
+        - `oldest`/`latest` are **exclusive** bounds; `inclusive=True` includes
+          them;
+        - a `ts` with no reply returns the parent alone (`ok:true`, n=1) — this is not
+          an error; an unknown `ts` returns `thread_not_found`;
+        - ⚠️ Slack **SWALLOWS an unknown parameter and returns `ok:true`** (measured:
+          `zzz_unknown=x` returns exactly the bare result). Only send
+          parameters proven by differential — which is the case for the six above.
 
         Args:
-            channel: Channel ID (`C…`/`G…`/`D…`) qui porte le fil.
-            thread_ts: `ts` du message PARENT (le `thread_ts` d'une réponse).
-            limit: Max de réponses par page (Slack plafonne à 1000, défaut utile ~50).
-            cursor: Curseur de `response_metadata.next_cursor`.
-            oldest: Ne rendre que les réponses APRÈS ce ts (exclusif).
-            latest: Ne rendre que les réponses AVANT ce ts (exclusif).
-            inclusive: Inclure les messages posés exactement sur `oldest`/`latest`.
-            as_user: Override de token ; None → même routage que `history`
-                (DM `D…` par le user token, canaux par le bot).
+            channel: Channel ID (`C…`/`G…`/`D…`) holding the thread.
+            thread_ts: `ts` of the PARENT message (a reply's `thread_ts`).
+            limit: Max replies per page (Slack caps at 1000, useful default ~50).
+            cursor: Cursor from `response_metadata.next_cursor`.
+            oldest: Only return replies AFTER this ts (exclusive).
+            latest: Only return replies BEFORE this ts (exclusive).
+            inclusive: Include messages sitting exactly on `oldest`/`latest`.
+            as_user: Token override; None → same routing as `history`
+                (DMs `D…` via the user token, channels via the bot).
 
         Returns:
-            `{messages: [parent, …réponses], has_more, response_metadata.next_cursor}`
+            `{messages: [parent, …replies], has_more, response_metadata.next_cursor}`
         """
         if as_user is None:
             as_user = self._prefer(want_user=channel.startswith("D"))
@@ -480,22 +480,22 @@ class SlackClient:
         if latest:
             params["latest"] = latest
         if inclusive:
-            # Slack lit un booléen de query string en TEXTE ("true"/"false").
+            # Slack reads a query-string boolean as TEXT ("true"/"false").
             params["inclusive"] = "true"
         return self._request("GET", "conversations.replies", as_user=as_user, params=params)
 
     def channel_info(self, channel: str, as_user: Optional[bool] = None) -> Dict[str, Any]:
-        """Metadata d'un canal (`conversations.info`) — type, appartenance, archivage.
+        """A channel's metadata (`conversations.info`) — type, membership, archiving.
 
-        Sondé le 2026-08-28 : répond y compris sur un canal **public dont on n'est
-        pas membre** (`is_private=False, is_member=False`). C'est ce qui permet de
-        savoir si un canal est joignable par API AVANT de tenter quoi que ce soit.
-        ⚠️ Sur un canal **privé** où l'on n'est pas, la réponse est
-        `channel_not_found` — indiscernable d'un ID faux : l'aval doit dire les deux.
+        Probed on 2026-08-28: answers even on a **public channel we are not a
+        member of** (`is_private=False, is_member=False`). This is what makes it possible to
+        know whether a channel is reachable via API BEFORE attempting anything.
+        ⚠️ On a **private** channel we are not in, the answer is
+        `channel_not_found` — indistinguishable from a wrong ID: downstream must say both.
 
         Args:
             channel: Channel ID (`C…`/`G…`/`D…`).
-            as_user: Override de token ; None → bot (il porte `channels:read`).
+            as_user: Token override; None → bot (it carries `channels:read`).
         """
         if as_user is None:
             as_user = self._prefer(want_user=False)
@@ -503,25 +503,25 @@ class SlackClient:
                              params={"channel": channel})
 
     def join_channel(self, channel: str, as_user: Optional[bool] = None) -> Dict[str, Any]:
-        """Rejoindre un canal **public** (`conversations.join`).
+        """Join a **public** channel (`conversations.join`).
 
-        Ferme la moitié automatisable de oto-backend #549 : sans appartenance,
-        `conversations.history` et `chat.postMessage` rendent `not_in_channel`, et
-        une exécution planifiée ne peut ni se réparer ni le signaler.
+        Closes the automatable half of oto-backend #549: without membership,
+        `conversations.history` and `chat.postMessage` return `not_in_channel`, and
+        a scheduled run can neither repair itself nor report it.
 
-        ⚠️ **L'autre moitié n'est pas automatisable** : un canal **privé** ne se
-        rejoint par AUCUNE API — il faut qu'un humain invite l'app (`/invite @…`).
-        Ne pas appeler cette méthode sur un canal privé : la refuser en nommant le
-        geste est la seule réponse honnête.
+        ⚠️ **The other half is not automatable**: a **private** channel cannot be
+        joined through ANY API — a human must invite the app (`/invite @…`).
+        Do not call this method on a private channel: refusing it by naming the
+        action is the only honest answer.
 
-        Scope requis (sondé le 2026-08-28) : **`channels:join`** en bot token,
-        `channels:write` en user token. Sans lui, Slack rend `missing_scope` en
-        nommant le droit dans `needed` — avant même de résoudre le canal (un ID
-        inexistant rend aussi `missing_scope`).
+        Required scope (probed on 2026-08-28): **`channels:join`** for a bot token,
+        `channels:write` for a user token. Without it, Slack returns `missing_scope` and
+        names the right in `needed` — even before resolving the channel (a nonexistent
+        ID also returns `missing_scope`).
 
         Args:
             channel: Channel ID public (`C…`).
-            as_user: Override de token ; None → bot (rejoindre est un acte de l'app).
+            as_user: Token override; None → bot (joining is an act of the app).
         """
         if as_user is None:
             as_user = self._prefer(want_user=False)
@@ -578,9 +578,9 @@ class SlackClient:
         return self._request("GET", "files.info", params={"file": file_id})
 
     def _file_source(self, file_id: str) -> tuple:
-        """`(url_private, token, file_meta)` pour un file id. Le **user token**
-        prime (fichiers de DM / canaux privés = accès user-level), repli bot.
-        Requiert `files:read`."""
+        """`(url_private, token, file_meta)` for a file id. The **user token**
+        takes precedence (DM / private channel files = user-level access), bot fallback.
+        Requires `files:read`."""
         info = self.file_info(file_id)
         meta = info.get("file", {})
         url = meta.get("url_private_download") or meta.get("url_private")
@@ -590,11 +590,11 @@ class SlackClient:
         return url, token, meta
 
     def fetch_file(self, file_id: str) -> Dict[str, Any]:
-        """Récupère les OCTETS + métadonnées d'un fichier Slack par son id (issu
-        du `files[]` d'un message) — usage en mémoire (rendu agent).
+        """Fetch the BYTES + metadata of a Slack file by its id (from a message's
+        `files[]`) — in-memory use (agent output).
 
-        Returns `{data: bytes, filename, mimetype}`. Pour un stream vers disque,
-        voir `download_file`.
+        Returns `{data: bytes, filename, mimetype}`. For a stream to disk,
+        see `download_file`.
         """
         url, token, meta = self._file_source(file_id)
         resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=_HTTP_TIMEOUT)

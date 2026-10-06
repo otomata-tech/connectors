@@ -10,31 +10,31 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 class SalesforceAuthError(ValueError):
-    """Refus OAuth Salesforce (invalid_client / invalid_grant…).
+    """Salesforce OAuth refusal (invalid_client / invalid_grant…).
 
-    Contrat `UpstreamHTTPError` : porte un `status_code` 401 synthétique pour que
-    les consommateurs classent ce refus de credential comme erreur gérée, pas un
-    bug. Sous-classe `ValueError` : les `except ValueError` existants tiennent.
+    `UpstreamHTTPError` contract: carries a synthetic `status_code` 401 so that
+    consumers classify this credential refusal as a handled error, not a
+    bug. Subclasses `ValueError`: existing `except ValueError` handlers still work.
     """
 
     status_code = 401
 
 
-# Cache de jeton d'accès PROCESS-WIDE, keyé par hash du credential — même motif que
-# `oto.tools.zoho.auth._TOKEN_CACHE`, et pour la même raison : côté serveur, une
-# instance de client est créée à CHAQUE appel MCP.
-# {clé: (access_token, instance_url, expires_at)}
+# PROCESS-WIDE access-token cache, keyed by a hash of the credential — same pattern as
+# `oto.tools.zoho.auth._TOKEN_CACHE`, and for the same reason: server-side, a
+# client instance is created on EVERY MCP call.
+# {key: (access_token, instance_url, expires_at)}
 _TOKEN_CACHE: dict[str, tuple[str, str, float]] = {}
 
 
 def _cred_key(login_url: str, client_id: str, refresh_token: str) -> str:
-    """Isole les credentials entre eux SANS jamais garder un secret en clair comme
-    clé. Le refresh_token en fait partie : après rotation, la clé change, donc une
-    entrée liée à l'ancien jeton n'est jamais resservie."""
+    """Isolates credentials from each other WITHOUT ever keeping a plaintext secret as
+    the key. The refresh_token is part of it: after rotation, the key changes, so an
+    entry tied to the old token is never served again."""
     return hashlib.sha256(
         f"{login_url}|{client_id}|{refresh_token}".encode()).hexdigest()
 
@@ -42,8 +42,8 @@ def _cred_key(login_url: str, client_id: str, refresh_token: str) -> str:
 class SalesforceClient:
     API_VERSION = "v60.0"
 
-    # Champs par défaut par sObject standard (évite d'exiger un describe() avant
-    # toute lecture, comme Zoho DEFAULT_FIELDS).
+    # Default fields per standard sObject (avoids requiring a describe() before
+    # any read, like Zoho DEFAULT_FIELDS).
     DEFAULT_FIELDS = {
         "Contact": "Id,FirstName,LastName,Email,Phone,Title,AccountId",
         "Account": "Id,Name,Website,Industry,Phone,BillingCity,BillingCountry",
@@ -59,29 +59,27 @@ class SalesforceClient:
         login_url: Optional[str] = None,
         on_refresh: Optional[Callable[[dict], None]] = None,
     ):
-        """Initialise le client.
+        """Initialize the client.
 
-        Les credentials sont toujours fournis par le consommateur (usage serveur
-        multi-utilisateur : chaque appel construit un client avec les creds
-        résolus du user). Le token
-        d'accès ET l'`instance_url` (renvoyé par le refresh — pas de table de
-        région fixe comme Zoho) sont mis en cache **en mémoire** sur l'instance —
-        jamais sur un fichier partagé (qui fuiterait entre utilisateurs côté
-        serveur).
+        Credentials are always supplied by the consumer (multi-user server usage:
+        each call builds a client with the user's resolved creds). The access
+        token AND the `instance_url` (returned by the refresh — no fixed region
+        table like Zoho) are cached **in memory** on the instance —
+        never in a shared file (which would leak between users server-side).
 
-        ⚠️ Ce cache d'instance ne suffit pas côté serveur : une instance est créée à
-        CHAQUE appel MCP, donc il ne sert jamais. Le vrai cache est **process-wide**,
-        keyé par un hash du credential (`_TOKEN_CACHE`), même motif que
-        `oto.tools.zoho.auth` — sans lui on rafraîchit à chaque appel d'outil, ce qui
-        sous rotation revient à faire tourner le jeton à chaque appel.
+        ⚠️ This instance cache isn't enough server-side: an instance is created on
+        EVERY MCP call, so it is never used. The real cache is **process-wide**,
+        keyed by a hash of the credential (`_TOKEN_CACHE`), same pattern as
+        `oto.tools.zoho.auth` — without it we refresh on every tool call, which
+        under rotation amounts to rotating the token on every call.
 
-        `on_refresh(token_data)` est appelé après chaque rafraîchissement réussi,
-        avec la réponse complète du serveur de jetons. C'est le seul moyen pour
-        l'appelant de voir ce que Salesforce renvoie — et notamment un
-        **`refresh_token` renouvelé** : sous rotation (RTR, obligatoire sur les
-        External Client Apps), chaque échange invalide le jeton précédent et en
-        renvoie un neuf. Le jeter — ce que faisait cette classe — révoque la
-        connexion dès le premier usage.
+        `on_refresh(token_data)` is called after each successful refresh,
+        with the token server's full response. It is the only way for the
+        caller to see what Salesforce returns — notably a
+        **renewed `refresh_token`**: under rotation (RTR, mandatory on External
+        Client Apps), each exchange invalidates the previous token and returns a
+        new one. Discarding it — what this class used to do — revokes the
+        connection on first use.
         """
         self.client_id = require(client_id, "SALESFORCE_CLIENT_ID")
         self.client_secret = require(client_secret, "SALESFORCE_CLIENT_SECRET")
@@ -101,12 +99,12 @@ class SalesforceClient:
         if self._access_token and self._token_expires_at > time.time():
             return self._access_token, self._instance_url  # type: ignore[return-value]
 
-        # Cache PROCESS-WIDE (motif `oto.tools.zoho.auth`) : le serveur crée un client
-        # par appel MCP, donc le cache d'instance ci-dessus ne sert jamais. Sans lui on
-        # rafraîchit à chaque appel d'outil — et sous rotation (RTR), rafraîchir c'est
-        # faire tourner le jeton. La clé est un HASH du credential, jamais un secret en
-        # clair, et elle inclut le refresh_token : un jeton renouvelé produit une clé
-        # neuve, donc aucune entrée périmée n'est servie après rotation.
+        # PROCESS-WIDE cache (`oto.tools.zoho.auth` pattern): the server creates one
+        # client per MCP call, so the instance cache above is never used. Without it we
+        # refresh on every tool call — and under rotation (RTR), refreshing means
+        # rotating the token. The key is a HASH of the credential, never a plaintext
+        # secret, and it includes the refresh_token: a renewed token produces a new
+        # key, so no stale entry is served after rotation.
         k = _cred_key(self.login_url, self.client_id, self.refresh_token)
         cached = _TOKEN_CACHE.get(k)
         if cached and cached[2] > time.time() + 60:
@@ -123,18 +121,18 @@ class SalesforceClient:
             },
             timeout=_HTTP_TIMEOUT,
         )
-        # Salesforce suit l'OAuth2 standard (RFC 6749 §5.2) : un refus auth
-        # (invalid_grant/invalid_client) renvoie HTTP 400 avec l'erreur dans le
-        # corps — CONTRAIREMENT à Zoho qui renvoie 200 (cf. ZohoClient). Le corps
-        # est donc parsé AVANT `raise_for_status()` : sinon le 400 lève un
-        # `requests.HTTPError` brut (pas de `.status_code` direct, corps absent du
-        # message) et `SalesforceAuthError` — le contrat 401 attendu par le tri
-        # Sentry amont (`before_send`) — n'est jamais atteint.
+        # Salesforce follows standard OAuth2 (RFC 6749 §5.2): an auth refusal
+        # (invalid_grant/invalid_client) returns HTTP 400 with the error in the
+        # body — UNLIKE Zoho which returns 200 (see ZohoClient). The body is
+        # therefore parsed BEFORE `raise_for_status()`: otherwise the 400 raises a
+        # raw `requests.HTTPError` (no direct `.status_code`, body absent from the
+        # message) and `SalesforceAuthError` — the 401 contract expected by the
+        # upstream Sentry triage (`before_send`) — is never reached.
         try:
             token_data = resp.json()
         except ValueError:
             resp.raise_for_status()
-            raise  # 2xx mais corps illisible — remonte l'erreur de parsing d'origine
+            raise  # 2xx but unreadable body — re-raise the original parsing error
 
         if "error" in token_data:
             raise SalesforceAuthError(
@@ -149,31 +147,31 @@ class SalesforceClient:
         _TOKEN_CACHE[k] = (self._access_token, self._instance_url,
                            self._token_expires_at)
 
-        # ROTATION (RTR) : sous ce régime — obligatoire sur les External Client
-        # Apps — Salesforce invalide le jeton qu'on vient d'utiliser et en renvoie
-        # un neuf ici. On l'adopte pour la suite de la vie de cette instance, et on
-        # laisse l'appelant le persister via `on_refresh` : sans ça, le credential
-        # stocké est révoqué dès le premier appel, et toute réutilisation ultérieure
-        # fait révoquer par Salesforce le jeton courant ET les access tokens
-        # associés — la connexion tombe et exige une reconnexion humaine.
+        # ROTATION (RTR): under this regime — mandatory on External Client
+        # Apps — Salesforce invalidates the token we just used and returns a
+        # new one here. We adopt it for the rest of this instance's life, and we
+        # let the caller persist it via `on_refresh`: without that, the stored
+        # credential is revoked on the first call, and any later reuse makes
+        # Salesforce revoke the current token AND the associated access
+        # tokens — the connection drops and requires a human reconnect.
         rotated = token_data.get("refresh_token")
         if rotated:
             self.refresh_token = rotated
         if self._on_refresh is not None:
-            # Best-effort : une panne de persistance ne doit pas faire échouer un
-            # appel dont le jeton d'accès, lui, est valide.
+            # Best-effort: a persistence failure must not fail a call whose
+            # access token is valid.
             try:
                 self._on_refresh(token_data)
-            except Exception:  # noqa: BLE001 — la persistance est un effet de bord
+            except Exception:  # noqa: BLE001 — persistence is a side effect
                 pass
         return self._access_token, self._instance_url
 
     def _invalidate_token(self):
         """Forget the cached token to force a refresh on next request.
 
-        Purge AUSSI l'entrée process-wide : ne vider que le cache d'instance
-        laisserait le prochain appel MCP resservir le jeton qu'on vient de juger
-        mort (un 401 relancerait alors la même requête à l'identique)."""
+        ALSO purges the process-wide entry: clearing only the instance cache
+        would let the next MCP call serve again the token we just judged
+        dead (a 401 would then replay the same request unchanged)."""
         _TOKEN_CACHE.pop(
             _cred_key(self.login_url, self.client_id, self.refresh_token), None)
         self._access_token = None

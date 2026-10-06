@@ -1,6 +1,6 @@
-"""Familles d'appels Unipile, composées dans `UnipileClient`.
+"""Unipile call families, composed into `UnipileClient`.
 
-Un module par domaine d'API. Détail du contrat : `../client.py`.
+One module per API domain. Contract details: `../client.py`.
 """
 
 from .accounts import _AccountsMixin

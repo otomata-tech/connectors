@@ -41,8 +41,8 @@ class PlanityAuth:
                  client: Optional[httpx.AsyncClient] = None):
         self._email = email
         self._password = password
-        # Les coordonnées viennent de l'APPELANT (cf. `config.PlanityEndpoints`) :
-        # ce dépôt est public et n'embarque aucune constante de Planity.
+        # The endpoints come from the CALLER (see `config.PlanityEndpoints`):
+        # this repo is public and embeds no Planity constants.
         self._endpoints = endpoints
         self._client = client or httpx.AsyncClient(timeout=30.0)
         self._owns_client = client is None

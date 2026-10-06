@@ -1,5 +1,5 @@
-"""SignWell — signature électronique : documents, modèles, envois groupés,
-webhooks, applications API."""
+"""SignWell — electronic signature: documents, templates, bulk sends,
+webhooks, API applications."""
 
 from .client import SignWellClient
 

@@ -1,12 +1,12 @@
-"""Contacts Productlane — les personnes, leurs entreprises, et les bloqués.
+"""Productlane contacts — people, their companies, and blocked senders.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`, `_check_choice`).
 
-⚠️ **Bloquer un expéditeur a un effet durable et invisible côté client** : une
-adresse (ou un domaine entier) bloquée ne peut plus ouvrir de fil ni écrire sur
-un fil existant, et l'émetteur n'en est pas informé. Bloquer un DOMAINE coupe
-toute une organisation d'un coup.
+⚠️ **Blocking a sender has a lasting effect that is invisible to the sender**: a blocked
+address (or a whole domain) can no longer open a thread or write on an
+existing thread, and the sender is not told. Blocking a DOMAIN cuts off
+an entire organization at once.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from ..const import BLOCKED_SENDER_TYPES
 
 
 class _ContactsMixin:
-    """Contacts, appartenances aux entreprises, expéditeurs bloqués."""
+    """Contacts, company memberships, blocked senders."""
 
     def list_contacts(self, limit: Optional[int] = None,
                       cursor: Optional[str] = None,
@@ -28,7 +28,7 @@ class _ContactsMixin:
                       created_before: Optional[str] = None,
                       updated_after: Optional[str] = None,
                       updated_before: Optional[str] = None) -> Any:
-        """GET /contacts — contacts de l'espace de travail. Scope `contacts:read`."""
+        """GET /contacts — workspace contacts. Scope `contacts:read`."""
         return self._list("/contacts", limit, cursor, {
             "email": email, "name_contains": name_contains,
             "company_id": company_id, "external_id": external_id,
@@ -37,28 +37,28 @@ class _ContactsMixin:
         })
 
     def get_contact(self, contact_id: str) -> Any:
-        """GET /contacts/{id} — un contact. Scope `contacts:read`."""
+        """GET /contacts/{id} — one contact. Scope `contacts:read`."""
         return self._request("GET", f"/contacts/{contact_id}")
 
     def create_contact(self, payload: Dict[str, Any]) -> Any:
-        """POST /contacts — crée un contact. Scope `contacts:write`.
+        """POST /contacts — create a contact. Scope `contacts:write`.
 
-        Requis : `email`. Optionnels : `name`, `image_url`, `is_subscribed`,
+        Required: `email`. Optional: `name`, `image_url`, `is_subscribed`,
         `external_ids`, `company_id`, `company_name`, `company_external_id`.
 
-        Les trois champs `company_*` rattachent le contact à une entreprise :
-        par id, par nom, ou par identifiant externe — au choix, pas tous.
+        The three `company_*` fields attach the contact to a company:
+        by id, by name, or by external identifier — pick one, not all.
         """
         return self._request("POST", "/contacts", json=dict(payload))
 
     def update_contact(self, contact_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /contacts/{id} — met à jour un contact. Scope `contacts:write`.
+        """PATCH /contacts/{id} — update a contact. Scope `contacts:write`.
 
-        Champs : `external_ids`, `name`, `email`, `image_url`, `is_subscribed`,
+        Fields: `external_ids`, `name`, `email`, `image_url`, `is_subscribed`,
         `company_id`, `company_name`, `company_external_id`.
 
-        ⚠️ `is_subscribed=False` **désabonne** le contact des diffusions de
-        changelog : c'est une préférence de communication, pas un simple champ.
+        ⚠️ `is_subscribed=False` **unsubscribes** the contact from changelog
+        broadcasts: it is a communication preference, not a mere field.
         """
         return self._request("PATCH", f"/contacts/{contact_id}",
                              json=dict(payload))
@@ -67,12 +67,12 @@ class _ContactsMixin:
         """DELETE /contacts/{id} — **soft-delete**. Scope `contacts:write`."""
         return self._request("DELETE", f"/contacts/{contact_id}")
 
-    # --- appartenance aux entreprises --------------------------------------
+    # --- company memberships -----------------------------------------------
 
     def list_contact_companies(self, contact_id: str) -> Any:
-        """GET /contacts/{id}/companies — ses entreprises, **la principale d'abord**.
+        """GET /contacts/{id}/companies — its companies, **the primary one first**.
 
-        Scopes `contacts:read` ET `companies:read` : sans le second, refus.
+        Scopes `contacts:read` AND `companies:read`: without the second, it is refused.
         """
         return self._request("GET", f"/contacts/{contact_id}/companies")
 
@@ -80,78 +80,78 @@ class _ContactsMixin:
                                company_id: Optional[str] = None,
                                company_name: Optional[str] = None,
                                company_external_id: Optional[str] = None) -> Any:
-        """POST /contacts/{id}/companies — rattache une entreprise. Scope `contacts:write`.
+        """POST /contacts/{id}/companies — attach a company. Scope `contacts:write`.
 
-        **Idempotent**, et devient l'entreprise principale si le contact n'en
-        avait aucune. Désigner l'entreprise par id, par nom ou par id externe.
+        **Idempotent**, and becomes the primary company if the contact had
+        none. Designate the company by id, by name or by external id.
         """
         body = {"company_id": company_id, "company_name": company_name,
                 "company_external_id": company_external_id}
         body = {k: v for k, v in body.items() if v is not None}
         if not body:
             raise ValueError(
-                "désigner l'entreprise par `company_id`, `company_name` ou "
+                "designate the company by `company_id`, `company_name` or "
                 "`company_external_id`.")
         return self._request("POST", f"/contacts/{contact_id}/companies",
                              json=body)
 
     def remove_contact_from_company(self, contact_id: str,
                                     company_id: str) -> Any:
-        """DELETE /contacts/{id}/companies/{company_id} — retire une appartenance.
+        """DELETE /contacts/{id}/companies/{company_id} — remove a membership.
 
-        Scope `contacts:write`. Si c'était la principale, une autre prend le relais.
+        Scope `contacts:write`. If it was the primary one, another takes over.
         """
         return self._request(
             "DELETE", f"/contacts/{contact_id}/companies/{company_id}")
 
-    # --- ce à quoi le contact est relié -------------------------------------
+    # --- what the contact is linked to --------------------------------------
 
     def list_contact_issues(self, contact_id: str, limit: Optional[int] = None,
                             cursor: Optional[str] = None) -> Any:
-        """GET /contacts/{id}/issues — issues reliées via les customer needs de ses fils.
+        """GET /contacts/{id}/issues — issues linked via the customer needs of its threads.
 
-        Scopes `contacts:read` ET `issues:read`.
+        Scopes `contacts:read` AND `issues:read`.
         """
         return self._list(f"/contacts/{contact_id}/issues", limit, cursor)
 
     def list_contact_projects(self, contact_id: str, limit: Optional[int] = None,
                               cursor: Optional[str] = None) -> Any:
-        """GET /contacts/{id}/projects — projets reliés via les customer needs de ses fils.
+        """GET /contacts/{id}/projects — projects linked via the customer needs of its threads.
 
-        Scopes `contacts:read` ET `projects:read`.
+        Scopes `contacts:read` AND `projects:read`.
         """
         return self._list(f"/contacts/{contact_id}/projects", limit, cursor)
 
-    # --- expéditeurs bloqués -------------------------------------------------
+    # --- blocked senders -----------------------------------------------------
 
     def list_blocked_senders(self, limit: Optional[int] = None,
                              cursor: Optional[str] = None,
                              type: Optional[str] = None) -> Any:
-        """GET /contacts/blocked-senders — adresses et domaines bloqués.
+        """GET /contacts/blocked-senders — blocked addresses and domains.
 
-        Scope `contacts:read`. `type` filtre sur `EMAIL` ou `DOMAIN`.
+        Scope `contacts:read`. `type` filters on `EMAIL` or `DOMAIN`.
         """
         self._check_choice("type", type, BLOCKED_SENDER_TYPES)
         return self._list("/contacts/blocked-senders", limit, cursor,
                           {"type": type})
 
     def block_sender(self, type: str, value: str) -> Any:
-        """POST /contacts/blocked-senders — bloque une adresse ou un domaine.
+        """POST /contacts/blocked-senders — block an address or a domain.
 
-        Scope `contacts:write`. `type="EMAIL"` pour une adresse,
-        `type="DOMAIN"` pour **tout un domaine**.
+        Scope `contacts:write`. `type="EMAIL"` for an address,
+        `type="DOMAIN"` for **a whole domain**.
 
-        ⚠️ Un expéditeur bloqué ne peut plus ouvrir de fil ni écrire sur un fil
-        existant, **et n'en est pas informé**. Un blocage de domaine coupe toute
-        une organisation d'un seul appel.
+        ⚠️ A blocked sender can no longer open a thread or write on an existing
+        thread, **and is not told**. A domain block cuts off an entire
+        organization in a single call.
         """
         self._check_choice("type", type, BLOCKED_SENDER_TYPES)
         if not value:
-            raise ValueError("`value` requis : l'adresse ou le domaine à bloquer.")
+            raise ValueError("`value` is required: the address or domain to block.")
         return self._request("POST", "/contacts/blocked-senders",
                              json={"type": type, "value": value})
 
     def unblock_sender(self, blocked_id: str) -> Any:
-        """DELETE /contacts/blocked-senders/{id} — débloque. Scope `contacts:write`."""
+        """DELETE /contacts/blocked-senders/{id} — unblock. Scope `contacts:write`."""
         return self._request("DELETE",
                              f"/contacts/blocked-senders/{blocked_id}")

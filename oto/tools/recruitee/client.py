@@ -1,12 +1,12 @@
 """Recruitee ATS API client.
 
-Auth = **API token** (Bearer) + **company id** (le sous-domaine/identifiant de la
-société, présent dans l'URL de l'app Recruitee). Token créé dans Recruitee :
-Settings → Apps and plugins → Personal API tokens. Les deux passés au
-constructeur.
+Auth = **API token** (Bearer) + **company id** (the subdomain/identifier of the
+company, found in the Recruitee app URL). Token created in Recruitee:
+Settings → Apps and plugins → Personal API tokens. Both are passed to the
+constructor.
 
-Vocabulaire Recruitee : un poste = une **offer** ; un candidat = un **candidate**
-(rattaché à une ou plusieurs offers).
+Recruitee vocabulary: a job = an **offer**; an applicant = a **candidate**
+(attached to one or more offers).
 
 Docs : https://docs.recruitee.com/reference
 
@@ -28,11 +28,11 @@ class RecruiteeClient:
 
     def __init__(self, api_token: Optional[str] = None,
                  company_id: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_token: Recruitee API token.
-            company_id: identifiant de la société.
+            company_id: company identifier.
         """
         self.api_token = require(api_token, "RECRUITEE_API_TOKEN")
         self.company_id = require(company_id, "RECRUITEE_COMPANY_ID")
@@ -53,7 +53,7 @@ class RecruiteeClient:
             raise Exception(f"Recruitee HTTP {resp.status_code}: {body}")
         return resp.json() if resp.content else {}
 
-    # --- Candidats ----------------------------------------------------------
+    # --- Candidates ----------------------------------------------------------
 
     def list_candidates(
         self,
@@ -62,8 +62,8 @@ class RecruiteeClient:
         offer_id: Optional[int] = None,
         query: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les candidats (paginé). `offer_id` filtre par poste, `query`
-        cherche par nom/email."""
+        """List candidates (paginated). `offer_id` filters by job, `query`
+        searches by name/email."""
         params: Dict[str, Any] = {"limit": min(limit, 100), "offset": offset}
         if offer_id:
             params["offer_id"] = offer_id
@@ -72,18 +72,18 @@ class RecruiteeClient:
         return self._request("GET", "/candidates", params=params)
 
     def get_candidate(self, candidate_id: int) -> Dict[str, Any]:
-        """Récupère un candidat par id."""
+        """Fetch a candidate by id."""
         return self._request("GET", f"/candidates/{candidate_id}")
 
     def create_candidate(
         self, candidate: Dict[str, Any], offer_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
-        """Crée un candidat.
+        """Create a candidate.
 
         Args:
-            candidate: objet candidat (`name`, `emails`, `phones`, `social_links`,
+            candidate: candidate object (`name`, `emails`, `phones`, `social_links`,
                 `links`, `cover_letter`, …).
-            offer_ids: postes auxquels rattacher le candidat.
+            offer_ids: jobs to attach the candidate to.
         """
         body: Dict[str, Any] = {"candidate": candidate}
         if offer_ids:
@@ -91,17 +91,17 @@ class RecruiteeClient:
         return self._request("POST", "/candidates", json=body)
 
     def add_note(self, candidate_id: int, body: str) -> Dict[str, Any]:
-        """Ajoute une note à un candidat."""
+        """Add a note to a candidate."""
         return self._request(
             "POST", f"/candidates/{candidate_id}/notes",
             json={"note": {"body": body}})
 
-    # --- Offers (postes) ----------------------------------------------------
+    # --- Offers (jobs) ----------------------------------------------------
 
     def list_offers(
         self, scope: Optional[str] = None, kind: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les offers (postes). `scope` : "active" | "archived" | "not_archived" ;
+        """List offers (jobs). `scope` : "active" | "archived" | "not_archived" ;
         `kind` : "job" | "talent_pool"."""
         params: Dict[str, Any] = {}
         if scope:
@@ -111,5 +111,5 @@ class RecruiteeClient:
         return self._request("GET", "/offers", params=params or None)
 
     def get_offer(self, offer_id: int) -> Dict[str, Any]:
-        """Récupère un offer (poste) par id."""
+        """Fetch an offer (job) by id."""
         return self._request("GET", f"/offers/{offer_id}")

@@ -106,13 +106,13 @@ def test_repeatable_filters_are_sent_as_lists(capture):
 # --- refus locaux : nommer le coupable ----------------------------------------
 
 def test_empty_contact_batch_is_refused():
-    with pytest.raises(ValueError, match="vide"):
+    with pytest.raises(ValueError, match="empty"):
         _client().create_list(name="x", assigned_to=1, contacts=[])
 
 
 def test_oversized_contact_batch_is_refused_before_the_network():
     contacts = [{"email": f"a{i}@x.test"} for i in range(mn.MAX_CONTACTS_PER_REQUEST + 1)]
-    with pytest.raises(ValueError, match=r"1501 contacts pour un plafond de 1500"):
+    with pytest.raises(ValueError, match=r"1501 contacts for a cap of 1500"):
         _client().create_list(name="x", assigned_to=1, contacts=contacts)
 
 
@@ -130,20 +130,20 @@ def test_whitespace_only_identifier_does_not_count():
 
 
 def test_removing_no_contact_is_refused():
-    with pytest.raises(ValueError, match="vide"):
+    with pytest.raises(ValueError, match="empty"):
         _client().remove_contacts("L1", [])
 
 
 # --- analytics : les paramètres qui changent la DÉFINITION ---------------------
 
 def test_analytics_lists_refuses_an_unknown_period():
-    with pytest.raises(ValueError, match="`period` doit valoir"):
+    with pytest.raises(ValueError, match="`period` must be one of"):
         _client().analytics_lists(period="fortnight", call_limit=3)
 
 
 @pytest.mark.parametrize("bad", [0, 11, -1])
 def test_analytics_lists_refuses_a_call_limit_out_of_range(bad):
-    with pytest.raises(ValueError, match="`call_limit` doit être entre 1 et 10"):
+    with pytest.raises(ValueError, match="`call_limit` must be between 1 and 10"):
         _client().analytics_lists(period="week", call_limit=bad)
 
 
@@ -168,7 +168,7 @@ def test_every_documented_threshold_is_accepted(capture, ok):
 def test_next_page_refuses_a_url_off_the_configured_host():
     """`next_url` est rendue par l'amont. La suivre sans la valider enverrait
     notre en-tête `Authorization` à l'hôte de son choix."""
-    with pytest.raises(ValueError, match="hors de l'hôte configuré"):
+    with pytest.raises(ValueError, match="outside the configured host"):
         _client().next_page("https://evil.test/v1/calls?cursor=x")
 
 
@@ -206,7 +206,7 @@ def test_rate_limit_without_reset_header_still_explains_itself(monkeypatch):
         return _Resp(429, {"error": {}}, headers={})
 
     monkeypatch.setattr(mn.requests.Session, "request", fake_request)
-    with pytest.raises(UpstreamHTTPError, match="60 requêtes/minute"):
+    with pytest.raises(UpstreamHTTPError, match="60 requests/minute"):
         _client().list_calls()
 
 
@@ -304,7 +304,7 @@ def test_next_page_does_not_follow_redirects(monkeypatch):
         return _Resp(302, None, headers={"Location": "https://evil.test/steal"})
 
     monkeypatch.setattr(mn.requests.Session, "get", fake_get)
-    with pytest.raises(ValueError, match="redirige"):
+    with pytest.raises(ValueError, match="redirects"):
         _client().next_page("https://api.minari.ai/v1/calls?cursor=abc")
     assert seen.get("allow_redirects") is False
 
@@ -362,7 +362,7 @@ def test_unreadable_json_becomes_an_upstream_error_not_a_value_error(monkeypatch
         return _Resp(200, None, content=b"<html>oops</html>", raw_text="<html>oops</html>")
 
     monkeypatch.setattr(mn.requests.Session, "request", fake_request)
-    with pytest.raises(UpstreamHTTPError, match="illisible"):
+    with pytest.raises(UpstreamHTTPError, match="unreadable"):
         _client().list_calls()
 
 

@@ -31,7 +31,7 @@ def _id(value: Any, name: str) -> str:
     Anything else — empty, `../`, a slash — is refused before the URL exists."""
     text = str(value) if value is not None else ""
     if not _UUID.fullmatch(text):
-        raise ValueError(f"{name} doit être un UUID — reçu {value!r}.")
+        raise ValueError(f"{name} must be a UUID — got {value!r}.")
     return text
 
 
@@ -45,7 +45,7 @@ def _ids(values: Optional[Iterable[Any]], name: str) -> Optional[List[str]]:
     if values is None:
         return None
     if isinstance(values, (str, bytes)):
-        raise ValueError(f"{name} doit être une liste d'UUID — reçu {values!r}.")
+        raise ValueError(f"{name} must be a list of UUIDs — got {values!r}.")
     return [_id(v, name) for v in values]
 
 
@@ -53,7 +53,7 @@ def _body(value: Any) -> Dict[str, Any]:
     """A JSON object body: a dict, `None` values dropped (`_clean`). Its fields are
     the caller's to choose — the client checks the ids of the PATH, not the body."""
     if not isinstance(value, dict):
-        raise ValueError(f"body doit être un objet JSON (dict) — reçu {type(value).__name__}.")
+        raise ValueError(f"body must be a JSON object (dict) — got {type(value).__name__}.")
     return _clean(value)
 
 
@@ -61,13 +61,13 @@ def _items(values: Any) -> List[Dict[str, Any]]:
     """A JSON array body (reorder, replace a package's items, set distributions):
     a list of objects, each one `_body`-cleaned."""
     if not isinstance(values, list):
-        raise ValueError(f"items doit être une liste d'objets — reçu {type(values).__name__}.")
+        raise ValueError(f"items must be a list of objects — got {type(values).__name__}.")
     return [_body(v) for v in values]
 
 
 def _page(limit: int, offset: int) -> Dict[str, int]:
     if not 1 <= limit <= _MAX_LIMIT:
-        raise ValueError(f"limit doit être entre 1 et {_MAX_LIMIT} — reçu {limit}.")
+        raise ValueError(f"limit must be between 1 and {_MAX_LIMIT} — got {limit}.")
     if offset < 0:
-        raise ValueError(f"offset doit être >= 0 — reçu {offset}.")
+        raise ValueError(f"offset must be >= 0 — got {offset}.")
     return {"limit": limit, "offset": offset}

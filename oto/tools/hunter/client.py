@@ -10,19 +10,19 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
 class HunterError(RuntimeError):
-    """Erreur API Hunter — message amont (`errors[].details`) remonté tel quel.
+    """Hunter API error — upstream message (`errors[].details`) passed up as is.
 
-    ⚠️ Hunter **inverse** la convention habituelle :
-    - **403** = limite de DÉBIT atteinte → transitoire, réessayer plus tard.
-    - **429** = limite d'USAGE du plan (crédits du mois) → **définitif** sur la
-      période, réessayer ne sert à rien.
+    ⚠️ Hunter **inverts** the usual convention:
+    - **403** = RATE limit reached → transient, retry later.
+    - **429** = plan USAGE limit (the month's credits) → **final** for the
+      period, retrying is pointless.
 
-    D'où `retryable`, lu par l'appelant : marteler un 429 Hunter est une perte
-    sèche (vécu — 4 appels espacés sur 15 min, quota jamais libéré).
+    Hence `retryable`, read by the caller: hammering a Hunter 429 is a pure
+    loss (experienced — 4 calls spread over 15 min, quota never released).
     """
 
     def __init__(self, message: str, status_code: Optional[int] = None,
@@ -53,7 +53,7 @@ class HunterClient:
 
     @staticmethod
     def _upstream_message(response: requests.Response) -> str:
-        """`errors[].details` de Hunter, sinon un extrait du corps brut."""
+        """Hunter's `errors[].details`, otherwise an excerpt of the raw body."""
         try:
             body = response.json()
         except ValueError:
@@ -67,9 +67,9 @@ class HunterClient:
         return str(body)[:400]
 
     def _request(self, endpoint: str, params: Dict = None) -> Dict[str, Any]:
-        """Make API request. La clé part en **header** (jamais en query string :
-        elle atterrirait dans le message de toute exception). Une erreur HTTP lève
-        `HunterError` portant le message amont et la bonne sémantique de réessai."""
+        """Make API request. The key goes in a **header** (never in the query string:
+        it would land in the message of any exception). An HTTP error raises
+        `HunterError` carrying the upstream message and the right retry semantics."""
         url = f"{self.BASE_URL}/{endpoint}"
 
         response = requests.get(
@@ -79,15 +79,15 @@ class HunterClient:
             detail = self._upstream_message(response)
             if response.status_code == 429:
                 raise HunterError(
-                    f"Hunter — limite d'USAGE du plan atteinte (crédits épuisés "
-                    f"sur la période) : {detail}. Réessayer ne libérera rien : "
-                    f"bascule sur un autre enrichisseur ou fais monter le plan.",
+                    f"Hunter — plan USAGE limit reached (credits exhausted "
+                    f"for the period): {detail}. Retrying will not free anything: "
+                    f"switch to another enrichment provider or upgrade the plan.",
                     status_code=429, retryable=False)
             if response.status_code == 403:
                 raise HunterError(
-                    f"Hunter — limite de débit atteinte : {detail}. Espace les "
-                    f"appels puis réessaie.", status_code=403, retryable=True)
-            raise HunterError(f"Hunter {response.status_code} sur {endpoint} : {detail}",
+                    f"Hunter — rate limit reached: {detail}. Space out the "
+                    f"calls then retry.", status_code=403, retryable=True)
+            raise HunterError(f"Hunter {response.status_code} on {endpoint}: {detail}",
                               status_code=response.status_code)
         return response.json()
 

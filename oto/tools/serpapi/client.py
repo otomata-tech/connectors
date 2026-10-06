@@ -12,24 +12,24 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
-# Au-delà de cet âge, un payload n'a pas été constaté « à l'instant » : il a été
-# resservi par un cache. La borne n'est pas arbitraire — `created_at` date le
-# moment où SerpApi commence à interroger Google, et notre timeout de LECTURE est
-# de 60 s : un payload réellement frais ne peut donc pas nous parvenir plus vieux
-# que ~60 s. 120 s laisse autant de marge (dérive d'horloge comprise) tout en
-# restant très en deçà de l'heure de rétention des deux caches amont.
+# Beyond this age, a payload was not observed "just now": it was
+# served again from a cache. The bound is not arbitrary — `created_at` dates the
+# moment SerpApi starts querying Google, and our READ timeout is
+# 60 s: a genuinely fresh payload therefore cannot reach us older than
+# ~60 s. 120 s leaves as much margin (clock drift included) while
+# staying far below the one-hour retention of the two upstream caches.
 _EMPTY_MAX_AGE = 120.0
 
 
 class SerpAPIClient:
     """
-    SerpAPI client — accès générique à **tous** les moteurs SerpApi.
+    SerpAPI client — generic access to **all** SerpApi engines.
 
-    `search(engine, params)` est l'entrée générique (engine = 'google', 'bing',
+    `search(engine, params)` is the generic entry point (engine = 'google', 'bing',
     'google_trends', 'youtube', 'walmart', 'google_jobs'…). `search_jobs` /
-    `get_job_details` sont des raccourcis typés Google Jobs construits par-dessus.
+    `get_job_details` are typed Google Jobs shortcuts built on top.
     """
 
     BASE_URL = "https://serpapi.com/search"
@@ -64,14 +64,14 @@ class SerpAPIClient:
 
     @staticmethod
     def _payload_age(result: Dict) -> Optional[float]:
-        """Âge du payload en secondes, ou None s'il ne se date pas lui-même.
+        """Age of the payload in seconds, or None if it does not date itself.
 
-        `search_metadata.created_at` est l'horodatage UTC que SerpApi appose au
-        moment où il interroge réellement Google. Resservi par un cache il reste
-        FIGÉ à ce moment-là — c'est donc le seul témoin d'âge que porte le corps
-        de la réponse, et il vaut pour les deux caches en série mesurés le
-        2026-08-27 (celui de SerpApi et l'arête Cloudflare devant lui, qui le
-        recopient tel quel).
+        `search_metadata.created_at` is the UTC timestamp SerpApi stamps at the
+        moment it actually queries Google. Served again from a cache it stays
+        FROZEN at that moment — so it is the only age witness the response body
+        carries, and it holds for the two caches in series measured on
+        2026-08-27 (SerpApi's and the Cloudflare edge in front of it, which
+        copy it as-is).
         """
         created = (result.get("search_metadata") or {}).get("created_at")
         if not isinstance(created, str):
@@ -90,41 +90,41 @@ class SerpAPIClient:
         result: Dict,
         results_key: str,
     ) -> tuple[Dict, Dict]:
-        """Refuse un résultat VIDE que le cache a resservi ; le refait une fois.
+        """Reject an EMPTY result that the cache served again; redo it once.
 
-        Défaut du signal d'usage #456 (2026-08-27) : la même
-        requête rendait 0 offre, puis 1 avec `no_cache=True`. Un zéro s'était
-        installé dans le cache amont, qui le resservait pendant une heure. Ce
-        connecteur sert d'INDICATEUR D'ACTIVITÉ — un zéro mémorisé y devient une
-        absence fausse et persistante, que rien ne distingue d'une vraie absence
-        puisque c'est précisément ce que le champ est censé pouvoir dire.
+        Defect from usage signal #456 (2026-08-27): the same
+        request returned 0 jobs, then 1 with `no_cache=True`. A zero had
+        settled into the upstream cache, which served it again for an hour. This
+        connector serves as an ACTIVITY INDICATOR — a memorized zero becomes a
+        false and persistent absence there, which nothing distinguishes from a real absence
+        since that is precisely what the field is supposed to be able to say.
 
-        Le cache n'est pas le nôtre (aucun cache dans oto-core ni dans le
-        backend) : on ne peut donc pas décider de ne PAS y ranger le vide. Ce
-        qu'on décide, c'est de ne pas le LIRE. D'où l'asymétrie assumée :
-        - un résultat vide n'est acceptable que **constaté frais** ; périmé, il
-          est refait en forçant `no_cache` — le coût d'un appel refait est très
-          inférieur au coût d'une absence fausse propagée sur toute une campagne ;
-        - un résultat NON vide garde le droit au cache : une liste d'offres
-          vieille de quarante minutes reste un signal d'activité valide, et c'est
-          elle qui paie les 0,0 s plutôt que les 5 à 20 s de scraping amont.
+        The cache is not ours (no cache in oto-core or in the
+        backend): so we cannot decide NOT to store the empty in it. What
+        we decide is not to READ it. Hence the deliberate asymmetry:
+        - an empty result is only acceptable if **observed fresh**; stale, it
+          is redone by forcing `no_cache` — the cost of a redone call is far
+          lower than the cost of a false absence propagated across a whole campaign;
+        - a NON-empty result keeps the right to the cache: a job list
+          forty minutes old remains a valid activity signal, and it is
+          what pays 0.0 s rather than the 5 to 20 s of upstream scraping.
 
-        Ce que la règle ne fait PAS, et qu'il ne faut pas lui prêter : elle ne
-        protège pas du martèlement. Mesuré le 2026-08-27 sur l'API réelle, un
-        appel forcé ne remplace PAS l'entrée que liront les appels ordinaires —
-        deux appels consécutifs sur une requête durablement vide reprennent tous
-        les deux (6,3 s puis 17,4 s). Une requête vide répétée coûte donc un
-        scraping complet à chaque fois, soit exactement ce que coûtait le
-        `no_cache=True` que les appelants posaient déjà à la main. On s'y tient :
-        borner ce coût demanderait un cache à NOUS, que le serveur ne peut pas
-        porter (il construit un client par appel MCP, donc un cache d'instance
-        ne servirait jamais). Et le cas dominant d'une campagne — une entreprise
-        interrogée une seule fois — ne paie rien de plus : son vide est un vrai
-        défaut de cache, donc déjà frais, donc rendu sans reprise.
+        What the rule does NOT do, and must not be credited with: it does not
+        protect against hammering. Measured on 2026-08-27 on the real API, a forced
+        call does NOT replace the entry that ordinary calls will read —
+        two consecutive calls on a durably empty query both
+        re-scrape (6.3 s then 17.4 s). A repeated empty query therefore costs
+        a full scrape each time, which is exactly what the
+        `no_cache=True` that callers were already setting by hand cost. We stick with it:
+        bounding this cost would require a cache of OUR OWN, which the server cannot
+        carry (it builds one client per MCP call, so an instance cache
+        would never serve). And the dominant case of a campaign — a company
+        queried only once — pays nothing more: its empty is a genuine
+        cache miss, hence already fresh, hence returned without a retry.
 
-        Un payload qui ne se date pas ne peut pas certifier sa fraîcheur : on le
-        traite comme périmé. On penche du côté de la réponse juste, jamais du
-        côté de la réponse rapide.
+        A payload that does not date itself cannot certify its freshness: we
+        treat it as stale. We lean toward the right answer, never toward
+        the fast answer.
         """
         age = self._payload_age(result)
         refetched = False
@@ -145,11 +145,11 @@ class SerpAPIClient:
         results_key: str,
         max_results: int,
     ) -> Dict:
-        """Suit `serpapi_pagination.next_page_token` jusqu'à `max_results`.
+        """Follow `serpapi_pagination.next_page_token` up to `max_results`.
 
-        Concatène `result[results_key]` au fil des pages et tronque à
-        `max_results`. Mute et renvoie `result` (la dernière page sert de
-        métadonnées). No-op si le moteur ne renvoie pas de token.
+        Concatenates `result[results_key]` page after page and truncates to
+        `max_results`. Mutates and returns `result` (the last page serves as
+        metadata). No-op if the engine returns no token.
         """
         all_items = list(result.get(results_key, []))
         while len(all_items) < max_results:
@@ -205,16 +205,16 @@ class SerpAPIClient:
 
         result = self._request(payload)
         if not results_key:
-            # Sans tableau nommé, le client ne sait pas lequel porte la réponse :
-            # ni garantie de fraîcheur, ni pagination — on ne DEVINE pas ce que
-            # « vide » veut dire pour un moteur qu'on ne connaît pas. Brut tel quel.
+            # Without a named array, the client does not know which one carries the answer:
+            # no freshness guarantee, no pagination — we do not GUESS what
+            # "empty" means for an engine we do not know. Raw as-is.
             return result
 
         result, freshness = self._empty_must_be_fresh(payload, result, results_key)
         if max_results:
             result = self._paginate(payload, result, results_key, max_results)
-        # Posé APRÈS la pagination : `_paginate` rebranche `result` sur la
-        # DERNIÈRE page lue, et emporterait le bloc avec l'ancienne.
+        # Set AFTER pagination: `_paginate` rebinds `result` to the
+        # LAST page read, and would take the block along with the old one.
         result["oto_freshness"] = freshness
         return result
 

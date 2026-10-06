@@ -1,18 +1,18 @@
-"""Tavily client — recherche web et lecture de pages taillées pour un agent (tavily.com).
+"""Tavily client — web search and page reading tailored for an agent (tavily.com).
 
-API REST, auth Bearer `tvly-…`. Quatre surfaces, toutes **synchrones** :
-- **search** : recherche web → réponse synthétique optionnelle + extraits cités,
-  filtrable par sujet (general/news/finance), période, pays, langue.
-- **extract** : N URLs → contenu propre (markdown/texte), reclassé par une intention.
-- **crawl** : parcours d'un site guidé en langage naturel → contenu des pages.
-- **map** : découverte des URLs d'un site (sans contenu).
+REST API, Bearer auth `tvly-…`. Four surfaces, all **synchronous**:
+- **search**: web search → optional synthesized answer + cited excerpts,
+  filterable by topic (general/news/finance), period, country, language.
+- **extract**: N URLs → clean content (markdown/text), reranked by an intent.
+- **crawl**: site traversal guided in natural language → page content.
+- **map**: discovery of a site's URLs (without content).
 
-Coût (crédits Tavily) : search 1 (2 en `advanced`) ; extract 1 par 5 URLs (2 en
-`advanced`) ; crawl/map 1 par 10 pages (2 avec `instructions` ou `advanced`).
-`include_usage=True` est toujours envoyé : la réponse porte `usage.credits`.
+Cost (Tavily credits): search 1 (2 in `advanced`); extract 1 per 5 URLs (2 in
+`advanced`); crawl/map 1 per 10 pages (2 with `instructions` or `advanced`).
+`include_usage=True` is always sent: the response carries `usage.credits`.
 
-Les corps de requête passent tels quels à l'API (les `None` sont retirés pour
-laisser Tavily appliquer SES défauts) — voir https://docs.tavily.com.
+Request bodies go to the API as is (`None`s are removed to
+let Tavily apply ITS defaults) — see https://docs.tavily.com.
 
 Requires: requests
 """
@@ -34,7 +34,7 @@ class TavilyClient:
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé Tavily.
+            api_key: Tavily key.
         """
         self.api_key = require(api_key, "TAVILY_API_KEY")
         self.session = requests.Session()
@@ -46,9 +46,9 @@ class TavilyClient:
     # --- transport ----------------------------------------------------------
 
     def _request(self, method: str, path: str, *, timeout: int = 60, **kwargs) -> Dict[str, Any]:
-        # `timeout` (int) = budget de LECTURE seulement ; le connect est borné à 10 s
-        # (convention repo (connexion, lecture) — un host injoignable ne doit pas
-        # bloquer 160 s le temps du budget crawl).
+        # `timeout` (int) = READ budget only; connect is bounded to 10 s
+        # (repo convention (connect, read) — an unreachable host must not
+        # block for 160 s, the length of the crawl budget).
         resp = self.session.request(method, f"{self.BASE_URL}{path}",
                                     timeout=(10, timeout), **kwargs)
         raise_for_upstream(resp, service="tavily")
@@ -56,7 +56,7 @@ class TavilyClient:
 
     @staticmethod
     def _compact(body: Dict[str, Any]) -> Dict[str, Any]:
-        """Retire les clés à None — l'API applique alors SES défauts."""
+        """Removes keys set to None — the API then applies ITS defaults."""
         return {k: v for k, v in body.items() if v is not None}
 
     # --- search -------------------------------------------------------------
@@ -80,24 +80,24 @@ class TavilyClient:
         language: Optional[str] = None,
         timeout: int = 60,
     ) -> Dict[str, Any]:
-        """POST /search — recherche web. 1 crédit (`advanced` : 2).
+        """POST /search — web search. 1 credit (`advanced`: 2).
 
         Args:
-            query: termes de recherche (max 400 caractères).
-            search_depth: `basic` (défaut) | `advanced` | `fast` | `ultra-fast`.
-            topic: `general` (défaut) | `news` | `finance`.
-            max_results: 0-20 (défaut 5).
-            chunks_per_source: 1-3 extraits par source (`advanced` seulement).
+            query: search terms (max 400 characters).
+            search_depth: `basic` (default) | `advanced` | `fast` | `ultra-fast`.
+            topic: `general` (default) | `news` | `finance`.
+            max_results: 0-20 (default 5).
+            chunks_per_source: 1-3 excerpts per source (`advanced` only).
             time_range: `day` | `week` | `month` | `year`.
-            start_date / end_date: bornes `YYYY-MM-DD`.
-            include_answer: `False` (défaut) | `True`/`"basic"` | `"advanced"` —
-                réponse synthétique générée par Tavily à partir des résultats.
-            include_raw_content: `False` (défaut) | `"markdown"` | `"text"` —
-                contenu complet de chaque page (lourd).
-            include_domains / exclude_domains: listes de domaines.
-            country: nom de pays en anglais (`france`) — booste ce pays.
-            language: code ISO 639-1 (`fr`).
-            timeout: timeout HTTP local (secondes).
+            start_date / end_date: `YYYY-MM-DD` bounds.
+            include_answer: `False` (default) | `True`/`"basic"` | `"advanced"` —
+                synthesized answer generated by Tavily from the results.
+            include_raw_content: `False` (default) | `"markdown"` | `"text"` —
+                full content of each page (heavy).
+            include_domains / exclude_domains: lists of domains.
+            country: country name in English (`france`) — boosts that country.
+            language: ISO 639-1 code (`fr`).
+            timeout: local HTTP timeout (seconds).
 
         Returns: `{query, answer?, results: [{title, url, content, score,
             raw_content?, favicon?}], images?, response_time, usage: {credits},
@@ -137,16 +137,16 @@ class TavilyClient:
         timeout_s: Optional[float] = None,
         timeout: int = 90,
     ) -> Dict[str, Any]:
-        """POST /extract — contenu propre de N URLs. 1 crédit par 5 URLs (`advanced` : 2).
+        """POST /extract — clean content of N URLs. 1 credit per 5 URLs (`advanced`: 2).
 
         Args:
-            urls: une URL ou une liste (max 20).
-            query: intention utilisée pour reclasser les extraits.
-            extract_depth: `basic` (défaut) | `advanced` (tables, contenu dynamique).
-            chunks_per_source: 1-5 extraits par source (avec `query`).
-            format: `markdown` (défaut) | `text`.
-            timeout_s: budget côté Tavily (1-60 s).
-            timeout: timeout HTTP local (secondes).
+            urls: one URL or a list (max 20).
+            query: intent used to rerank the excerpts.
+            extract_depth: `basic` (default) | `advanced` (tables, dynamic content).
+            chunks_per_source: 1-5 excerpts per source (with `query`).
+            format: `markdown` (default) | `text`.
+            timeout_s: budget on Tavily's side (1-60 s).
+            timeout: local HTTP timeout (seconds).
 
         Returns: `{results: [{url, raw_content, images?, favicon?}],
             failed_results: [{url, error}], response_time, usage: {credits},
@@ -205,21 +205,21 @@ class TavilyClient:
         timeout_s: Optional[float] = None,
         timeout: int = 160,
     ) -> Dict[str, Any]:
-        """POST /crawl — parcours d'un site avec contenu. **Synchrone**.
-        1 crédit par 10 pages (2 avec `instructions` ou `extract_depth=advanced`).
+        """POST /crawl — traversal of a site with content. **Synchronous**.
+        1 credit per 10 pages (2 with `instructions` or `extract_depth=advanced`).
 
         Args:
-            url: URL racine.
-            instructions: consigne en langage naturel (« les pages produit et tarifs »).
-            max_depth: 1-5 (défaut 1). max_breadth: 1-500 liens par niveau (défaut 20).
-            limit: plafond de pages (défaut 50) — première protection contre une
-                facture surprise.
+            url: root URL.
+            instructions: natural-language instruction ("the product and pricing pages").
+            max_depth: 1-5 (default 1). max_breadth: 1-500 links per level (default 20).
+            limit: page cap (default 50) — first protection against a
+                surprise bill.
             select_paths / select_domains / exclude_paths / exclude_domains: regex.
-            allow_external: suivre les liens externes (défaut API : true).
-            extract_depth: `basic` (défaut) | `advanced`.
-            format: `markdown` (défaut) | `text`.
-            timeout_s: budget côté Tavily (10-150 s).
-            timeout: timeout HTTP local (secondes).
+            allow_external: follow external links (API default: true).
+            extract_depth: `basic` (default) | `advanced`.
+            format: `markdown` (default) | `text`.
+            timeout_s: budget on Tavily's side (10-150 s).
+            timeout: local HTTP timeout (seconds).
 
         Returns: `{base_url, results: [{url, raw_content, favicon?}],
             response_time, usage: {credits}, request_id}`.
@@ -251,9 +251,9 @@ class TavilyClient:
         timeout_s: Optional[float] = None,
         timeout: int = 160,
     ) -> Dict[str, Any]:
-        """POST /map — URLs d'un site, sans contenu. 1 crédit par 10 pages.
+        """POST /map — URLs of a site, without content. 1 credit per 10 pages.
 
-        Mêmes arguments de parcours que `crawl` (sans les options de contenu).
+        Same traversal arguments as `crawl` (without the content options).
 
         Returns: `{base_url, results: [url, …], response_time, usage: {credits},
             request_id}`.

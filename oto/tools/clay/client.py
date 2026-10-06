@@ -1,29 +1,29 @@
-"""Clay client — Public API (routines, recherche, tables) + webhooks de table.
+"""Clay client — Public API (routines, search, tables) + table webhooks.
 
-Clay est une plateforme d'enrichissement GTM : des **tables** où chaque colonne
-peut appeler un fournisseur de données ou un modèle, et des **routines** (fonctions
-Clay-managed, fonctions custom, Workflows) exécutables hors de l'UI.
+Clay is a GTM enrichment platform: **tables** where each column
+can call a data provider or a model, and **routines** (Clay-managed functions,
+custom functions, Workflows) executable outside the UI.
 
-Deux surfaces, deux auth, deux classes :
+Two surfaces, two auths, two classes:
 
-- `ClayClient` — la **Public API** (`https://api.clay.com/public/v0`), en-tête
-  `clay-api-key` (clé PERSONNELLE, liée à un utilisateur Clay et à ses accès
-  workspace ; se crée dans Settings → Account → API keys). Couvre les 16 opérations
-  de l'OpenAPI publié (https://developers.clay.com/openapi.json), 1 méthode = 1
-  endpoint. Tout y est en LECTURE ou en exécution : l'API ne sait ni créer une
-  table, ni y écrire une ligne.
-- `ClayTableWebhook` — le **webhook entrant d'une table** (source « Monitor
-  webhook » ajoutée dans l'UI Clay) : la SEULE façon d'écrire des lignes dans une
-  table Clay depuis l'extérieur. Un POST JSON = une ligne. Pas de clé API : l'URL
-  elle-même (plus un jeton optionnel en en-tête) est le droit d'écrire. Aucune API
-  ne crée ce webhook — il se copie depuis l'UI, d'où `parse_curl` pour accepter la
-  commande cURL que Clay affiche telle quelle.
+- `ClayClient` — the **Public API** (`https://api.clay.com/public/v0`), header
+  `clay-api-key` (PERSONAL key, tied to a Clay user and their workspace
+  access; created in Settings → Account → API keys). Covers the 16 operations
+  of the published OpenAPI (https://developers.clay.com/openapi.json), 1 method = 1
+  endpoint. Everything there is READ or execution: the API can neither create a
+  table nor write a row into one.
+- `ClayTableWebhook` — a **table's incoming webhook** ("Monitor
+  webhook" source added in the Clay UI): the ONLY way to write rows into a
+  Clay table from outside. One JSON POST = one row. No API key: the URL
+  itself (plus an optional token in a header) is the right to write. No API
+  creates this webhook — it is copied from the UI, hence `parse_curl` to accept the
+  cURL command Clay displays as is.
 
-Coûts : chaque appel consomme les crédits Clay du workspace de la clé, comme le même
-travail fait dans l'UI. Rate limit par workspace : 429 + `Retry-After` (secondes),
-remonté tel quel dans `UpstreamHTTPError.body` (clé `retry_after`).
+Costs: each call consumes the Clay credits of the key's workspace, like the same
+work done in the UI. Rate limit per workspace: 429 + `Retry-After` (seconds),
+passed through as is in `UpstreamHTTPError.body` (key `retry_after`).
 
-Docs : https://developers.clay.com — https://university.clay.com/docs/webhook-integration-guide
+Docs: https://developers.clay.com — https://university.clay.com/docs/webhook-integration-guide
 
 Requires: requests
 """
@@ -41,12 +41,12 @@ from ..common import UpstreamHTTPError, raise_for_upstream
 
 SOURCE_TYPES = ("people", "companies")
 
-# En-tête du jeton optionnel d'un webhook de table (« authentication token »).
+# Header of a table webhook's optional token ("authentication token").
 WEBHOOK_AUTH_HEADER = "x-clay-webhook-auth"
 
 
 def _raise(resp: Any) -> None:
-    """`raise_for_upstream`, plus le `Retry-After` d'un 429 dans le corps levé."""
+    """`raise_for_upstream`, plus a 429's `Retry-After` in the raised body."""
     if resp.status_code == 429:
         try:
             body = resp.json()
@@ -62,16 +62,16 @@ def _raise(resp: Any) -> None:
 
 
 class ClayClient:
-    """Client de la Clay Public API — 1 méthode = 1 endpoint."""
+    """Clay Public API client — 1 method = 1 endpoint."""
 
     BASE_URL = "https://api.clay.com/public/v0"
 
     def __init__(self, api_key: Optional[str] = None, timeout: tuple = (10, 40)):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
-            api_key: clé Clay Public API.
-            timeout: (connect, read) en secondes.
+            api_key: Clay Public API key.
+            timeout: (connect, read) in seconds.
         """
         self.api_key = require(api_key, "CLAY_API_KEY")
         self.timeout = timeout
@@ -88,14 +88,14 @@ class ClayClient:
         _raise(resp)
         return resp.json() if resp.content else {}
 
-    # --- compte ---------------------------------------------------------------
+    # --- account ---------------------------------------------------------------
 
     def get_me(self) -> Dict[str, Any]:
-        """`GET /me` — utilisateur et workspace de la clé (`{user, workspace}`)."""
+        """`GET /me` — the key's user and workspace (`{user, workspace}`)."""
         return self._request("GET", "/me")
 
     def get_credit_balance(self) -> Dict[str, Any]:
-        """`GET /credits/balance` — soldes du workspace
+        """`GET /credits/balance` — workspace balances
         (`{balance, action_execution_balance}`)."""
         return self._request("GET", "/credits/balance")
 
@@ -107,17 +107,17 @@ class ClayClient:
         items: List[Dict[str, Any]],
         webhook_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`POST /routines/{routine_id}/run` — lance une routine sur 1 à 100 items.
+        """`POST /routines/{routine_id}/run` — runs a routine on 1 to 100 items.
 
-        Toujours ASYNCHRONE : renvoie `{routine_run_id, status: "in_progress"}`,
-        jamais les résultats — les lire avec `get_run_results`.
+        Always ASYNCHRONOUS: returns `{routine_run_id, status: "in_progress"}`,
+        never the results — read them with `get_run_results`.
 
         Args:
-            routine_id: ex. `function:t_abc123` (fonction custom). Aucun endpoint
-                ne liste les routines : l'id se copie depuis l'app ou le CLI Clay.
-            items: `[{id, inputs: {...}}]` — `id` (≤ 64 car.) est rendu avec le
-                résultat de l'item pour l'apparier.
-            webhook_id: webhook Clay enregistré à notifier en fin de run.
+            routine_id: e.g. `function:t_abc123` (custom function). No endpoint
+                lists routines: the id is copied from the Clay app or CLI.
+            items: `[{id, inputs: {...}}]` — `id` (≤ 64 chars) is returned with the
+                item's result to match them up.
+            webhook_id: registered Clay webhook to notify at the end of the run.
         """
         body: Dict[str, Any] = {"items": items}
         if webhook_id:
@@ -130,11 +130,11 @@ class ClayClient:
         cursor: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """`GET /routines/run/{routine_run_id}/results` — progression + résultats.
+        """`GET /routines/run/{routine_run_id}/results` — progress + results.
 
-        `{routine_run_id, status, finished, total, data, cursor}`. `status` passe à
-        `complete` quand le run est fini ; un run complet peut contenir des items
-        `failed`. `cursor` présent = page suivante (limit 1-100, défaut 20)."""
+        `{routine_run_id, status, finished, total, data, cursor}`. `status` becomes
+        `complete` when the run is done; a complete run can contain `failed`
+        items. `cursor` present = next page (limit 1-100, default 20)."""
         params: Dict[str, Any] = {}
         if cursor:
             params["cursor"] = cursor
@@ -144,13 +144,13 @@ class ClayClient:
             "GET", f"/routines/run/{routine_run_id}/results", params=params)
 
     def create_batch_upload_url(self, routine_id: str) -> Dict[str, Any]:
-        """`POST /routines/{routine_id}/run-batch/upload-url` — URL présignée PUT
-        pour le fichier JSONL d'entrée (`{file_id, upload_url}`)."""
+        """`POST /routines/{routine_id}/run-batch/upload-url` — presigned PUT URL
+        for the input JSONL file (`{file_id, upload_url}`)."""
         return self._request(
             "POST", f"/routines/{routine_id}/run-batch/upload-url", json={})
 
     def upload_batch_file(self, upload_url: str, jsonl: str) -> None:
-        """PUT du JSONL sur l'URL présignée (hors API : pas d'en-tête de clé)."""
+        """PUT the JSONL to the presigned URL (outside the API: no key header)."""
         resp = requests.put(upload_url, data=jsonl.encode("utf-8"),
                             timeout=(10, 120))
         _raise(resp)
@@ -161,8 +161,8 @@ class ClayClient:
         file_id: str,
         webhook_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`POST /routines/{routine_id}/run-batch/start` — run asynchrone sur le
-        JSONL déposé (`{routine_run_id, status}`)."""
+        """`POST /routines/{routine_id}/run-batch/start` — async run on the
+        uploaded JSONL (`{routine_run_id, status}`)."""
         body: Dict[str, Any] = {"file_id": file_id}
         if webhook_id:
             body["webhook_id"] = webhook_id
@@ -170,16 +170,16 @@ class ClayClient:
             "POST", f"/routines/{routine_id}/run-batch/start", json=body)
 
     def get_batch_run_results(self, routine_run_id: str) -> Dict[str, Any]:
-        """`GET /routines/run-batch/{routine_run_id}/results` — progression et
-        résultats d'un run batch."""
+        """`GET /routines/run-batch/{routine_run_id}/results` — progress and
+        results of a batch run."""
         return self._request(
             "GET", f"/routines/run-batch/{routine_run_id}/results")
 
-    # --- recherche (base GTM de Clay) ---------------------------------------
+    # --- search (Clay's GTM database) ---------------------------------------
 
     def list_search_fields(self, source_type: str) -> Dict[str, Any]:
-        """`GET /search/filters-mode/fields` — filtres disponibles pour
-        `people` ou `companies` (`{source_type, fields, guidance}`)."""
+        """`GET /search/filters-mode/fields` — filters available for
+        `people` or `companies` (`{source_type, fields, guidance}`)."""
         return self._request(
             "GET", "/search/filters-mode/fields",
             params={"source_type": source_type})
@@ -187,8 +187,8 @@ class ClayClient:
     def create_filters_search(
         self, source_type: str, filters: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """`POST /search/filters-mode` — crée une recherche à filtres structurés
-        (`{search_id}`). Aucun résultat avant `run_filters_search`."""
+        """`POST /search/filters-mode` — creates a structured-filters search
+        (`{search_id}`). No results before `run_filters_search`."""
         return self._request(
             "POST", "/search/filters-mode",
             json={"source_type": source_type, "filters": filters})
@@ -196,27 +196,27 @@ class ClayClient:
     def run_filters_search(
         self, search_id: str, limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """`POST /search/filters-mode/{search_id}/run` — page SUIVANTE de
-        l'itérateur (`{data, has_more, period_quota}`, limit 1-500, défaut 20).
-        Chaque appel avance : rappeler = page d'après."""
+        """`POST /search/filters-mode/{search_id}/run` — NEXT page of
+        the iterator (`{data, has_more, period_quota}`, limit 1-500, default 20).
+        Each call advances: calling again = the following page."""
         body = {"limit": limit} if limit else {}
         return self._request(
             "POST", f"/search/filters-mode/{search_id}/run", json=body)
 
     def get_query_reference(self) -> Dict[str, Any]:
-        """`GET /search/query-mode/reference` — grammaire des requêtes Clay."""
+        """`GET /search/query-mode/reference` — Clay query grammar."""
         return self._request("GET", "/search/query-mode/reference")
 
     def create_query_search(self, query: str) -> Dict[str, Any]:
-        """`POST /search/query-mode` — crée une recherche depuis une requête Clay
+        """`POST /search/query-mode` — creates a search from a Clay query
         (`{search_id, source_type}`)."""
         return self._request("POST", "/search/query-mode", json={"query": query})
 
     def run_query_search(
         self, search_id: str, limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """`POST /search/query-mode/{search_id}/run` — page suivante (limit
-        1-500, défaut 20)."""
+        """`POST /search/query-mode/{search_id}/run` — next page (limit
+        1-500, default 20)."""
         body = {"limit": limit} if limit else {}
         return self._request(
             "POST", f"/search/query-mode/{search_id}/run", json=body)
@@ -229,12 +229,12 @@ class ClayClient:
         cursor: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """`POST /tables/query` — requête structurée sur une ou plusieurs tables
-        connues (`{data, fields, cursor, truncated}`, limit 1-100, défaut 50).
+        """`POST /tables/query` — structured query over one or more known
+        tables (`{data, fields, cursor, truncated}`, limit 1-100, default 50).
 
-        Réservé au plan Enterprise (sync des tables par API). Lecture seule. Le
-        parcours suit l'ordre de dernière mise à jour : une ligne modifiée en cours
-        de scan peut revenir — dédupliquer par id."""
+        Enterprise plan only (table sync via API). Read-only. The
+        traversal follows last-updated order: a row modified during
+        the scan can come back — deduplicate by id."""
         body: Dict[str, Any] = {"query": query}
         if cursor:
             body["cursor"] = cursor
@@ -242,10 +242,10 @@ class ClayClient:
             body["limit"] = limit
         return self._request("POST", "/tables/query", json=body)
 
-    # --- runs de workflows (bêta) ---------------------------------------------
+    # --- workflow runs (beta) ---------------------------------------------
 
     def get_runs_query_reference(self) -> Dict[str, Any]:
-        """`GET /workflows/runs/query/reference` — grammaire de recherche de runs."""
+        """`GET /workflows/runs/query/reference` — run search grammar."""
         return self._request("GET", "/workflows/runs/query/reference")
 
     def query_workflow_runs(
@@ -254,7 +254,7 @@ class ClayClient:
         cursor: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """`POST /workflows/runs/query` — recherche de runs (bêta)."""
+        """`POST /workflows/runs/query` — run search (beta)."""
         body: Dict[str, Any] = {"query": query}
         if cursor:
             body["cursor"] = cursor
@@ -263,14 +263,14 @@ class ClayClient:
         return self._request("POST", "/workflows/runs/query", json=body)
 
 
-# --- webhooks de table ------------------------------------------------------
+# --- table webhooks ------------------------------------------------------
 
 
 def is_clay_webhook_url(url: str) -> bool:
-    """True si `url` est une URL https sur un hôte `clay.com` (ou sous-domaine).
+    """True if `url` is an https URL on a `clay.com` host (or subdomain).
 
-    Garde de destination : un « webhook Clay » qui pointerait ailleurs ferait
-    d'oto un relais POST vers n'importe quel hôte."""
+    Destination guard: a "Clay webhook" that pointed elsewhere would turn
+    oto into a POST relay to any host."""
     try:
         p = urlparse((url or "").strip())
     except ValueError:
@@ -280,19 +280,19 @@ def is_clay_webhook_url(url: str) -> bool:
 
 
 def parse_curl(text: str) -> Dict[str, Optional[str]]:
-    """Extrait `{webhook_url, auth_token}` d'une commande cURL copiée depuis Clay.
+    """Extract `{webhook_url, auth_token}` from a cURL command copied from Clay.
 
-    Accepte aussi une URL nue (alors `auth_token` = None). Tolère les `\\` de fin
-    de ligne et les guillemets simples/doubles. Lève `ValueError` si aucune URL
-    https n'est trouvée."""
+    Also accepts a bare URL (then `auth_token` = None). Tolerates trailing `\\`
+    line continuations and single/double quotes. Raises `ValueError` if no
+    https URL is found."""
     raw = (text or "").strip()
     if not raw:
         raise ValueError("empty input")
     if not raw.lower().startswith("curl"):
         return {"webhook_url": raw, "auth_token": None}
-    # Les `\` de continuation de ligne deviennent des blancs — y compris quand un
-    # champ une ligne a déjà retiré le saut (`'url'\ -H …`). Aucune URL ni jeton
-    # Clay ne porte d'antislash ; le corps `-d`, lui, est ignoré.
+    # Line-continuation `\` become blanks — including when a
+    # one-line field already removed the break (`'url'\ -H …`). No Clay URL or token
+    # carries a backslash; the `-d` body, for its part, is ignored.
     flat = re.sub(r"\\[ \t]*(?:\r?\n)?", " ", raw)
     try:
         tokens = shlex.split(flat)
@@ -321,13 +321,13 @@ def parse_curl(text: str) -> Dict[str, Optional[str]]:
 
 
 class ClayTableWebhook:
-    """Écrit des lignes dans UNE table Clay via son webhook entrant.
+    """Writes rows into ONE Clay table via its incoming webhook.
 
-    Un `push` = un POST = une ligne. Pas de lot côté Clay : l'appelant boucle.
-    Jeton absent ou faux sur un webhook protégé → 401.
-    Plafond Clay : 50 000 envois par webhook (hors Enterprise « auto-delete »),
-    compteur non remis à zéro par la suppression de lignes — au-delà, il faut
-    recréer un webhook dans l'UI."""
+    One `push` = one POST = one row. No batching on Clay's side: the caller loops.
+    Missing or wrong token on a protected webhook → 401.
+    Clay cap: 50,000 sends per webhook (except Enterprise "auto-delete"),
+    counter not reset by deleting rows — beyond it, a webhook must be
+    recreated in the UI."""
 
     def __init__(self, webhook_url: str, auth_token: Optional[str] = None,
                  timeout: tuple = (5, 10)):
@@ -341,9 +341,9 @@ class ClayTableWebhook:
             self.session.headers[WEBHOOK_AUTH_HEADER] = auth_token
 
     def push(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        """POST une ligne. L'objet entier arrive dans la colonne Webhook de la table
-        (ses clés se relient aux colonnes côté Clay) ; un tableau JSON n'est pas
-        découpé et ne fait qu'une ligne."""
+        """POST one row. The whole object lands in the table's Webhook column
+        (its keys are mapped to columns on Clay's side); a JSON array is not
+        split and makes only one row."""
         resp = self.session.post(self.webhook_url, json=row, timeout=self.timeout)
         _raise(resp)
         if not resp.content:

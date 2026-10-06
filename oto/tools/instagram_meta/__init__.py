@@ -1,26 +1,26 @@
-"""Statistiques d'un compte Instagram professionnel — LECTURE SEULE.
+"""Statistics of a professional Instagram account — READ-ONLY.
 
-Variante « Instagram API with Instagram Login » : la personne se connecte avec son
-compte **Instagram**, pas avec Facebook, et aucune Page Facebook n'est requise. Le
-jeton obtenu est celui du compte lui-même.
+"Instagram API with Instagram Login" variant: the person logs in with their
+**Instagram** account, not with Facebook, and no Facebook Page is required. The
+token obtained is the account's own.
 
-Trois surfaces, séparées par ce dont elles ont besoin :
+Three surfaces, separated by what they need:
 
-- `oauth` — obtenir l'autorisation. Seul module qui connaît l'`InstagramApp`
-  (App ID + secret) ;
-- `tokens` — la maintenir en vie. ⚠️ Ce jeton **ne se renouvelle que tant qu'il
-  vit** : pas de `refresh_token` qui survivrait à son expiration, donc une
-  connexion laissée dormir 60 jours est perdue, pas dégradée ;
-- `client` + `best_hours` — s'en servir. Le client de données n'a besoin QUE du
-  jeton et de l'identifiant du compte.
+- `oauth` — obtain the authorization. The only module that knows the `InstagramApp`
+  (App ID + secret);
+- `tokens` — keep it alive. ⚠️ This token **only renews while it
+  lives**: no `refresh_token` that would survive its expiry, so a
+  connection left dormant for 60 days is lost, not degraded;
+- `client` + `best_hours` — use it. The data client needs ONLY the
+  token and the account identifier.
 
-⚠️ **Les coordonnées de l'application ne sont pas ici, et n'y seront pas.** Ce
-dépôt est public : une application Meta appartient à celui qui l'a créée, qui
-répond de ce qu'elle demande et de qui elle invite comme testeur. Les adresses de
-Meta, elles, restent nommées — nommer ce qu'on appelle est le métier d'un client.
+⚠️ **The application's coordinates are not here, and never will be.** This
+repo is public: a Meta application belongs to whoever created it, who
+answers for what it requests and for whom it invites as a tester. Meta's
+addresses, on the other hand, stay named — naming what you call is a client's job.
 
-Ce paquet est **synchrone** et n'ajoute aucune dépendance : `requests`, le socle
-de la lib, suffit à cette API.
+This package is **synchronous** and adds no dependency: `requests`, the lib's
+foundation, is enough for this API.
 """
 from __future__ import annotations
 

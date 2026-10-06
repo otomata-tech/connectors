@@ -73,7 +73,7 @@ def test_me_est_la_sonde_sans_scope(cli, capture):
 
 @pytest.mark.parametrize("bad", [0, 201, 5000, -3])
 def test_limit_hors_bornes_refusee_localement(cli, bad):
-    with pytest.raises(ValueError, match="entre 1 et 200"):
+    with pytest.raises(ValueError, match="between 1 and 200"):
         cli.list_threads(limit=bad)
 
 
@@ -84,7 +84,7 @@ def test_limit_dans_les_bornes_passe(cli, capture, ok):
 
 
 def test_limit_booleen_refuse(cli):
-    with pytest.raises(ValueError, match="doit être un entier"):
+    with pytest.raises(ValueError, match="must be an integer"):
         cli.list_threads(limit=True)
 
 
@@ -120,7 +120,7 @@ def test_iterate_respecte_max_pages(cli):
 
 
 def test_iterate_refuse_un_curseur_fourni(cli):
-    with pytest.raises(ValueError, match="gère le curseur"):
+    with pytest.raises(ValueError, match="manages the cursor"):
         list(cli.iterate(lambda **kw: {}, cursor="c1"))
 
 
@@ -134,20 +134,20 @@ def test_status_de_fil_et_status_de_brouillon_ne_sont_pas_le_meme_jeu(cli, captu
     """« accepted » est valide sur un brouillon de doc et invalide sur un fil.
     Une constante globale par nom de paramètre confondrait les deux."""
     cli.list_drafts(status="accepted")           # valide ici
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.list_threads(status="accepted")      # invalide là
 
 
 def test_type_de_bloque_et_type_de_message_ne_sont_pas_le_meme_jeu(cli, capture):
     cli.list_blocked_senders(type="DOMAIN")      # EMAIL | DOMAIN
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.list_messages("t1", type="DOMAIN")   # email | slack | chat | ...
 
 
 def test_visibility_all_est_un_filtre_jamais_une_ecriture(cli, capture):
     """`all` existe en filtre de liste, pas comme visibilité d'un article."""
     cli.list_articles(visibility="all")
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.create_article({"title": "t", "content": "c", "group_id": "g",
                             "visibility": "all"})
 
@@ -159,7 +159,7 @@ def test_tous_les_pain_levels_documentes_passent(cli, capture, niveau):
 
 
 def test_pain_level_est_valide_aussi_a_la_creation(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.create_thread({"text": "t", "pain_level": "CRITIQUE",
                            "contact_email": "a@b.c"})
 
@@ -176,14 +176,14 @@ def test_expand_accepte_une_liste_et_une_chaine(cli, capture):
 def test_expand_inconnu_est_refuse_localement(cli):
     """L'amont IGNORE une valeur inconnue : un fil reviendrait sans ses messages,
     en silence. Le refus local est ce qui rend la faute visible."""
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.get_thread("t1", expand="mesages")
 
 
 # --- l'appel qui écrit à des tiers ------------------------------------------
 
 def test_diffusion_sans_canal_est_refusee(cli):
-    with pytest.raises(ValueError, match="au moins un canal"):
+    with pytest.raises(ValueError, match="at least one channel"):
         cli.broadcast_changelog("c1")
 
 
@@ -204,7 +204,7 @@ def test_diffusion_ne_touche_jamais_published(cli, capture):
 # --- garde-fous d'écriture ---------------------------------------------------
 
 def test_fusion_dentreprise_exige_une_source_distincte(cli):
-    with pytest.raises(ValueError, match="doit différer"):
+    with pytest.raises(ValueError, match="must differ"):
         cli.merge_company("c1", "c1")
     with pytest.raises(ValueError, match="source_id"):
         cli.merge_company("c1", "")
@@ -216,7 +216,7 @@ def test_creation_detiquette_exige_les_quatre_champs(cli):
 
 
 def test_import_de_fichier_exclut_url_et_base64(cli):
-    with pytest.raises(ValueError, match="exclusifs"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         cli.import_file(url="https://x/y.png", content_base64="AAA")
     with pytest.raises(ValueError, match="content_base64"):
         cli.import_file()

@@ -20,7 +20,7 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 @dataclass
@@ -28,13 +28,13 @@ class Campaign:
     """Campaign data.
 
     `senders` is kept first-class because it is what an operator asks for
-    ("qui envoie cette campagne ?"), but the v2 sample payload of
+    ("who is sending this campaign?"), but the v2 sample payload of
     `GET /campaigns` does NOT advertise it — on that shape it would land `[]`.
 
-    ⚠️ Rejoué en live le 2026-08-31 SANS TRANCHER : toutes les campagnes du
-    compte de test avaient zéro expéditeur, donc un `senders` vide ne dit pas si
-    le champ est absent de la charge ou simplement vide. La question reste
-    ouverte, et se règle en une lecture sur une campagne qui a un expéditeur.
+    ⚠️ Replayed live on 2026-08-31 WITHOUT A CONCLUSION: all the campaigns of
+    the test account had zero senders, so an empty `senders` does not say whether
+    the field is absent from the payload or simply empty. The question remains
+    open, and is settled by a single read on a campaign that has a sender.
     """
     id: str
     name: str
@@ -159,13 +159,13 @@ class LemlistClient:
         try:
             return response.json()
         except ValueError:
-            # lemlist annonce `Content-Type: application/json` et rend parfois du
-            # TEXTE NU — relevé en live le 2026-08-31 sur
-            # `POST/DELETE /v2/unsubscribes/contacts/{id}`, qui répond 200
-            # « Contact subscription updated ». `.json()` levait alors sur une
-            # réponse pourtant réussie, et l'appel remontait comme une panne.
-            # On rend le texte plutôt que de le perdre : l'appelant voit ce que
-            # lemlist a dit, et rien ne casse.
+            # lemlist announces `Content-Type: application/json` and sometimes
+            # returns BARE TEXT — observed live on 2026-08-31 on
+            # `POST/DELETE /v2/unsubscribes/contacts/{id}`, which answers 200
+            # "Contact subscription updated". `.json()` then raised on an
+            # otherwise successful response, and the call surfaced as a failure.
+            # We return the text rather than lose it: the caller sees what
+            # lemlist said, and nothing breaks.
             return {"message": response.text}
 
     @staticmethod
@@ -240,7 +240,7 @@ class LemlistClient:
         cls, *, limit=None, offset=None, page=None, status=None,
         created_by=None, sort_order=None,
     ) -> Dict[str, Any]:
-        """Query de `GET /campaigns`, partagée par la page et le parcours."""
+        """Query of `GET /campaigns`, shared by the page and the walk."""
         if status is not None and status not in cls.CAMPAIGN_STATUSES:
             raise ValueError(
                 f"status must be one of {cls.CAMPAIGN_STATUSES}, got {status!r}")
@@ -256,15 +256,15 @@ class LemlistClient:
 
     @classmethod
     def _campaign_page(cls, data: Any) -> tuple[List[Campaign], Optional[dict]]:
-        """Découpe une page de campagnes en `(campagnes, pagination)`.
+        """Split a page of campaigns into `(campaigns, pagination)`.
 
-        ⚠️ DEUX formes, et la doc n'en annonce qu'une. Le schéma OpenAPI de
-        `GET /campaigns` décrit un TABLEAU ; c'est vrai en v1, faux en v2, qui
-        rend `{"campaigns": [...], "pagination": {...}}`. Vérifié en live le
-        2026-08-31 : le code qui itérait le tableau parcourait donc les CLÉS du
-        dict et cassait sur `c["_id"]` (« string indices must be integers ») —
-        `status()` tombait dès le premier appel. On accepte les deux plutôt que
-        de parier sur la doc.
+        ⚠️ TWO shapes, and the doc only announces one. The OpenAPI schema of
+        `GET /campaigns` describes an ARRAY; that is true in v1, false in v2,
+        which returns `{"campaigns": [...], "pagination": {...}}`. Verified live
+        on 2026-08-31: the code that iterated over the array therefore walked the
+        dict's KEYS and broke on `c["_id"]` ("string indices must be integers") —
+        `status()` fell over on the very first call. We accept both rather than
+        betting on the doc.
         """
         if isinstance(data, dict):
             rows = data.get("campaigns") or []
@@ -279,7 +279,7 @@ class LemlistClient:
         Returns `(campaigns, truncated)` — `truncated` is True when `max_pages`
         was reached with a full page still coming, i.e. the list is INCOMPLETE.
         Returning the flag rather than silently stopping is the whole point: a
-        capped list that looks complete is how "cette campagne n'existe pas"
+        capped list that looks complete is how "this campaign does not exist"
         gets answered wrongly.
         """
         out: List[Campaign] = []
@@ -290,8 +290,8 @@ class LemlistClient:
             })
             batch, pagination = self._campaign_page(data)
             out.extend(batch)
-            # La v2 dit elle-même où elle en est ; s'y fier bat le comptage de
-            # page courte, qui se trompe sur une dernière page pleine.
+            # v2 says itself where it stands; trusting that beats counting short
+            # pages, which gets a full last page wrong.
             if pagination is not None:
                 if not pagination.get("nextPage"):
                     return out, False
@@ -327,16 +327,16 @@ class LemlistClient:
         Returns the campaign, including `sequenceId` and `scheduleIds` — the two
         ids every other management call needs.
 
-        ⚠️ **Une campagne créée par l'API naît `state="running"`, pas en
-        brouillon** (vérifié en live le 2026-08-31 ; `duplicate_campaign`, lui,
-        rend bien `paused`). Le `status` qu'affichent `get_campaign` et
-        `list_campaigns` vaut « draft », mais c'est un statut D'AFFICHAGE dérivé
-        de l'absence d'étape et de lead, pas l'état d'exécution. Conséquences :
-        `start_campaign` répond `400 "already running"` sur une campagne
-        fraîche, et rien ne « démarre » l'envoi — ce sont l'ajout d'un
-        expéditeur, d'une étape et d'un lead LANCÉ qui le font. Le verrou qui
-        reste est la revue par lead (`launch_lead`). Pour construire une
-        campagne tranquillement : `pause_campaign` juste après la création.
+        ⚠️ **A campaign created by the API is born `state="running"`, not as a
+        draft** (verified live on 2026-08-31; `duplicate_campaign`, for its part,
+        does return `paused`). The `status` shown by `get_campaign` and
+        `list_campaigns` is "draft", but that is a DISPLAY status derived from
+        the absence of a step and of a lead, not the execution state.
+        Consequences: `start_campaign` answers `400 "already running"` on a
+        fresh campaign, and nothing "starts" sending — it is adding a sender, a
+        step and a LAUNCHED lead that does so. The lock that remains is the
+        per-lead review (`launch_lead`). To build a campaign calmly:
+        `pause_campaign` right after creation.
         """
         body: Dict[str, Any] = {"name": name}
         if timezone is not None:
@@ -366,11 +366,11 @@ class LemlistClient:
         ⚠️ This is the call that puts real messages on the wire: from here
         lemlist walks the sequence for every launched lead.
 
-        ⚠️ La doc annonce « no-op si déjà lancée » ; c'est FAUX — l'API répond
-        `400 "You can't start campaigns that are already running."` (vérifié en
-        live le 2026-08-31). Et comme une campagne créée par l'API est DÉJÀ
-        `running` (cf. `create_campaign`), cet appel ne sert en pratique qu'à
-        REPRENDRE une campagne mise en pause.
+        ⚠️ The doc announces "no-op if already started"; that is FALSE — the API
+        answers `400 "You can't start campaigns that are already running."`
+        (verified live on 2026-08-31). And since a campaign created by the API is
+        ALREADY `running` (see `create_campaign`), this call is in practice only
+        useful to RESUME a paused campaign.
         """
         return self._request("POST", f"campaigns/{campaign_id}/start")
 
@@ -380,10 +380,10 @@ class LemlistClient:
         Already-scheduled leads are untouched (lemlist's own wording): pausing
         stops the campaign advancing, it does not recall what is queued.
 
-        ⚠️ Là aussi la doc annonce un no-op et l'API répond
-        `400 "You can't pause campaigns that are not running."`. Comme une
-        campagne créée par l'API naît `running`, c'est CE geste — et non
-        `start_campaign` — qui décide si elle peut envoyer.
+        ⚠️ Here too the doc announces a no-op and the API answers
+        `400 "You can't pause campaigns that are not running."`. Since a
+        campaign created by the API is born `running`, it is THIS action — not
+        `start_campaign` — that decides whether it can send.
         """
         return self._request("POST", f"campaigns/{campaign_id}/pause")
 
@@ -986,7 +986,7 @@ class LemlistClient:
 
         Like `add_lead_variables`, the variables travel as QUERY parameters
         (arbitrary keys) — not as a JSON body. Spaces travel as `%20` and not as
-        `+`, cf. `_vars_query` : lemlist stockait le `+` littéralement.
+        `+`, see `_vars_query`: lemlist stored the `+` literally.
         """
         return self._request(
             "PATCH", f"leads/{lead_id}/variables",
@@ -1002,8 +1002,8 @@ class LemlistClient:
         """
         if not names:
             raise ValueError("names is empty — nothing to erase")
-        # Même encodage que les deux poses : un NOM de variable qui porterait un
-        # espace désignerait sinon une autre clé que celle qu'on croit effacer.
+        # Same encoding as the two setters: a variable NAME carrying a space
+        # would otherwise designate a different key than the one we think we erase.
         return self._request(
             "DELETE", f"leads/{lead_id}/variables",
             params=self._vars_query({n: "" for n in names}))
@@ -1141,26 +1141,26 @@ class LemlistClient:
 
     @staticmethod
     def _vars_query(variables: Dict[str, str]) -> str:
-        """La query string des variables de lead, espaces en `%20` et non en `+`.
+        """The lead-variables query string, spaces as `%20` and not `+`.
 
-        ⚠️ **lemlist décode `%XX` mais PAS `+`.** Les trois routes de variables
-        prennent leurs valeurs en paramètres d'URL (clés arbitraires, pas de corps
-        JSON) ; `requests` y encode l'espace en `+` par défaut, et lemlist stocke
-        ce `+` LITTÉRALEMENT. Mesuré 4 fois sur 4 le 10/09/2026 :
-        `{"posteRecrute": "un Traffic Manager"}` est relu `"un+Traffic+Manager"`,
-        et part tel quel dans le message au prospect.
+        ⚠️ **lemlist decodes `%XX` but NOT `+`.** The three variable routes
+        take their values as URL parameters (arbitrary keys, no JSON body);
+        `requests` encodes the space as `+` there by default, and lemlist stores
+        that `+` LITERALLY. Measured 4 times out of 4 on 10/09/2026:
+        `{"posteRecrute": "un Traffic Manager"}` is read back as
+        `"un+Traffic+Manager"`, and goes out as is in the message to the prospect.
 
-        Le signal qui l'a trouvé portait sa propre preuve : *« le slash, lui,
-        survit »* — `/` voyage en `%2F` et revient intact, donc lemlist décode
-        bien le pourcent. C'est le `+` seul qu'il ignore.
+        The signal that found it carried its own proof: *"the slash, for its
+        part, survives"* — `/` travels as `%2F` and comes back intact, so lemlist
+        does decode percent-encoding. It is the `+` alone that it ignores.
 
-        ⚠️ **Aucune erreur n'était levée** : la réponse valait `{"ok": true}`.
-        Le contournement trouvé côté appelant était de supprimer le lead et de le
-        recréer — la création, elle, passe par un corps JSON et n'a jamais eu le
-        défaut.
+        ⚠️ **No error was raised**: the response was `{"ok": true}`.
+        The workaround found on the caller's side was to delete the lead and
+        recreate it — creation goes through a JSON body and never had the
+        defect.
 
-        Rendue en CHAÎNE déjà encodée : `requests` ne retouche pas une query
-        string passée telle quelle, alors qu'il réencoderait un dict.
+        Returned as an already-encoded STRING: `requests` does not touch a query
+        string passed as is, whereas it would re-encode a dict.
         """
         return urlencode(variables, quote_via=quote)
 
@@ -1334,10 +1334,10 @@ class LemlistClient:
                 `enrichmentRequests` uses the v2 vocabulary — `find_email`,
                 `find_phone`, `verify`, `linkedin_enrichment` (see
                 `ENRICH_BULK_ACTIONS`). `metadata` is echoed back, use it to
-                match ids to your own rows. ⚠️ Ses VALEURS doivent être des
-                CHAÎNES : `{"row": 1}` est rejeté (`WRONG_METADATA_FORMAT`),
-                `{"row": "1"}` passe — vérifié en live le 2026-08-31, là où la
-                doc dit seulement « string or object ».
+                match ids to your own rows. ⚠️ Its VALUES must be
+                STRINGS: `{"row": 1}` is rejected (`WRONG_METADATA_FORMAT`),
+                `{"row": "1"}` passes — verified live on 2026-08-31, where the
+                doc only says "string or object".
             webhook_url: notified as each enrichment completes.
 
         Returns one entry per item, in order — `{"id": "enr_...", "metadata": ...}`
@@ -1580,16 +1580,16 @@ class LemlistClient:
 
     # --- Unsubscribes ---------------------------------------------------------
     #
-    # TROIS listes, pas une, et lemlist les documente séparément parce qu'elles
-    # ne portent pas les mêmes objets :
-    #   • v1 « unsubscribes » — des emails et des DOMAINES, à plat ;
-    #   • v2 « variables »    — n'importe quelle valeur identifiante (email,
-    #     domaine, URL LinkedIn, téléphone), avec un import en masse ;
-    #   • v2 « contacts »     — le drapeau do-not-contact posé sur un CONTACT du
-    #     CRM lemlist, pas sur une valeur.
-    # Désinscrire une adresse en v1 ne pose pas le drapeau du contact, et
-    # inversement. Les trois familles sont donc exposées telles quelles plutôt
-    # que fondues en une seule, qui mentirait sur ce qui a été fait.
+    # THREE lists, not one, and lemlist documents them separately because they
+    # do not carry the same objects:
+    #   • v1 "unsubscribes" — emails and DOMAINS, flat;
+    #   • v2 "variables"    — any identifying value (email, domain, LinkedIn
+    #     URL, phone), with a bulk import;
+    #   • v2 "contacts"     — the do-not-contact flag set on a CONTACT of the
+    #     lemlist CRM, not on a value.
+    # Unsubscribing an address in v1 does not set the contact's flag, and
+    # vice versa. The three families are therefore exposed as they are rather
+    # than merged into a single one, which would lie about what was done.
 
     def list_unsubscribes(self, *, offset: int = None, limit: int = None) -> Any:
         """List unsubscribed emails and domains (v1)."""
@@ -1672,12 +1672,12 @@ class LemlistClient:
         return self._request(
             "GET", "v2/unsubscribes/exports/contacts", as_text=True)
 
-    # --- Contacts (le CRM lemlist) --------------------------------------------
+    # --- Contacts (the lemlist CRM) -------------------------------------------
     #
-    # Un CONTACT n'est pas un LEAD : le lead est l'exemplaire d'une personne DANS
-    # une campagne (son état d'envoi, ses variables), le contact est la personne
-    # elle-même dans le CRM lemlist, indépendante des campagnes. lemlist le dit
-    # dans sa propre doc, et c'est la confusion la plus coûteuse ici.
+    # A CONTACT is not a LEAD: the lead is a person's copy INSIDE a campaign
+    # (its sending state, its variables), the contact is the person themselves
+    # in the lemlist CRM, independent of campaigns. lemlist says so in its own
+    # doc, and it is the most costly confusion here.
 
     def list_contacts(
         self,
@@ -1839,11 +1839,11 @@ class LemlistClient:
 
     # --- Inbox ------------------------------------------------------------------
     #
-    # La messagerie unifiée : conversations par CONTACT (pas par lead), tous
-    # canaux confondus, avec des brouillons et des libellés. Trois routes d'envoi
-    # y vivent (`/inbox/email`, `/inbox/linkedin`, `/inbox/whatsapp`) : ce sont
-    # les seuls envois de ce client qui ne passent NI par une campagne NI par une
-    # revue — un message part directement, à une personne réelle.
+    # The unified inbox: conversations per CONTACT (not per lead), all
+    # channels combined, with drafts and labels. Three send routes live
+    # there (`/inbox/email`, `/inbox/linkedin`, `/inbox/whatsapp`): they are
+    # the only sends of this client that go through NEITHER a campaign NOR a
+    # review — a message goes out directly, to a real person.
 
     #: Canaux d'un brouillon.
     DRAFT_CHANNELS = ("email", "linkedin", "whatsapp", "sms")
@@ -2015,7 +2015,7 @@ class LemlistClient:
 
     # --- Tasks -----------------------------------------------------------------
 
-    #: Types de tâche, et priorités (0 = haute … 2 = basse, "" = aucune).
+    #: Task types, and priorities (0 = high … 2 = low, "" = none).
     TASK_TYPES = ("email", "manual", "phone", "linkedin")
 
     def list_tasks(self, *, page: int = None, filters: List[dict] = None) -> Any:
@@ -2023,10 +2023,10 @@ class LemlistClient:
         JSON array STRING in the query — the same encoding trap as the stats
         `channels`.
 
-        ⚠️ `filters` est documenté OPTIONNEL et ne l'est pas : sans lui l'API
-        répond `400 {"error": "Malformed filters"}`. Vérifié en live le
-        2026-08-31 — un tableau VIDE suffit, donc on l'envoie toujours. C'est
-        exactement le genre d'écart qu'aucun test de charge ne voit.
+        ⚠️ `filters` is documented OPTIONAL and is not: without it the API
+        answers `400 {"error": "Malformed filters"}`. Verified live on
+        2026-08-31 — an EMPTY array is enough, so we always send it. This is
+        exactly the kind of gap that no load test sees.
         """
         params: Dict[str, Any] = {"filters": json.dumps(filters or [])}
         if page is not None:
@@ -2048,11 +2048,11 @@ class LemlistClient:
     ) -> Dict[str, Any]:
         """Create a manual task assigned to a user. Sends nothing by itself.
 
-        ⚠️ `record_id` est documenté OPTIONNEL et ne l'est pas : sans lui l'API
-        répond `400 {"error": "recordId is required"}` (vérifié en live le
-        2026-08-31). C'est l'id du contact ou du lead auquel la tâche se
-        rattache — une tâche lemlist n'existe pas hors d'un enregistrement.
-        Refusé ici pour que le message dise QUOI fournir.
+        ⚠️ `record_id` is documented OPTIONAL and is not: without it the API
+        answers `400 {"error": "recordId is required"}` (verified live on
+        2026-08-31). It is the id of the contact or lead the task attaches
+        to — a lemlist task does not exist outside a record.
+        Refused here so that the message says WHAT to provide.
         """
         if not record_id:
             raise ValueError(
@@ -2084,14 +2084,14 @@ class LemlistClient:
             raise ValueError("ids is empty — nothing to ignore")
         return self._request("POST", "tasks/ignore", json={"ids": ids})
 
-    # --- Watch lists (signaux) --------------------------------------------------
+    # --- Watch lists (signals) --------------------------------------------------
     #
-    # Une watch list surveille un SIGNAL (une boîte qui recrute, une levée, un
-    # changement de poste…) et peut, seule, créer une opportunité ou pousser
-    # les personnes trouvées DANS une campagne (`signalProcessingType`) — c'est
-    # la seule surface non-campagne de ce client qui puisse alimenter un envoi.
+    # A watch list monitors a SIGNAL (a company hiring, a fundraise, a job
+    # change…) and can, on its own, create an opportunity or push the people
+    # found INTO a campaign (`signalProcessingType`) — it is the only
+    # non-campaign surface of this client that can feed a send.
 
-    #: Types de signal surveillés par une watch list.
+    #: Signal types monitored by a watch list.
     WATCH_LIST_TYPES = (
         "companyIsHiring", "companyRaisedFunds", "recruitmentCampaign",
         "jobChange", "newHire", "companyEmployeeVisitedMyWebsite",
@@ -2101,7 +2101,7 @@ class LemlistClient:
         "linkedinKeywords", "externalSignalContact", "externalSignalCompany",
         "buyingIntent",
     )
-    #: Ce que la watch list fait d'un signal qu'elle attrape.
+    #: What the watch list does with a signal it catches.
     SIGNAL_PROCESSING = ("manual", "create_opportunity", "push_to_campaign")
 
     def list_watch_lists(
@@ -2130,23 +2130,23 @@ class LemlistClient:
 
         ⚠️ `signal_processing_type="push_to_campaign"` + `activate=True` makes
         this list feed a campaign on its own — the one configuration here that
-        can end in messages being sent without a further call. D'où
-        `activate=False` par défaut : une liste naît en brouillon.
+        can end in messages being sent without a further call. Hence
+        `activate=False` by default: a list is born as a draft.
 
-        ⚠️ QUATRE champs documentés optionnels sont OBLIGATOIRES — `filters`,
-        `segmentType`, `signalProcessingType`, `activate` (vérifié en live le
-        2026-08-31) ; les trois derniers ont donc un défaut ici. Le pire est
-        `activate` : l'omettre déclenche `400 "activate requires both
-        segmentType and signalProcessingType"`, un message qui accuse les DEUX
-        AUTRES champs, pourtant bien présents.
+        ⚠️ FOUR fields documented as optional are MANDATORY — `filters`,
+        `segmentType`, `signalProcessingType`, `activate` (verified live on
+        2026-08-31); the last three therefore have a default here. The worst is
+        `activate`: omitting it triggers `400 "activate requires both
+        segmentType and signalProcessingType"`, a message that blames the TWO
+        OTHER fields, which are in fact present.
 
-        `filters` reste à fournir et dépend du `type` : chaque type a ses
-        filtres requis (`companyIsHiring` exige `title`, `location` et
-        `maxIdentificationsPerDay`). Les VALEURS doivent être canoniques, telles
-        que rendues par `get_watch_list_filter_values` — une chaîne libre est
-        rejetée (`INVALID_FILTER_VALUE`) — et les valeurs numériques voyagent en
-        CHAÎNES (`{"filterId": "maxIdentificationsPerDay", "in": ["5"]}`). Lis
-        `get_watch_list_filters(type=…)` avant de construire la charge.
+        `filters` remains to be provided and depends on the `type`: each type has
+        its required filters (`companyIsHiring` requires `title`, `location` and
+        `maxIdentificationsPerDay`). The VALUES must be canonical, as returned
+        by `get_watch_list_filter_values` — a free string is rejected
+        (`INVALID_FILTER_VALUE`) — and numeric values travel as STRINGS
+        (`{"filterId": "maxIdentificationsPerDay", "in": ["5"]}`). Read
+        `get_watch_list_filters(type=…)` before building the payload.
         """
         if type not in self.WATCH_LIST_TYPES:
             raise ValueError(
@@ -2161,7 +2161,7 @@ class LemlistClient:
             "filters": filters or [],
             "segmentType": segment_type,
             "signalProcessingType": signal_processing_type,
-            # Envoyé même à False : c'est l'ABSENCE de la clé que l'API refuse.
+            # Sent even as False: it is the ABSENCE of the key that the API refuses.
             "activate": bool(activate),
         }
         for key, value in (
@@ -2245,12 +2245,12 @@ class LemlistClient:
         return self._request(
             "POST", f"watchlist/{watch_list_id}/external-signals", json=body)
 
-    # --- Campaign exports (asynchrones) -----------------------------------------
+    # --- Campaign exports (asynchronous) ----------------------------------------
     #
-    # Trois routes pour UN export : on l'ouvre (`start`), on interroge son état
-    # (`status`), et on peut demander à être prévenu par mail à la fin. À ne pas
-    # confondre avec `export_leads`, l'export CSV historique et SYNCHRONE, ni
-    # avec `export_campaign_leads`, qui rend les leads directement.
+    # Three routes for ONE export: you open it (`start`), you poll its state
+    # (`status`), and you can ask to be notified by email at the end. Not to be
+    # confused with `export_leads`, the historical and SYNCHRONOUS CSV export, nor
+    # with `export_campaign_leads`, which returns the leads directly.
 
     def start_campaign_export(self, campaign_id: str) -> Dict[str, Any]:
         """Open an asynchronous export of a campaign's stats. Returns its id."""
@@ -2281,12 +2281,12 @@ class LemlistClient:
         `format` is `csv` (the API default) or `json`. CSV comes back as text,
         JSON as parsed data — the return type follows the format asked for.
 
-        ⚠️ `state` vaut `"all"` par défaut ICI, et ce n'est PAS le défaut de
-        lemlist. Vérifié en live le 2026-08-31 : sans `state`, une campagne d'un
-        lead rend une liste VIDE (et un CSV réduit à son en-tête). Le défaut de
-        l'API filtre donc tout, ce qui se lit comme « pas de leads » plutôt que
-        « mauvais filtre » — silencieux, et faux. `state=None` restaure le
-        comportement brut.
+        ⚠️ `state` defaults to `"all"` HERE, and that is NOT lemlist's
+        default. Verified live on 2026-08-31: without `state`, a one-lead
+        campaign returns an EMPTY list (and a CSV reduced to its header). The
+        API's default therefore filters everything out, which reads as "no leads"
+        rather than "wrong filter" — silent, and wrong. `state=None` restores the
+        raw behaviour.
         """
         if format is not None and format not in ("json", "csv"):
             raise ValueError(f"format is 'json' or 'csv', got {format!r}")
@@ -2299,8 +2299,8 @@ class LemlistClient:
 
     # --- People & companies database ---------------------------------------------
     #
-    # La base PARTAGÉE de lemlist (prospection à froid), distincte du CRM
-    # `contacts`/`companies` qui, lui, ne contient QUE tes données.
+    # lemlist's SHARED base (cold outreach), distinct from the
+    # `contacts`/`companies` CRM which, for its part, contains ONLY your data.
 
     def search_people_database(
         self, *, filters: List[dict] = None, page: int = None,
@@ -2467,7 +2467,7 @@ class LemlistClient:
 
     # --- Deliverability alerts --------------------------------------------------
 
-    #: Vocabulaire des alertes de délivrabilité.
+    #: Vocabulary of the deliverability alerts.
     ALERT_WIDGETS = ("warmup", "outreach")
     ALERT_METRICS = ("inboxRate", "spamRate", "score", "deliveryRate", "bounceRate")
     ALERT_SEVERITIES = ("warning", "critical")

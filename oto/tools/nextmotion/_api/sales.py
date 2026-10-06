@@ -128,8 +128,8 @@ class _SalesMixin:
     def _statistics(self, clinic_id: str, path: str, start_date: Optional[str],
                     end_date: Optional[str], period_type: Optional[str]) -> Any:
         if period_type is not None and period_type not in _PERIOD_TYPES:
-            raise ValueError(f"period_type doit être l'un de {_PERIOD_TYPES} — "
-                             f"reçu {period_type!r}.")
+            raise ValueError(f"period_type must be one of {_PERIOD_TYPES} — "
+                             f"got {period_type!r}.")
         return self._get(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/statistics/{path}",
                          start_time=start_date, end_time=end_date,
                          period_type=period_type)
