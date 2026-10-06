@@ -5,7 +5,7 @@
 
 ## Résumé
 
-Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; douze connecteurs ont leur description, et tout client ajouté à la lib entre au format.
+Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; treize connecteurs ont leur description, et tout client ajouté à la lib entre au format.
 
 ## Contexte
 
@@ -102,7 +102,9 @@ functions:
 
 ### Les connecteurs décrits
 
-Douze connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `mailpool` (21), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée : ainsi `mailpool.update_domain_dns`, dont le corps est un tableau d'enregistrements.
+Treize connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` (33), `aircall` (18), `amplitude` (16), `claap` (6), `mailpool` (21), `meta_ads` (8), `microsoft` (13), `nextmotion` (139), `notion` (22), `pennylane` (48), `sellsy` (2), `typeform` (4), `wttj_ats` (10). Chaque valeur vient du client Python ou de la référence publique de l'éditeur ; quand les deux divergent, le fichier suit le client. Une fonction que le format ne sait pas dire reste hors du fichier plutôt que d'y être approchée : ainsi `mailpool.update_domain_dns`, dont le corps est un tableau d'enregistrements.
+
+`pennylane` (API v2, une clé par société) couvre ce que couvre le client : référentiels, clients, fournisseurs, factures clients et avoirs, devis, factures d'achat (lecture, correction, validation), grand livre et lettrage, transactions, balance, rapprochement ; 26 lectures, 13 écritures, 9 fonctions sensibles. Valeurs vérifiées le 2026-10-06 contre l'OpenAPI publique « Company V2 ». Restent hors du fichier : le téléversement de pièce (multipart) et l'import de facture d'achat qui en dépend, les deux recherches anti-doublon par `external_reference` du client (servies par le `filter` des listes), l'agrégat `fetch_complete_data` (plusieurs appels) et l'option `only_outstanding` des transactions (filtre local). Trois gestes du client s'écrivent autrement, fidèles à l'API : le `filter` est une chaîne JSON que l'agent écrit ; `draft` est un argument requis de valeur constante `true` ; un avoir prend des quantités négatives, imposées par le schéma, là où le client inverse le signe.
 
 Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur), `wordpress` (adresse propre à chaque site, fournie par le credential ; racine REST découverte à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire).
 
@@ -131,7 +133,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 
 ## Écart avec le code
 
-- Écrits : le schéma, son test et douze descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite. Aucun test n'impose encore qu'un client ait sa description, et le client `wordpress`, ajouté en 1.156.0, n'en a pas.
+- Écrits : le schéma, son test et treize descriptions (« Les connecteurs décrits ») ; le schéma et Sellsy depuis la version 1.149.0 de la lib, dix autres depuis le 2026-10-05, `mailpool` ensuite, `pennylane` le 2026-10-06. Aucun test n'impose encore qu'un client ait sa description, et le client `wordpress`, ajouté en 1.156.0, n'en a pas.
 - Les descriptions ne partent pas dans la distribution PyPI : ni la roue ni l'archive source de la 1.154.0 ne les contiennent. Seul le dépôt les porte.
 - Deux règles échappent au schéma JSON et ne sont vérifiées nulle part : un argument va à un seul endroit (et chaque `{param}` du chemin nomme un argument) ; une référence de `auth` désigne un champ de `credential` existant. La fabrique doit les vérifier.
 - `modes` garde le vocabulaire d'oto 1 (`platform`, `byo_user`, `byo_org`).
@@ -139,6 +141,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - Le format se déclare YAML 1.2, mais le test lit avec PyYAML, qui suit YAML 1.1.
 - Le client Python Sellsy de la lib reste écrit à la main, sur des verbes génériques ; rien n'est généré.
 - Les clients Python restent écrits à la main ; leurs descriptions, écrites après eux, n'en sont pas encore la source.
+- `pennylane` s'écarte du client là où le client lit une seule page d'une liste paginée (exercices, catégories, lignes de facture et de devis) : le fichier les décrit paginées, comme l'OpenAPI. Un `DELETE` y porte un corps (délettrage) : le schéma l'accepte, la fabrique devra l'envoyer.
 
 ## Questions ouvertes
 
@@ -156,6 +159,12 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
   - `handwritten` exige un fichier TypeScript, qui n'existe pour aucun connecteur ;
   - un coût par élément d'un lot, ou relu dans la réponse de l'amont : `cost` ne connaît que `per: request` et `per: page`, alors qu'un lot payant se facture au contact soumis, ou seulement à la donnée trouvée, chiffrée dans la réponse ;
   - une sonde déclarée : quelle fonction vérifie la connexion, et ce qu'elle couvre (l'authentification seule, ou l'authentification et le quota), sans rien facturer.
+- Relevé en décrivant `pennylane` le 2026-10-06 :
+  - un argument structuré encodé en JSON dans la query (`filter=[{"field","operator","value"}]`), et des clauses de filtre bâties depuis des arguments nommés (bornes de date, statut, `external_reference`) ;
+  - un débit maximal à respecter (environ quatre requêtes par seconde) : la fabrique prévoit un limiteur partagé, le fichier ne sait pas en donner le rythme ;
+  - un drapeau d'arrêt de pagination distinct du curseur (`has_more`) ;
+  - un contrôle local avant l'appel qui porte sur une somme (débits égaux aux crédits d'une écriture) ;
+  - une sonde qui vérifie aussi les droits : `GET /me` authentifie, mais une clé sans aucun `scopes` ne peut rien faire.
 - Un test doit-il refuser un client sans description, avec une liste nommée d'exceptions ?
 
 ## Historique
@@ -165,4 +174,5 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - 2026-09-30 : schéma `connector.schema.json` et fichier Sellsy vérifié contre la référence publique de l'API ; ajouts : le champ de `auth` qui nomme le secret (`key`, `token`, `username`, `password`), `scope` en OAuth2, l'erreur 400 `invalid_request` — choix du projet (source : lot 2 du 30/09).
 - 2026-10-05 : reprise en document de conception vivant depuis la conception connecteurs d'oto 2 (oto-enterprise, archivé) — décidé par le mainteneur.
 - 2026-10-05 : tout client ajouté à la lib entre au format ; dix connecteurs décrits, trois non descriptibles en l'état, et la liste de ce que le format ne sait pas encore dire — décidé par le mainteneur (source : séance du 05/10).
+- 2026-10-06 : description `pennylane`, 48 fonctions, et cinq trous du format relevés — choix du projet.
 - 2026-10-05 : la description microsoft passe à l'accès délégué (jeton d'une personne, fourni par l'hôte), version 2.0.0 — choix du projet (source : refonte du client, v1.155.0).
