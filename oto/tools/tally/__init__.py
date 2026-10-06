@@ -1,5 +1,5 @@
-"""Tally — formulaires en ligne : formulaires, questions, blocs, réponses,
-analytics, espaces de travail, organisation, webhooks."""
+"""Tally — online forms: forms, questions, blocks, responses,
+analytics, workspaces, organization, webhooks."""
 
 from .client import TallyClient
 

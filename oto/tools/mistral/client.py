@@ -20,8 +20,8 @@ from .transcription import (
     normalize_transcription,
 )
 
-# (connexion, lecture) d'une transcription : l'amont rend ~30 min d'audio en moins de
-# 30 s, et accepte jusqu'à 3 h par requête. Surchargeable par appel.
+# (connect, read) of a transcription: upstream returns ~30 min of audio in under
+# 30 s, and accepts up to 3 h per request. Overridable per call.
 TRANSCRIPTION_TIMEOUT = (10, 300)
 
 
@@ -160,8 +160,8 @@ class MistralClient:
         return resp.json()
 
     def list_models(self) -> Dict[str, Any]:
-        """Modèles accessibles à la clé (`GET /v1/models`) — non facturé, sert de
-        sonde d'authentification."""
+        """Models accessible to the key (`GET /v1/models`) — not billed, serves as an
+        authentication probe."""
         resp = requests.get(
             f"{self.BASE_URL}/models",
             headers={"Authorization": f"Bearer {self.api_key}"},
@@ -183,19 +183,19 @@ class MistralClient:
         model: Optional[str] = None,
         timeout: tuple = TRANSCRIPTION_TIMEOUT,
     ) -> Dict[str, Any]:
-        """Transcrit un audio en un appel (`POST /v1/audio/transcriptions`, multipart).
+        """Transcribe an audio in one call (`POST /v1/audio/transcriptions`, multipart).
 
-        `diarize=True` fait porter un identifiant de locuteur à chaque segment, et
-        envoie TOUJOURS `timestamp_granularities=segment` : l'amont refuse la
-        diarisation sans horodatage par segment (422). `timestamps=True` demande
-        l'horodatage sans diarisation. `language` (ex. `"fr"`) se combine avec les
-        deux.
-        `context_bias` = vocabulaire à privilégier, normalisé par
-        `context_bias_terms` (termes sans espace, joints par des virgules).
+        `diarize=True` makes each segment carry a speaker identifier, and
+        ALWAYS sends `timestamp_granularities=segment`: upstream refuses
+        diarization without per-segment timestamps (422). `timestamps=True` requests
+        timestamps without diarization. `language` (e.g. `"fr"`) combines with
+        both.
+        `context_bias` = vocabulary to favor, normalized by
+        `context_bias_terms` (terms without spaces, joined by commas).
 
-        Rend `normalize_transcription(...)` plus `context_bias` (termes envoyés) et
-        `context_bias_dropped` (fragments écartés). Lève `UpstreamHTTPError` sur un
-        refus de l'amont."""
+        Returns `normalize_transcription(...)` plus `context_bias` (terms sent) and
+        `context_bias_dropped` (fragments discarded). Raises `UpstreamHTTPError` on an
+        upstream refusal."""
         termes, ecartes = context_bias_terms(context_bias)
         data: List[tuple] = [("model", model or DEFAULT_TRANSCRIPTION_MODEL)]
         if language:

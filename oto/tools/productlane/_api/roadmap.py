@@ -1,22 +1,22 @@
-"""Roadmap Productlane — projets et issues, tous deux **adossés à Linear**.
+"""Productlane roadmap — projects and issues, both **backed by Linear**.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`, `_check_choice`).
 
-⚠️ **Ce n'est pas une roadmap autonome : Linear doit être connecté.** Trois
-conséquences qu'il vaut mieux connaître avant de lire un retour d'appel :
+⚠️ **This is not a standalone roadmap: Linear must be connected.** Three
+consequences worth knowing before reading a call's result:
 
-- **la création part de Linear** — une issue est déposée LÀ-BAS d'abord, puis
-  reflétée ici ; sans Linear connecté, la création échoue ;
-- **la mise à jour, non** — une écriture locale réussit même si la synchro Linear
-  échoue : l'échec est journalisé côté éditeur et **ne remonte pas dans la
-  réponse**. Un `200` ne prouve donc pas que Linear a suivi ;
-- **la suppression archive** dans Linear et soft-delete ici, avec la même
-  asymétrie.
+- **creation starts from Linear** — an issue is filed THERE first, then
+  mirrored here; without Linear connected, creation fails;
+- **update does not** — a local write succeeds even if the Linear sync
+  fails: the failure is logged on the vendor side and **does not surface in the
+  response**. A `200` therefore does not prove that Linear followed;
+- **deletion archives** in Linear and soft-deletes here, with the same
+  asymmetry.
 
-`team_id`, `state_id`, `assignee_id`, `label_ids`, `linear_status_id` sont des
-identifiants **Linear**, pas Productlane : les lire via `list_workflow_states`,
-`list_project_statuses` et le connecteur Linear.
+`team_id`, `state_id`, `assignee_id`, `label_ids`, `linear_status_id` are
+**Linear** identifiers, not Productlane ones: read them via `list_workflow_states`,
+`list_project_statuses` and the Linear connector.
 """
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ from ..const import PROJECT_STATES, ROADMAP_SORTS
 
 
 class _RoadmapMixin:
-    """Projets et issues de la roadmap."""
+    """Roadmap projects and issues."""
 
-    # --- projets ------------------------------------------------------------
+    # --- projects -----------------------------------------------------------
 
     def list_projects(self, limit: Optional[int] = None,
                       cursor: Optional[str] = None,
@@ -40,10 +40,10 @@ class _RoadmapMixin:
                       created_before: Optional[str] = None,
                       updated_after: Optional[str] = None,
                       updated_before: Optional[str] = None) -> Any:
-        """GET /projects — projets de la roadmap. Scope `projects:read`.
+        """GET /projects — roadmap projects. Scope `projects:read`.
 
-        `sort="total_score"` classe par poids des retours clients rattachés
-        (customer needs), là où `created_at` est l'ordre par défaut des listes v2.
+        `sort="total_score"` ranks by the weight of attached customer feedback
+        (customer needs), whereas `created_at` is the default order of v2 lists.
         """
         self._check_choice("state", state, PROJECT_STATES)
         self._check_choice("sort", sort, ROADMAP_SORTS)
@@ -55,48 +55,48 @@ class _RoadmapMixin:
         })
 
     def get_project(self, project_id: str) -> Any:
-        """GET /projects/{id} — un projet. Scope `projects:read`."""
+        """GET /projects/{id} — one project. Scope `projects:read`."""
         return self._request("GET", f"/projects/{project_id}")
 
     def list_project_statuses(self) -> Any:
-        """GET /projects/statuses — statuts de projet Linear, au niveau organisation.
+        """GET /projects/statuses — Linear project statuses, at organization level.
 
-        Scope `projects:read`, **Linear connecté requis**. Sert à remplir
+        Scope `projects:read`, **Linear connected required**. Used to fill
         `linear_status_id`.
         """
         return self._request("GET", "/projects/statuses")
 
     def create_project(self, payload: Dict[str, Any]) -> Any:
-        """POST /projects — crée un projet, **synchronisé vers Linear**.
+        """POST /projects — create a project, **synced to Linear**.
 
-        Scope `projects:write`, Linear connecté requis. Requis : `name`,
-        `team_id` (identifiant d'équipe LINEAR). Optionnels : `description`,
+        Scope `projects:write`, Linear connected required. Required: `name`,
+        `team_id` (LINEAR team identifier). Optional: `description`,
         `icon`, `color`, `state`, `linear_status_id`, `is_visible`.
 
-        `is_visible` décide de la présence sur la **roadmap publique**.
+        `is_visible` decides whether it appears on the **public roadmap**.
         """
         self._check_choice("state", payload.get("state"), PROJECT_STATES)
         return self._request("POST", "/projects", json=dict(payload))
 
     def update_project(self, project_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /projects/{id} — met à jour un projet. Scope `projects:write`.
+        """PATCH /projects/{id} — update a project. Scope `projects:write`.
 
-        Champs : `name`, `description`, `icon`, `color`, `state`,
+        Fields: `name`, `description`, `icon`, `color`, `state`,
         `linear_status_id`, `is_visible`.
 
-        ⚠️ Un échec de synchro Linear est journalisé côté éditeur et **ne bloque
-        pas** la mise à jour locale : la réponse peut être un succès alors que
-        Linear n'a pas suivi.
+        ⚠️ A Linear sync failure is logged on the vendor side and **does not block**
+        the local update: the response can be a success while
+        Linear did not follow.
         """
         self._check_choice("state", payload.get("state"), PROJECT_STATES)
         return self._request("PATCH", f"/projects/{project_id}",
                              json=dict(payload))
 
     def delete_project(self, project_id: str) -> Any:
-        """DELETE /projects/{id} — archive dans Linear, soft-delete ici.
+        """DELETE /projects/{id} — archive in Linear, soft-delete here.
 
-        Scope `projects:write`. Un échec côté Linear ne bloque pas le
-        soft-delete local.
+        Scope `projects:write`. A failure on the Linear side does not block the
+        local soft-delete.
         """
         return self._request("DELETE", f"/projects/{project_id}")
 
@@ -113,12 +113,12 @@ class _RoadmapMixin:
                     created_before: Optional[str] = None,
                     updated_after: Optional[str] = None,
                     updated_before: Optional[str] = None) -> Any:
-        """GET /issues — issues de la roadmap. Scope `issues:read`.
+        """GET /issues — roadmap issues. Scope `issues:read`.
 
-        ⚠️ `status` n'est PAS une énumération fermée ici : les états d'issue sont
-        les **workflow states de l'équipe Linear**, propres à chaque workspace.
-        Les lire via `list_workflow_states(team_id)` — coder une valeur en dur
-        marcherait chez un client et pas chez le suivant.
+        ⚠️ `status` is NOT a closed enum here: issue states are
+        the **workflow states of the Linear team**, specific to each workspace.
+        Read them via `list_workflow_states(team_id)` — hardcoding a value
+        would work for one customer and not the next.
         """
         self._check_choice("sort", sort, ROADMAP_SORTS)
         return self._list("/issues", limit, cursor, {
@@ -130,46 +130,46 @@ class _RoadmapMixin:
         })
 
     def get_issue(self, issue_id: str) -> Any:
-        """GET /issues/{id} — une issue. Scope `issues:read`."""
+        """GET /issues/{id} — one issue. Scope `issues:read`."""
         return self._request("GET", f"/issues/{issue_id}")
 
     def list_workflow_states(self, team_id: str) -> Any:
-        """GET /issues/workflow-states — états Linear d'une équipe. Scope `issues:read`.
+        """GET /issues/workflow-states — Linear states of a team. Scope `issues:read`.
 
-        `team_id` est **requis** par l'amont, et Linear doit être connecté. C'est
-        la source des `state_id` à passer à `create_issue` / `update_issue`.
+        `team_id` is **required** by upstream, and Linear must be connected. This is
+        the source of the `state_id` values to pass to `create_issue` / `update_issue`.
         """
         if not team_id:
             raise ValueError(
-                "`team_id` est requis : les états de workflow sont propres à une "
-                "équipe Linear.")
+                "`team_id` is required: workflow states are specific to a "
+                "Linear team.")
         return self._request("GET", "/issues/workflow-states",
                              params={"team_id": team_id})
 
     def create_issue(self, payload: Dict[str, Any]) -> Any:
-        """POST /issues — crée une issue, **déposée dans Linear d'abord**.
+        """POST /issues — create an issue, **filed in Linear first**.
 
-        Scope `issues:write`, Linear connecté requis. Requis : `title`,
-        `team_id`, `state_id`, `priority`. Optionnels : `description`,
+        Scope `issues:write`, Linear connected required. Required: `title`,
+        `team_id`, `state_id`, `priority`. Optional: `description`,
         `project_id`, `assignee_id`, `label_ids`, `is_visible`.
 
-        ⚠️ `priority` suit la numérotation **Linear** : `0` = aucune priorité,
-        `1` = urgente, puis 2, 3, 4 par ordre décroissant d'urgence. Ce n'est pas
-        une échelle croissante, et `0` ne veut pas dire « la plus basse ».
+        ⚠️ `priority` follows **Linear** numbering: `0` = no priority,
+        `1` = urgent, then 2, 3, 4 in decreasing order of urgency. It is not
+        an ascending scale, and `0` does not mean "the lowest".
         """
         return self._request("POST", "/issues", json=dict(payload))
 
     def update_issue(self, issue_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /issues/{id} — met à jour une issue. Scope `issues:write`.
+        """PATCH /issues/{id} — update an issue. Scope `issues:write`.
 
-        Champs : `title`, `description`, `state_id`, `priority`, `project_id`,
-        `assignee_id`, `is_visible`. Même asymétrie que les projets : un échec de
-        synchro Linear **ne bloque pas** l'écriture locale.
+        Fields: `title`, `description`, `state_id`, `priority`, `project_id`,
+        `assignee_id`, `is_visible`. Same asymmetry as projects: a Linear
+        sync failure **does not block** the local write.
         """
         return self._request("PATCH", f"/issues/{issue_id}", json=dict(payload))
 
     def delete_issue(self, issue_id: str) -> Any:
-        """DELETE /issues/{id} — archive dans Linear, soft-delete ici.
+        """DELETE /issues/{id} — archive in Linear, soft-delete here.
 
         Scope `issues:write`.
         """

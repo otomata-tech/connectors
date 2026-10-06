@@ -52,10 +52,10 @@ def limit_first(n: int, index: str = ".key") -> dict:
 
 def _limite(n: int, index: str, depuis: str) -> dict:
     if not isinstance(n, int) or n <= 0:
-        # Un `0` rend un nœud vide qui se lit comme « ce salon n'a rien », et un
-        # négatif part sur le fil tel quel. On refuse ici plutôt que d'expliquer
-        # une absence plus tard.
-        raise ValueError(f"une borne de lecture se compte en entier positif, pas {n!r}")
+        # A `0` returns an empty node that reads as "this salon has nothing", and
+        # a negative goes onto the wire as is. We refuse here rather than explain
+        # an absence later.
+        raise ValueError(f"a read bound must be a positive integer, not {n!r}")
     return {"i": index, "l": n, "vf": depuis}
 
 
@@ -69,11 +69,11 @@ def range_on(index: str, start: Any, end: Any, limit: Optional[int] = None) -> d
     where that particular one is computed, once.
     """
     if not index:
-        raise ValueError("une plage se lit SUR un index — il en faut un")
+        raise ValueError("a range is read ON an index — one is required")
     q: dict = {"i": index, "sp": start, "ep": end}
     if limit is not None:
         if not isinstance(limit, int) or limit <= 0:
-            raise ValueError(f"une borne de lecture se compte en entier positif, pas {limit!r}")
+            raise ValueError(f"a read bound must be a positive integer, not {limit!r}")
         q["l"] = limit
         q["vf"] = "l"
     return q
@@ -86,20 +86,20 @@ class FirebaseRTDB:
         self.host = host
         self.namespace = namespace
         self.id_token = id_token
-        # App ID Firebase de Planity — fourni par l'appelant, jamais en dur ici
-        # (cf. `config.PlanityEndpoints`). Il part en `p=` dans la poignée de main.
+        # Planity's Firebase App ID — supplied by the caller, never hard-coded here
+        # (see `config.PlanityEndpoints`). It goes out as `p=` in the handshake.
         self.app_id = app_id
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self._req_id = 0
-        # Compteur de TAG de requête, distinct du compteur de requête : cf. `get`.
+        # Request TAG counter, distinct from the request counter: see `get`.
         self._tag = 0
-        #: Combien de fois ce socket a été ré-ouvert. Lu par les tests, et utile en
-        #: exploitation : une valeur qui grimpe vite dit que le pair coupe plus tôt
-        #: qu'on ne le croit, ce qu'aucun journal d'erreur ne dirait plus.
+        #: How many times this socket has been re-opened. Read by the tests, and
+        #: useful in operations: a value that climbs fast says the peer cuts off
+        #: earlier than we think, which no error log would tell us any more.
         self.reconnexions = 0
-        # Verrou D'INSTANCE (pas de module) : deux lectures concurrentes qui
-        # trouvent le socket mort ne doivent pas ouvrir deux connexions, dont l'une
-        # serait aussitôt orpheline — ouverte chez le tiers, jamais fermée.
+        # INSTANCE lock (not module-level): two concurrent reads that find the
+        # socket dead must not open two connections, one of which would at once
+        # be orphaned — open at the third party, never closed.
         self._ouverture = asyncio.Lock()
 
     @classmethod
@@ -124,9 +124,9 @@ class FirebaseRTDB:
 
     async def connect(self):
         uri = f"wss://{self.host}/.ws?v=5&p={self.app_id}&ns={self.namespace}"
-        # Bornes explicites sur l'ouverture et la fermeture : un WebSocket qui
-        # attend un tiers sans délai maximal à SON niveau tient l'appelant
-        # indéfiniment, même quand les enveloppes au-dessus croient l'avoir borné.
+        # Explicit bounds on opening and closing: a WebSocket that waits on a
+        # third party with no maximum delay at ITS level holds the caller
+        # indefinitely, even when the wrappers above believe they bounded it.
         self.ws = await websockets.connect(uri, max_size=32 * 1024 * 1024,
                                            open_timeout=15, close_timeout=5)
         # Swallow handshake (control msg)
@@ -138,21 +138,21 @@ class FirebaseRTDB:
             raise RuntimeError(f"Firebase auth failed: {auth_reply}")
 
     def est_ouverte(self) -> bool:
-        """Le socket est-il utilisable ? **Sans aucune I/O.**
+        """Is the socket usable? **With no I/O at all.**
 
-        On lit `close_code` : `None` tant que la connexion vit, renseigné dès
-        qu'elle meurt (`1006` sur une coupure sans trame de fermeture — le cas
-        mesuré ici). C'est l'attribut le plus stable entre versions de la lib ; les
-        formes de `state` ont changé, celle-ci non."""
+        We read `close_code`: `None` while the connection lives, set as soon as
+        it dies (`1006` on a cut with no close frame — the case measured here).
+        It is the most stable attribute across versions of the lib; the shapes of
+        `state` have changed, this one has not."""
         return self.ws is not None and getattr(self.ws, "close_code", None) is None
 
     async def assurer_ouverte(self) -> None:
-        """Ré-ouvre le socket s'il est mort. Ne coûte rien quand il vit."""
+        """Re-opens the socket if it is dead. Costs nothing when it is alive."""
         if self.est_ouverte():
             return
         async with self._ouverture:
-            # Re-test SOUS le verrou : pendant qu'on l'attendait, une autre lecture
-            # a pu rouvrir. Sans ce second test, elle se ferait reconnecter dessous.
+            # Re-test UNDER the lock: while we waited for it, another read may
+            # have re-opened. Without this second test, it would be reconnected underneath.
             if self.est_ouverte():
                 return
             ancien = self.ws
@@ -160,7 +160,7 @@ class FirebaseRTDB:
             if ancien is not None:
                 try:
                     await ancien.close()
-                except Exception:  # noqa: SILENT — socket déjà mort, on le jette
+                except Exception:  # noqa: SILENT — socket already dead, we discard it
                     pass
             self.reconnexions += 1
             await self.connect()
@@ -212,11 +212,11 @@ class FirebaseRTDB:
         try:
             return json.loads(first)
         except (ValueError, TypeError):
-            # Une trame qui n'est pas du JSON n'est PAS un échec : le protocole
-            # mêle des trames de contrôle aux trames de données, et l'appelant
-            # (`_recv_until_reply`) ignore ce qui n'est pas un dict et continue
-            # d'attendre SA réponse — jusqu'à son propre délai maximal, qui est
-            # ce qui tranche pour de bon.
+            # A frame that is not JSON is NOT a failure: the protocol mixes
+            # control frames with data frames, and the caller
+            # (`_recv_until_reply`) ignores anything that is not a dict and keeps
+            # waiting for ITS reply — until its own maximum delay, which is
+            # what settles it for good.
             return None
 
     async def _send_action(self, action: str, body: dict) -> int:
@@ -293,13 +293,13 @@ class FirebaseRTDB:
         try:
             return await self._interroger(path, query)
         except websockets.exceptions.ConnectionClosed:
-            # Le pair est parti PENDANT la lecture — la pré-vérification ne pouvait
-            # pas le savoir. Une seule reprise, sur un socket neuf.
+            # The peer left DURING the read — the pre-check could not know.
+            # A single retry, on a fresh socket.
             await self.assurer_ouverte()
             return await self._interroger(path, query)
 
     async def _interroger(self, path: str, query: Optional[dict]) -> Any:
-        """Une passe de lecture sur le socket courant. Ne reconnecte pas."""
+        """One read pass on the current socket. Does not reconnect."""
         collector: dict = {"path": path, "value": None}
         body: dict = {"p": path, "h": ""}
         if query:

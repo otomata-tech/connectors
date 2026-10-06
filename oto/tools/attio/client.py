@@ -12,7 +12,7 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 @dataclass
@@ -61,7 +61,7 @@ class AttioResource:
         offset: int = 0,
         sort: List[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """List records. Attio v2 n'a pas de GET records : on passe par records/query."""
+        """List records. Attio v2 has no GET records: we go through records/query."""
         body: Dict[str, Any] = {"limit": limit, "offset": offset}
         if sort:
             body["sorts"] = sort
@@ -81,26 +81,26 @@ class AttioResource:
                **attributes) -> Dict[str, Any]:
         """Update a record.
 
-        PATCH (défaut) AJOUTE les valeurs de multisélection passées à celles qui
-        existent, et une liste vide n'y change rien ; PUT les REMPLACE, et `[]` les
-        vide — « Use the PUT endpoint to overwrite or remove multiselect attribute
-        values » (doc Attio). Même bascule que `AttioEntries.update` : sans elle, une
-        valeur unique (domaine, adresse) coincée sur une fiche à fusionner ne se
-        libérait par aucun appel (signal #887).
+        PATCH (default) APPENDS the multiselect values passed to those that
+        already exist, and an empty list changes nothing; PUT REPLACES them, and `[]`
+        empties them — "Use the PUT endpoint to overwrite or remove multiselect attribute
+        values" (Attio docs). Same switch as `AttioEntries.update`: without it, a
+        unique value (domain, address) stuck on a record to be merged could not be
+        freed by any call (signal #887).
         """
         method = "PUT" if overwrite_multiselect else "PATCH"
         data = {"data": {"values": attributes}}
         return self.client._request(method, f"objects/{self.object_type}/records/{record_id}", json=data)
 
     def merge(self, primary_record_id: str, secondary_record_id: str) -> Dict[str, Any]:
-        """Fusionne deux fiches du MÊME objet (endpoint en bêta chez Attio, signal #886).
+        """Merge two records of the SAME object (beta endpoint at Attio, signal #886).
 
-        ⚠️ Irréversible et non idempotent : les DEUX fiches d'origine sont marquées
-        fusionnées et ne se lisent plus ; Attio en crée une TROISIÈME, dont l'id
-        (`data.new_record_id`) ne correspond à aucune des deux. Là où les deux portent
-        une valeur, celle du primaire l'emporte. Rejouer rend 404 ; une réponse 202
-        dit que la fusion est asynchrone (404 `merge_in_progress` le temps qu'elle
-        finisse). Scopes : `record_permission:read-write` + `object_configuration:read`.
+        ⚠️ Irreversible and not idempotent: BOTH original records are marked
+        merged and can no longer be read; Attio creates a THIRD one, whose id
+        (`data.new_record_id`) matches neither. Where both carry a value, the
+        primary's wins. Replaying returns 404; a 202 response says the merge is
+        asynchronous (404 `merge_in_progress` until it finishes).
+        Scopes: `record_permission:read-write` + `object_configuration:read`.
         """
         data = {"data": {"primary_record_id": primary_record_id,
                          "secondary_record_id": secondary_record_id}}
@@ -118,9 +118,9 @@ class AttioResource:
     ) -> List[Dict[str, Any]]:
         """Search records.
 
-        `records/query` ne supporte pas de recherche full-text : un `query`
-        est traduit en filtre `{"name": {"$contains": ...}}`. Un `filters`
-        explicite (format Attio `filter`) est prioritaire.
+        `records/query` does not support full-text search: a `query`
+        is translated into a `{"name": {"$contains": ...}}` filter. An explicit
+        `filters` (Attio `filter` format) takes precedence.
         """
         data: Dict[str, Any] = {"limit": limit}
         if query:
@@ -167,44 +167,43 @@ class AttioNotes:
         }
         return self.client._request("POST", "notes", json=data)
 
-    # Plafond du `limit` d'Attio sur /v2/notes : 50 accepté, 51 → HTTP 400
-    # « Query params validation error » (sans autre indication). Relevé le
-    # 27/08/2026 par bisection contre l'API réelle, conforme au doc.
+    # Attio's `limit` ceiling on /v2/notes: 50 accepted, 51 → HTTP 400
+    # "Query params validation error" (with no further detail). Recorded on
+    # 27/08/2026 by bisection against the real API, consistent with the docs.
     MAX_LIMIT = 50
 
     def list(self, parent_object: str = None, parent_record_id: str = None,
              limit: int = None, offset: int = None) -> List[Dict[str, Any]]:
-        """Liste les notes. `GET /v2/notes` ne sait faire que DEUX choses :
-        paginer (`limit` 1-50, défaut **10** ; `offset`) et se restreindre à un
-        record parent (`parent_object` ET `parent_record_id` ensemble — l'un
-        sans l'autre est refusé en 400).
+        """List notes. `GET /v2/notes` can only do TWO things:
+        paginate (`limit` 1-50, default **10**; `offset`) and restrict to a
+        parent record (`parent_object` AND `parent_record_id` together — one
+        without the other is refused with 400).
 
-        ⚠️ **Ni tri ni filtre de date, et l'API ne le dit pas** : elle AVALE les
-        paramètres qu'elle ne connaît pas en rendant 200. Vérifié le 27/08/2026
-        par différentiel — `sort=champ_qui_nexiste_pas:desc`, `created_at[gte]`,
-        `created_after` et même `zzz_inconnu=x` reviennent tous 200 inchangés,
-        là où `/tasks` refuse un `sort` invalide en 400. C'est pourquoi on
-        n'expose PAS de borne de date ici : elle ne bornerait rien.
+        ⚠️ **No sort and no date filter, and the API does not say so**: it SWALLOWS
+        parameters it does not know, returning 200. Verified on 27/08/2026
+        by differential — `sort=nonexistent_field:desc`, `created_at[gte]`,
+        `created_after` and even `zzz_unknown=x` all come back 200 unchanged,
+        whereas `/tasks` refuses an invalid `sort` with 400. This is why we
+        do NOT expose a date bound here: it would bound nothing.
 
-        Conséquence pour l'appelant, et raison d'être des signaux #586/#597 :
-        les notes sortent des plus ANCIENNES aux plus récentes, donc celles du
-        jour sont en FIN de collection. Sans `limit`/`offset`, on ne voyait que
-        les dix plus vieilles du workspace. Pour atteindre les récentes :
-        avancer `offset` par pages de 50 jusqu'à une page plus courte que
-        `limit` (fin de collection) — il n'existe pas de compte total.
-        Alternative moins coûteuse quand le record est connu : scoper sur
+        Consequence for the caller, and the reason for signals #586/#597:
+        notes come out from OLDEST to most recent, so today's are at the END of
+        the collection. Without `limit`/`offset`, you only saw the ten oldest
+        of the workspace. To reach the recent ones: advance `offset` in pages
+        of 50 until a page shorter than `limit` (end of collection) — there is
+        no total count. Cheaper alternative when the record is known: scope on
         `parent_object`+`parent_record_id`.
         """
         if limit is not None and not 1 <= limit <= self.MAX_LIMIT:
             raise ValueError(
-                f"limit doit être entre 1 et {self.MAX_LIMIT} (plafond d'Attio sur /notes) ; reçu {limit}")
+                f"limit must be between 1 and {self.MAX_LIMIT} (Attio's ceiling on /notes); got {limit}")
         params = {}
         if parent_object:
             params["parent_object"] = parent_object
         if parent_record_id:
             params["parent_record_id"] = parent_record_id
-        # Aucune borne fournie ⟹ aucun paramètre inventé : le défaut d'Attio
-        # (10, les plus anciennes) s'applique et la docstring l'annonce.
+        # No bound provided ⟹ no invented parameter: Attio's default
+        # (10, the oldest) applies and the docstring says so.
         if limit is not None:
             params["limit"] = limit
         if offset is not None:
@@ -277,33 +276,33 @@ class AttioTasks:
 
         return self.client._request("POST", "tasks", json={"data": task_data})
 
-    # `GET /v2/tasks` : limit accepté jusqu'à 1000, 1001 → HTTP 400 (bisection
-    # du 27/08/2026) ; défaut 500. `sort` est un VRAI paramètre, contrairement
-    # à /notes : une valeur hors de cet ensemble est refusée en 400.
+    # `GET /v2/tasks`: limit accepted up to 1000, 1001 → HTTP 400 (bisection
+    # of 27/08/2026); default 500. `sort` is a REAL parameter, unlike
+    # /notes: a value outside this set is refused with 400.
     MAX_LIMIT = 1000
     SORTS = ("created_at:asc", "created_at:desc", "completed_at:asc", "completed_at:desc")
 
     def list(self, completed: bool = None, limit: int = None, offset: int = None,
              sort: str = None) -> List[Dict[str, Any]]:
-        """Liste les tâches. Pagination `limit` (1-1000, défaut 500) + `offset`,
-        tri `sort` parmi `created_at:asc|desc` et `completed_at:asc|desc`
-        (défaut `created_at:asc` — les plus ANCIENNES d'abord, d'où la page
-        tronquée « qui s'arrête en juillet » du signal #586).
+        """List tasks. Pagination `limit` (1-1000, default 500) + `offset`,
+        sort `sort` among `created_at:asc|desc` and `completed_at:asc|desc`
+        (default `created_at:asc` — OLDEST first, hence the truncated page
+        "that stops in July" of signal #586).
 
-        ⚠️ Le filtre de complétion s'appelle `is_completed` chez Attio, PAS
-        `completed`. Ce client envoyait `completed` : un nom inconnu, avalé en
-        silence (vérifié le 27/08/2026 par différentiel — `is_completed=PASBOOL`
-        → 400, `completed=PASBOOL` → 200), donc le filtre annoncé au tool ne
-        filtrait rien. Le paramètre Python garde son nom, seul le fil change.
+        ⚠️ The completion filter is called `is_completed` at Attio, NOT
+        `completed`. This client sent `completed`: an unknown name, silently
+        swallowed (verified on 27/08/2026 by differential — `is_completed=NOTABOOL`
+        → 400, `completed=NOTABOOL` → 200), so the filter advertised to the tool
+        filtered nothing. The Python parameter keeps its name, only the wire name changes.
 
-        Pas de filtre de date ici non plus : trier `created_at:desc` et
-        s'arrêter est la seule façon de lire une fenêtre récente.
+        No date filter here either: sorting `created_at:desc` and
+        stopping is the only way to read a recent window.
         """
         if limit is not None and not 1 <= limit <= self.MAX_LIMIT:
             raise ValueError(
-                f"limit doit être entre 1 et {self.MAX_LIMIT} (plafond d'Attio sur /tasks) ; reçu {limit}")
+                f"limit must be between 1 and {self.MAX_LIMIT} (Attio's ceiling on /tasks); got {limit}")
         if sort is not None and sort not in self.SORTS:
-            raise ValueError(f"sort doit valoir l'un de {', '.join(self.SORTS)} ; reçu {sort!r}")
+            raise ValueError(f"sort must be one of {', '.join(self.SORTS)}; got {sort!r}")
         params = {}
         if completed is not None:
             params["is_completed"] = completed
@@ -385,8 +384,8 @@ class AttioLists:
             workspace_member_access: per-member overrides (list of dicts with
                 `workspace_member_id` + `level`).
         """
-        # api_slug et workspace_member_access sont REQUIS par POST /v2/lists
-        # (400 sinon) — slug dérivé du nom, accès membre vide par défaut.
+        # api_slug and workspace_member_access are REQUIRED by POST /v2/lists
+        # (400 otherwise) — slug derived from the name, empty member access by default.
         if not api_slug:
             api_slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
         data: Dict[str, Any] = {
@@ -442,7 +441,7 @@ class AttioEntries:
     ) -> Dict[str, Any]:
         """Add a record to a list as a new entry.
 
-        `entry_values` est requis par l'API (400 sinon) — objet vide accepté.
+        `entry_values` is required by the API (400 otherwise) — empty object accepted.
         """
         data: Dict[str, Any] = {
             "parent_record_id": parent_record_id,
@@ -570,32 +569,32 @@ class AttioMeetings:
     def __init__(self, client: "AttioClient"):
         self.client = client
 
-    # `GET /v2/meetings` : limit 1-200 (201 → 400), défaut 50. Pagination au
-    # CURSEUR uniquement — `offset` n'existe pas dans son contrat et l'API
-    # l'avale (`offset=-1` et `offset=PASUNENTIER` reviennent 200, là où
-    # /notes refuse `offset=-1` en 400). Relevé le 27/08/2026.
+    # `GET /v2/meetings`: limit 1-200 (201 → 400), default 50. CURSOR
+    # pagination only — `offset` does not exist in its contract and the API
+    # swallows it (`offset=-1` and `offset=NOTANINTEGER` come back 200, whereas
+    # /notes refuses `offset=-1` with 400). Recorded on 27/08/2026.
     MAX_LIMIT = 200
     SORTS = ("start_asc", "start_desc")
 
     def list(self, limit: int = None, cursor: str = None, sort: str = None,
              ends_from: str = None, starts_before: str = None) -> Dict[str, Any]:
-        """Liste les réunions. Le seul endpoint du connecteur à porter une VRAIE
-        fenêtre de date : `ends_from` (réunions finissant à partir de, inclus) et
-        `starts_before` (commençant avant, exclu) — horodatages ISO 8601, refusés
-        en 400 s'ils ne parsent pas. Tri `sort` = `start_asc` (défaut) ou
-        `start_desc`. `limit` 1-200, défaut 50.
+        """List meetings. The only endpoint of the connector to carry a REAL
+        date window: `ends_from` (meetings ending from, inclusive) and
+        `starts_before` (starting before, exclusive) — ISO 8601 timestamps, refused
+        with 400 if they do not parse. Sort `sort` = `start_asc` (default) or
+        `start_desc`. `limit` 1-200, default 50.
 
-        ⚠️ **Pagination au curseur, pas à l'offset** — signal #586 : le client
-        envoyait `offset`, qu'Attio ignore (`offset=2000` rendait les deux mêmes
-        réunions de janvier 2023) ; seul `pagination.next_cursor` avance, et il
-        n'était pas acceptable en argument. Repasser ce `next_cursor` en
-        `cursor` pour la page suivante ; `next_cursor` nul = fin de collection.
+        ⚠️ **Cursor pagination, not offset** — signal #586: the client
+        sent `offset`, which Attio ignores (`offset=2000` returned the same two
+        meetings of January 2023); only `pagination.next_cursor` advances, and it
+        was not accepted as an argument. Pass this `next_cursor` back as
+        `cursor` for the next page; null `next_cursor` = end of collection.
         """
         if limit is not None and not 1 <= limit <= self.MAX_LIMIT:
             raise ValueError(
-                f"limit doit être entre 1 et {self.MAX_LIMIT} (plafond d'Attio sur /meetings) ; reçu {limit}")
+                f"limit must be between 1 and {self.MAX_LIMIT} (Attio's ceiling on /meetings); got {limit}")
         if sort is not None and sort not in self.SORTS:
-            raise ValueError(f"sort doit valoir {' ou '.join(self.SORTS)} ; reçu {sort!r}")
+            raise ValueError(f"sort must be {' or '.join(self.SORTS)}; got {sort!r}")
         params = {}
         for key, value in (("limit", limit), ("cursor", cursor), ("sort", sort),
                            ("ends_from", ends_from), ("starts_before", starts_before)):
@@ -674,9 +673,9 @@ class AttioAttributes:
         """List statuses for a status attribute."""
         return self.client._request("GET", f"{target}/{identifier}/attributes/{attribute}/statuses")
 
-    # --- Écritures de SCHÉMA -------------------------------------------------
-    # L'API n'a aucun DELETE sur un attribut, une option ou une étape : ce qui est
-    # créé ici ne s'efface pas par l'API.
+    # --- SCHEMA writes -------------------------------------------------------
+    # The API has no DELETE on an attribute, an option or a stage: what is
+    # created here cannot be erased through the API.
 
     def create(self, target: str, identifier: str, definition: Dict[str, Any]) -> Dict[str, Any]:
         """Create an attribute on an object or list (POST /{target}/{identifier}/attributes).
@@ -753,8 +752,8 @@ class AttioClient:
             raise Exception("Rate limit exceeded")
 
         if not response.ok:
-            # Le corps JSON d'Attio contient la vraie raison (validation,
-            # scope manquant…) — le perdre rend les 400/404 indéchiffrables.
+            # Attio's JSON body holds the real reason (validation,
+            # missing scope…) — losing it makes the 400/404s undecipherable.
             raise Exception(
                 f"Attio API {response.status_code} on {method} /{endpoint}: {response.text[:2000]}"
             )

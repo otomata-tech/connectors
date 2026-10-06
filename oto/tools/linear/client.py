@@ -170,7 +170,7 @@ class LinearClient:
             body = resp.json()
         except ValueError:
             raise_for_upstream(resp, service="linear")
-            raise LinearError(f"linear: réponse non-JSON (HTTP {resp.status_code})",
+            raise LinearError(f"linear: non-JSON response (HTTP {resp.status_code})",
                                status_code=resp.status_code)
         errors = body.get("errors")
         if errors:
@@ -236,33 +236,33 @@ class LinearClient:
         Returns the raw `{nodes, pageInfo{hasNextPage,endCursor}}` shape; pass
         the previous call's `endCursor` as `after` to page further.
 
-        **Fenêtre de date, côté SERVEUR** (signal #561 : sans elle, tout run qui
-        lit un jour donné devait rapatrier puis jeter). `updated_after` /
-        `updated_before` / `created_after` / `created_before` deviennent des
-        bornes `gte`/`lte` du `DateComparator` que `IssueFilter.updatedAt` et
-        `IssueFilter.createdAt` portent déjà dans le schéma. Horodatages ISO
-        8601 UTC (scalaire `DateTimeOrDuration`). Les deux bornes d'un même
-        champ tiennent dans UN seul comparateur — deux clauses `updatedAt:`
-        séparées seraient un objet d'entrée invalide.
+        **Date window, SERVER-side** (signal #561: without it, any run that
+        reads a given day had to pull everything back and then discard). `updated_after` /
+        `updated_before` / `created_after` / `created_before` become
+        `gte`/`lte` bounds of the `DateComparator` that `IssueFilter.updatedAt` and
+        `IssueFilter.createdAt` already carry in the schema. ISO
+        8601 UTC timestamps (scalar `DateTimeOrDuration`). The two bounds of a single
+        field fit in ONE comparator — two separate `updatedAt:` clauses
+        would be an invalid input object.
 
-        **Ordre** (signal #568 : « le tri n'est documenté nulle part »). Linear
-        ordonne ses connexions par `createdAt` par défaut, décroissant — relevé
-        le 24/08/2026 contre un workspace réel : la liste revient par identifiant
-        décroissant, et une issue créée le 26 juillet mais modifiée le 21 août
-        se trouve loin dans la pagination. Une lecture de deltas passe donc par
-        `order_by="updatedAt"`, et mieux encore par les bornes ci-dessus.
+        **Order** (signal #568: "sorting is documented nowhere"). Linear
+        orders its connections by `createdAt` by default, descending — observed
+        on 24/08/2026 against a real workspace: the list comes back by descending
+        identifier, and an issue created on July 26 but modified on August 21
+        sits far down the pagination. A delta read therefore goes through
+        `order_by="updatedAt"`, and better still through the bounds above.
 
         ⚠️ Live-confirmed 2026-08-21: a GraphQL operation must not DECLARE a
         variable it never references in the selection — declaring all 5
         filter variables unconditionally (as an earlier draft did) fails
         with `GRAPHQL_VALIDATION_FAILED: Variable "$x" is never used` the
         moment any ONE filter is omitted. Variable declarations are built
-        alongside the filter clause below, in lockstep — les bornes de date et
-        `orderBy` suivent la même discipline."""
+        alongside the filter clause below, in lockstep — the date bounds and
+        `orderBy` follow the same discipline."""
         if order_by is not None and order_by not in self.ORDER_BY:
             raise ValueError(
-                f"order_by doit valoir {' ou '.join(self.ORDER_BY)} "
-                f"(enum PaginationOrderBy de Linear) ; reçu {order_by!r}")
+                f"order_by must be {' or '.join(self.ORDER_BY)} "
+                f"(Linear's PaginationOrderBy enum); received {order_by!r}")
         filters = [("teamId", "ID", "team", team_id),
                    ("projectId", "ID", "project", project_id),
                    ("cycleId", "ID", "cycle", cycle_id),
@@ -277,8 +277,8 @@ class LinearClient:
             var_decls.append(f"${var_name}: {gql_type}")
             filter_parts.append(f"{filter_key}: {{ id: {{ eq: ${var_name} }} }}")
             variables[var_name] = value
-        # Une seule clause par champ de date : `gte` et `lte` sont deux clés du
-        # MÊME DateComparator, pas deux filtres.
+        # A single clause per date field: `gte` and `lte` are two keys of the
+        # SAME DateComparator, not two filters.
         for filter_key, bounds in (
             ("updatedAt", (("gte", "updatedAfter", updated_after),
                            ("lte", "updatedBefore", updated_before))),

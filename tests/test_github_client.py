@@ -88,12 +88,12 @@ def test_me_est_la_sonde(cli, capture):
 def test_per_page_hors_bornes_refuse_localement(cli, bad):
     """GitHub ne renverrait PAS d'erreur : il rabote à 100. Le refus local est
     la seule façon de distinguer « j'ai tout » de « j'ai les cent premiers »."""
-    with pytest.raises(ValueError, match="entre 1 et 100"):
+    with pytest.raises(ValueError, match="between 1 and 100"):
         cli.list_issues("octo", "hello", per_page=bad)
 
 
 def test_le_message_dit_que_github_raboterait_en_silence(cli):
-    with pytest.raises(ValueError, match="SANS erreur"):
+    with pytest.raises(ValueError, match="WITHOUT error"):
         cli.list_issues("octo", "hello", per_page=250)
 
 
@@ -104,7 +104,7 @@ def test_per_page_dans_les_bornes_passe(cli, capture, ok):
 
 
 def test_per_page_booleen_refuse(cli):
-    with pytest.raises(ValueError, match="doit être un entier"):
+    with pytest.raises(ValueError, match="must be an integer"):
         cli.list_issues("octo", "hello", per_page=True)
 
 
@@ -190,7 +190,7 @@ def test_iterate_respecte_max_pages(cli, monkeypatch):
 
 
 def test_iterate_refuse_une_page_fournie(cli):
-    with pytest.raises(ValueError, match="gère la pagination"):
+    with pytest.raises(ValueError, match="handles pagination"):
         list(cli.iterate(cli.list_issues, "octo", "hello", page=2))
 
 
@@ -240,7 +240,7 @@ def test_lecture_de_fichier_decode_le_base64(cli, monkeypatch):
 def test_lire_un_dossier_comme_un_fichier_est_nomme(cli, monkeypatch):
     monkeypatch.setattr(gh.requests.Session, "request",
                         lambda self, m, u, **k: _Resp(200, [{"name": "a"}]))
-    with pytest.raises(ValueError, match="DOSSIER"):
+    with pytest.raises(ValueError, match="DIRECTORY"):
         cli.read_text_file("octo", "hello", "src")
 
 
@@ -251,7 +251,7 @@ def test_un_fichier_servi_sans_contenu_est_nomme(cli, monkeypatch):
         gh.requests.Session, "request",
         lambda self, m, u, **k: _Resp(200, {"type": "file", "size": 2_000_000,
                                             "encoding": "none"}))
-    with pytest.raises(ValueError, match="SANS contenu"):
+    with pytest.raises(ValueError, match="WITHOUT content"):
         cli.read_text_file("octo", "hello", "gros.bin")
 
 
@@ -261,7 +261,7 @@ def test_un_binaire_est_nomme_comme_tel(cli, monkeypatch):
         gh.requests.Session, "request",
         lambda self, m, u, **k: _Resp(200, {"encoding": "base64",
                                             "content": contenu, "size": 4}))
-    with pytest.raises(ValueError, match="binaire"):
+    with pytest.raises(ValueError, match="binary"):
         cli.read_text_file("octo", "hello", "img.png")
 
 
@@ -285,7 +285,7 @@ def test_suppression_de_fichier_exige_le_sha(cli):
 # --- garde-fous d'écriture ---------------------------------------------------
 
 def test_etiquette_refuse_le_croisillon(cli):
-    with pytest.raises(ValueError, match="sans `#`"):
+    with pytest.raises(ValueError, match="without `#`"):
         cli.create_label("octo", "hello", "bug", "#d73a4a")
 
 
@@ -304,7 +304,7 @@ def test_ouvrir_une_pr_exige_un_titre_ou_une_issue(cli, capture):
 
 
 def test_methode_de_fusion_inconnue_refusee(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.merge_pull("octo", "hello", 7, merge_method="fast-forward")
 
 
@@ -323,7 +323,7 @@ def test_une_revue_sans_event_reste_en_attente(cli, capture):
 
 
 def test_event_de_revue_inconnu_refuse(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.create_review("octo", "hello", 7, {"event": "LGTM"})
 
 
@@ -361,7 +361,7 @@ def test_remplacer_les_etiquettes_accepte_une_liste_vide(cli, capture):
 
 
 def test_depots_perso_type_exclusif_de_visibility(cli):
-    with pytest.raises(ValueError, match="exclusif"):
+    with pytest.raises(ValueError, match="mutually exclusive"):
         cli.list_my_repos(type="owner", visibility="private")
 
 
@@ -369,12 +369,12 @@ def test_depots_perso_type_exclusif_de_visibility(cli):
 
 @pytest.mark.parametrize("vide", ["", "   ", None])
 def test_recherche_sans_terme_refusee(cli, vide):
-    with pytest.raises(ValueError, match="`q` requis"):
+    with pytest.raises(ValueError, match="`q` required"):
         cli.search_code(vide)
 
 
 def test_tri_de_recherche_hors_enum_refuse(cli):
-    with pytest.raises(ValueError, match="Valeurs acceptées"):
+    with pytest.raises(ValueError, match="Accepted values"):
         cli.search_repositories("oto", sort="downloads")
 
 

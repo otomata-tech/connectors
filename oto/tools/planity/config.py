@@ -1,47 +1,46 @@
-"""La FORME des coordonnées de Planity, et les bornes de temps. **Aucune valeur.**
+"""The SHAPE of Planity's endpoints, and the time bounds. **No values.**
 
-⚠️ **Ce module ne porte, et ne portera, aucune constante de Planity.** Il en a porté
-trois jusqu'au 2026-09-09. Elles sont publiques par conception (tout navigateur qui
-ouvre `pro.planity.com` les reçoit), donc les retirer n'est pas un geste de
-sécurité : c'est un geste de GÉNÉRICITÉ. Ce dépôt est public et open source ; un
-client qu'on y publie décrit un protocole, il n'embarque pas les coordonnées d'une
-entreprise tierce en dur, comme s'il était son intégration officielle. Elles sont
-désormais **fournies par l'appelant**, sans valeur par défaut : celui qui déploie
-le connecteur les pose, et c'est lui qui répond de ce qu'il appelle.
+⚠️ **This module carries, and will carry, no Planity constant.** It carried
+three until 2026-09-09. They are public by design (any browser that opens
+`pro.planity.com` receives them), so removing them is not a security gesture: it
+is a gesture of GENERICITY. This repo is public and open source; a client
+published here describes a protocol, it does not hard-code a third-party
+company's endpoints, as if it were its official integration. They are now
+**supplied by the caller**, with no default value: whoever deploys the connector
+sets them, and answers for what they call.
 
-Sans défaut, et c'est le point : une valeur par défaut aurait remis la constante
-ici sous un autre nom, et personne n'aurait vu la différence.
+No default, and that is the point: a default value would have put the constant
+back here under another name, and nobody would have seen the difference.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
-#: Borne de CHAQUE appel HTTP sortant, posée à l'appel et pas seulement à la
-#: construction du client : un client partagé peut être passé par l'appelant, et
-#: un appel nu attend alors sans fin. Cf. `tests/test_http_timeouts.py`.
+#: Bound on EACH outgoing HTTP call, set at call time and not only at client
+#: construction: a shared client may be passed in by the caller, and a bare call
+#: then waits forever. See `tests/test_http_timeouts.py`.
 HTTP_TIMEOUT = 30.0
 
-#: La recherche de clientes est interactive : elle a droit à moins d'attente que
-#: les lambdas de statistiques, qui agrègent des mois de tickets.
+#: Customer search is interactive: it gets less waiting time than the
+#: statistics lambdas, which aggregate months of receipts.
 SEARCH_TIMEOUT = 15.0
 
 
 @dataclass(frozen=True)
 class PlanityEndpoints:
-    """Où taper, et sous quelle identité d'application — fourni par l'appelant.
+    """Where to call, and under which application identity — supplied by the caller.
 
-    Ce ne sont pas des secrets : elles identifient l'application Planity, elles
-    n'autorisent rien à elles seules (ce qui autorise, c'est le mot de passe de la
-    personne).
-    Elles peuvent donc apparaître dans un message d'erreur ou un journal de
-    débogage sans que ce soit une fuite.
+    These are not secrets: they identify the Planity application, they authorize
+    nothing on their own (what authorizes is the person's password).
+    They can therefore appear in an error message or a debug log without being a
+    leak.
 
-    - `firebase_api_key` — clé d'API Firebase Auth, envoyée en `?key=` aux
-      endpoints `identitytoolkit` ;
-    - `firebase_app_id` — identifiant d'application Firebase, envoyé en `p=` dans
-      la poignée de main WebSocket du Realtime Database ;
-    - `rest_api` — racine des lambdas REST (statistiques, tickets, credentials de
-      recherche), SANS barre oblique finale.
+    - `firebase_api_key` — Firebase Auth API key, sent as `?key=` to the
+      `identitytoolkit` endpoints;
+    - `firebase_app_id` — Firebase application identifier, sent as `p=` in the
+      Realtime Database WebSocket handshake;
+    - `rest_api` — root of the REST lambdas (statistics, receipts, search
+      credentials), WITHOUT a trailing slash.
     """
 
     firebase_api_key: str
@@ -49,16 +48,16 @@ class PlanityEndpoints:
     rest_api: str
 
     def __post_init__(self) -> None:
-        """Un champ vide LÈVE, ici, plutôt qu'à la première requête.
+        """An empty field RAISES here, rather than on the first request.
 
-        Une chaîne vide construit un objet parfaitement valide et produit, plus
-        tard et ailleurs, un 400 de Firebase — qu'on lit alors comme « mauvais mot
-        de passe ». C'est le mode de panne le plus cher de cette famille : il
-        accuse l'utilisatrice d'une erreur de configuration de l'opérateur."""
+        An empty string builds a perfectly valid object and produces, later and
+        elsewhere, a Firebase 400 — which then reads as "wrong password". It is
+        the most expensive failure mode of this family: it blames the user for
+        an operator's configuration error."""
         vides = [f.name for f in fields(self) if not str(getattr(self, f.name)).strip()]
         if vides:
             raise ValueError(
-                f"PlanityEndpoints : {', '.join(vides)} manque(nt). Ces valeurs se "
-                f"posent par celui qui déploie le connecteur — il n'y a pas de "
-                f"défaut, et il n'y en aura pas.")
+                f"PlanityEndpoints: {', '.join(vides)} missing. These values are "
+                f"set by whoever deploys the connector — there is no "
+                f"default, and there never will be.")
         object.__setattr__(self, "rest_api", self.rest_api.rstrip("/"))

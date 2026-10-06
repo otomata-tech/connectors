@@ -1,8 +1,8 @@
-"""Helpers de mise en forme du texte injecté dans Slides.
+"""Formatting helpers for text injected into Slides.
 
-Extraits de `slides_client.py` (découpage par famille d'opérations) — contenu
-inchangé, et toujours réexportés par `slides_client.py`, qui reste le chemin
-d'import du connecteur.
+Extracted from `slides_client.py` (split by operation family) — content
+unchanged, and still re-exported by `slides_client.py`, which remains the
+connector's import path.
 """
 
 
@@ -10,8 +10,8 @@ def parse_bold_markdown(text):
     """Parse **bold** segments → (clean_text, [(start, end), ...]).
 
     Useful when injecting markdown-flavoured text into Slides placeholders :
-    Slides API ne comprend pas le markdown, donc on extrait les ranges et on
-    applique `updateTextStyle bold:True` dessus.
+    the Slides API does not understand markdown, so we extract the ranges and
+    apply `updateTextStyle bold:True` to them.
     """
     clean, bolds = [], []
     i, pos = 0, 0

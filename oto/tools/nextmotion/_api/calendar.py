@@ -139,7 +139,7 @@ class _CalendarMixin:
                 exposed).
         """
         if order is not None and order not in ("start_time", "-start_time"):
-            raise ValueError(f"order doit être 'start_time' ou '-start_time' — reçu {order!r}.")
+            raise ValueError(f"order must be 'start_time' or '-start_time' — got {order!r}.")
         return self._list(
             f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/calendar_journeys",
             limit, offset, start_date=start_date, end_date=end_date,

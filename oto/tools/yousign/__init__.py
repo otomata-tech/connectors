@@ -1,5 +1,5 @@
-"""Yousign — signature électronique : demandes de signature, documents,
-signataires, activation, récupération du document signé."""
+"""Yousign — electronic signature: signature requests, documents,
+signers, activation, retrieval of the signed document."""
 
 from .client import YousignClient
 

@@ -1,8 +1,8 @@
-"""Création de zones de texte et application de styles.
+"""Creating text boxes and applying styles.
 
-Extrait de `slides_client.py` (découpage par famille d'opérations, surface
-publique figée) : les corps sont inchangés. Ce mixin n'est jamais instancié
-seul — il est composé dans `SlidesClient`, qui construit `slides_service` et
+Extracted from `slides_client.py` (split by operation family, public surface
+frozen): the bodies are unchanged. This mixin is never instantiated on its
+own — it is composed into `SlidesClient`, which builds `slides_service` and
 `drive_service`.
 """
 
@@ -10,7 +10,7 @@ from ..markup import _hex_to_rgb
 
 
 class _TextStyleMixin:
-    """Création de zones de texte et application de styles."""
+    """Creating text boxes and applying styles."""
 
     def add_text_box(self, presentation_id, slide_id, text, x, y, width, height):
         """

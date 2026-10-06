@@ -11,16 +11,16 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 class ApolloError(RuntimeError):
-    """Erreur API Apollo, **message amont remonté tel quel**.
+    """Apollo API error, **upstream message surfaced as is**.
 
-    `raise_for_status()` nu ne donne que « 422 Client Error … <url> » : l'appelant
-    (un agent) ne sait pas QUEL champ est refusé, donc ne peut pas corriger son
-    appel. Apollo, lui, dit précisément ce qui cloche dans le corps de la réponse
-    (`error`/`errors`/`error_message`) — on le propage.
+    A bare `raise_for_status()` only gives "422 Client Error … <url>": the caller
+    (an agent) cannot tell WHICH field is rejected, so it cannot fix its
+    call. Apollo does say precisely what is wrong in the response body
+    (`error`/`errors`/`error_message`) — we propagate it.
     """
 
     def __init__(self, message: str, status_code: Optional[int] = None):
@@ -36,8 +36,8 @@ class ApolloClient:
     - Job postings lookup
     """
 
-    # Chemin canonique documenté (`/api/v1`) — `/v1` est un alias legacy qui
-    # répond sur enrich/match mais PAS sur les endpoints de recherche.
+    # Canonical documented path (`/api/v1`) — `/v1` is a legacy alias that
+    # answers on enrich/match but NOT on the search endpoints.
     BASE_URL = "https://api.apollo.io/api/v1"
 
     def __init__(self, api_key: str = None):
@@ -59,7 +59,7 @@ class ApolloClient:
 
     @staticmethod
     def _upstream_message(response: requests.Response) -> str:
-        """Message d'erreur d'Apollo, sinon un extrait du corps brut."""
+        """Apollo's error message, otherwise an excerpt of the raw body."""
         try:
             body = response.json()
         except ValueError:
@@ -71,25 +71,25 @@ class ApolloClient:
                     return v if isinstance(v, str) else str(v)
         return str(body)[:400]
 
-    #: Au-delà, on ne dort pas : on rend la main en NOMMANT le délai. Un outil MCP
-    #: qui attend plus que ça a déjà perdu son client (~60 s de patience côté
-    #: appelant), et dormir en silence transformerait un throttle en timeout muet.
+    #: Beyond this, we do not sleep: we hand control back, NAMING the delay. An MCP tool
+    #: that waits longer than that has already lost its client (~60 s of patience on
+    #: the caller side), and sleeping silently would turn a throttle into a mute timeout.
     _RETRY_AFTER_MAX = 15
-    #: Deux reprises au plus — le plafond total d'attente reste sous les 30 s.
+    #: At most two retries — the total wait ceiling stays under 30 s.
     _RETRY_MAX = 2
 
     def _send(self, method: str, endpoint: str, **kwargs):
-        """L'envoi partagé : rate limit, puis un 429 COURT est repris.
+        """The shared send: rate limit, then a SHORT 429 is retried.
 
-        Apollo throttle par fenêtre (le plan décide du débit) et répond 429 avec
-        `Retry-After`. Sans reprise, une construction de liste perd l'appel en
-        cours — et en lot, ce sont dix personnes qui tombent d'un coup. On reprend
-        donc, mais BORNÉ : au plus deux fois, et seulement si l'amont demande une
-        attente courte. Un `Retry-After` long n'est pas absorbé — il est REMONTÉ,
-        avec le délai dans le message, parce qu'une attente qu'on ne peut pas tenir
-        doit revenir à l'appelant plutôt que d'être dormie en douce
-        (`docs/…` d'oto-backend : tout ce qui attend un tiers a un délai maximal à
-        son propre niveau).
+        Apollo throttles per window (the plan decides the rate) and answers 429 with
+        `Retry-After`. Without a retry, list building loses the call in
+        flight — and in a batch, ten people fall at once. So we retry,
+        but BOUNDED: at most twice, and only if upstream asks for a short
+        wait. A long `Retry-After` is not absorbed — it is SURFACED,
+        with the delay in the message, because a wait we cannot hold
+        must go back to the caller rather than be slept away quietly
+        (`docs/…` of oto-backend: everything that waits on a third party has a maximum delay at
+        its own level).
         """
         url = f"{self.BASE_URL}/{endpoint}"
         headers = {"X-Api-Key": self.api_key, "Content-Type": "application/json"}
@@ -106,21 +106,21 @@ class ApolloClient:
                 attendre = 2
             if attendre > self._RETRY_AFTER_MAX:
                 raise ApolloError(
-                    f"Apollo 429 sur {endpoint} : quota de débit atteint, l'amont "
-                    f"demande {attendre} s d'attente — trop long pour être absorbé "
-                    "ici. Reprends l'appel après ce délai.",
+                    f"Apollo 429 on {endpoint}: rate limit quota reached, upstream "
+                    f"asks for a {attendre} s wait — too long to be absorbed "
+                    "here. Retry the call after this delay.",
                     status_code=429,
                 )
             time.sleep(attendre)
         return response
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make API request. Une erreur HTTP lève `ApolloError` portant le message
-        AMONT (quel champ est refusé) — pas un « 422 Client Error » opaque."""
+        """Make API request. An HTTP error raises `ApolloError` carrying the
+        UPSTREAM message (which field is rejected) — not an opaque "422 Client Error"."""
         response = self._send(method, endpoint, **kwargs)
         if not response.ok:
             raise ApolloError(
-                f"Apollo {response.status_code} sur {endpoint} : "
+                f"Apollo {response.status_code} on {endpoint}: "
                 f"{self._upstream_message(response)}",
                 status_code=response.status_code,
             )
@@ -128,41 +128,41 @@ class ApolloClient:
 
     def _request_tolerating(self, method: str, endpoint: str,
                             tolere: tuple, **kwargs) -> tuple:
-        """Comme `_request`, mais rend `(status, corps)` sans lever pour les
-        statuts DÉCLARÉS dans `tolere` — tout autre statut lève `ApolloError`
-        comme d'habitude.
+        """Like `_request`, but returns `(status, body)` without raising for the
+        statuses DECLARED in `tolere` — any other status raises `ApolloError`
+        as usual.
 
-        Existe pour le sondage de webhook, où **un 404 ne veut pas dire erreur**
-        mais « pas encore prêt ». `_request` ne peut pas servir ce cas : il lève
-        sur tout non-2xx, et `_upstream_message` réduit le corps à une phrase —
-        or c'est le corps qu'il faut lire ici (`error_code`, `retry_after_seconds`).
-        La liste des statuts tolérés est un ARGUMENT, jamais un défaut : un
-        appelant qui n'en déclare aucun retrouve exactement le comportement de
+        Exists for webhook polling, where **a 404 does not mean error**
+        but "not ready yet". `_request` cannot serve this case: it raises
+        on any non-2xx, and `_upstream_message` reduces the body to one sentence —
+        yet the body is what must be read here (`error_code`, `retry_after_seconds`).
+        The list of tolerated statuses is an ARGUMENT, never a default: a
+        caller that declares none gets exactly the behaviour of
         `_request`.
         """
         response = self._send(method, endpoint, **kwargs)
         if not response.ok and response.status_code not in tolere:
             raise ApolloError(
-                f"Apollo {response.status_code} sur {endpoint} : "
+                f"Apollo {response.status_code} on {endpoint}: "
                 f"{self._upstream_message(response)}",
                 status_code=response.status_code,
             )
         try:
             return response.status_code, response.json()
         except ValueError:
-            # ⚠️ `requests.exceptions.JSONDecodeError` HÉRITE de `ValueError` :
-            # un `except ValueError` nu attraperait donc aussi un 200 au corps
-            # vide ou en HTML (page d'erreur d'un proxy, maintenance) et le
-            # rendrait comme un corps VIDE — que l'appelant lirait « prêt, mais
-            # rien dedans ». C'est la divergence muette exactement : le geste
-            # réussit et le relevé ment. Seul un statut TOLÉRÉ a le droit de
-            # revenir sans corps, parce que c'est le statut qui porte le sens ;
-            # un succès illisible est une panne, et se dit.
+            # ⚠️ `requests.exceptions.JSONDecodeError` INHERITS from `ValueError`:
+            # a bare `except ValueError` would therefore also catch a 200 with an
+            # empty or HTML body (proxy error page, maintenance) and
+            # return it as an EMPTY body — which the caller would read as "ready, but
+            # nothing in it". That is exactly the silent divergence: the action
+            # succeeds and the readout lies. Only a TOLERATED status may
+            # come back without a body, because the status carries the meaning;
+            # an unreadable success is an outage, and says so.
             if response.status_code in tolere:
                 return response.status_code, {}
             raise ApolloError(
-                f"Apollo {response.status_code} sur {endpoint} a répondu un corps "
-                f"non-JSON : {(response.text or '').strip()[:200]!r}",
+                f"Apollo {response.status_code} on {endpoint} answered a "
+                f"non-JSON body: {(response.text or '').strip()[:200]!r}",
                 status_code=response.status_code,
             )
 
@@ -182,37 +182,37 @@ class ApolloClient:
         org_ids: List[str] = None,
     ) -> Dict[str, Any]:
         """
-        Search for organizations (firmographics en lot).
+        Search for organizations (firmographics in bulk).
 
         Args:
             name: Company name to search
             domain: Domain to search
-            country: Country filter (raccourci de `locations`)
+            country: Country filter (shortcut for `locations`)
             per_page: Results per page (≤100)
             page: Page number
-            employee_ranges: Tranches d'effectif, bornes INCLUSES au format
-                "min,max" — ex. ["1,10", "11,50"]. LE filtre de qualification par
-                taille.
-            revenue_min / revenue_max: bornes de chiffre d'affaires annuel
-            locations: villes/régions/pays du SIÈGE
-            keywords: mots-clés d'activité (`q_organization_keyword_tags`)
-            technologies: uids de technologies utilisées (ex. "salesforce")
-            org_ids: ids Apollo d'organisations
+            employee_ranges: Headcount ranges, bounds INCLUSIVE in the format
+                "min,max" — e.g. ["1,10", "11,50"]. THE size
+                qualification filter.
+            revenue_min / revenue_max: annual revenue bounds
+            locations: cities/regions/countries of the HEADQUARTERS
+            keywords: activity keywords (`q_organization_keyword_tags`)
+            technologies: uids of technologies used (e.g. "salesforce")
+            org_ids: Apollo organization ids
 
         Returns:
             Dict with organizations list
 
-        ⚠️ La réponse ne porte PAS `estimated_num_employees` (vérifié) — seulement
-        le CA et les taux de croissance d'effectif. Pour l'effectif exact et sa
-        répartition par département : `enrich_organization` / `bulk_enrich_organizations`.
-        D'où l'intérêt de `employee_ranges` : on FILTRE par taille sans payer un
-        enrichissement par entreprise (coût Apollo : 1 crédit la PAGE de 100 ici,
-        contre 1 crédit l'ENTREPRISE en enrichissement).
+        ⚠️ The response does NOT carry `estimated_num_employees` (verified) — only
+        revenue and headcount growth rates. For the exact headcount and its
+        breakdown by department: `enrich_organization` / `bulk_enrich_organizations`.
+        Hence the value of `employee_ranges`: we FILTER by size without paying an
+        enrichment per company (Apollo cost: 1 credit per PAGE of 100 here,
+        versus 1 credit per COMPANY in enrichment).
 
-        ⚠️ Noms de champs imposés par l'API (`q_organization_name`,
-        `q_organization_domains_list`) : un nom inconnu n'est PAS rejeté, il est
-        **ignoré silencieusement** → la réponse est la base entière (~28 M
-        d'entreprises, top générique Google/Amazon/…) et passe pour un résultat.
+        ⚠️ Field names imposed by the API (`q_organization_name`,
+        `q_organization_domains_list`): an unknown name is NOT rejected, it is
+        **silently ignored** → the response is the entire database (~28 M
+        companies, generic top Google/Amazon/…) and passes for a result.
         """
         data: Dict[str, Any] = {"per_page": per_page, "page": page}
         if name:
@@ -240,28 +240,28 @@ class ApolloClient:
 
         return self._request("POST", "mixed_companies/search", json=data)
 
-    #: Plafond imposé par l'API sur `organizations/bulk_enrich`.
+    #: Ceiling imposed by the API on `organizations/bulk_enrich`.
     BULK_ENRICH_MAX = 10
 
     def bulk_enrich_organizations(self, domains: List[str]) -> Dict[str, Any]:
         """
-        Enrichit jusqu'à 10 entreprises en UN appel (firmographics complètes :
-        `estimated_num_employees`, `departmental_head_count`, croissance, CA…).
+        Enrich up to 10 companies in ONE call (full firmographics:
+        `estimated_num_employees`, `departmental_head_count`, growth, revenue…).
 
         Args:
-            domains: domaines des entreprises (≤10 — plafond de l'API)
+            domains: company domains (≤10 — API ceiling)
 
-        ⚠️ Le lot n'économise PAS de crédits (1 crédit par organisation, comme en
-        unitaire) : il économise des APPELS — le rate limit d'`organizations/enrich`
-        est de 600/h, donc ÷10 sur une campagne.
+        ⚠️ The batch does NOT save credits (1 credit per organization, as in
+        single mode): it saves CALLS — the rate limit of `organizations/enrich`
+        is 600/h, so ÷10 on a campaign.
         """
         doms = [d.strip() for d in (domains or []) if d and d.strip()]
         if not doms:
-            raise ValueError("domains requis (au moins un domaine)")
+            raise ValueError("domains required (at least one domain)")
         if len(doms) > self.BULK_ENRICH_MAX:
             raise ValueError(
-                f"{len(doms)} domaines : l'API en accepte {self.BULK_ENRICH_MAX} "
-                "au maximum par appel — découpe en lots")
+                f"{len(doms)} domains: the API accepts {self.BULK_ENRICH_MAX} "
+                "at most per call — split into batches")
         return self._request("POST", "organizations/bulk_enrich",
                              params={"domains[]": doms})
 
@@ -304,15 +304,15 @@ class ApolloClient:
         Returns:
             People search results (no email/phone — that's `match_person`)
 
-        ⚠️ L'endpoint est `mixed_people/api_search` et le filtre domaine
-        s'appelle `q_organization_domains_list` : `people/search` +
-        `organization_domains` rendaient un 422 systématique. Il n'existe PAS de
-        filtre « department » sur cette API — cibler par `titles`/`seniorities`.
+        ⚠️ The endpoint is `mixed_people/api_search` and the domain filter
+        is called `q_organization_domains_list`: `people/search` +
+        `organization_domains` systematically returned a 422. There is NO
+        "department" filter on this API — target by `titles`/`seniorities`.
 
-        La LOCALISATION est ce qui rend le domaine exploitable sur un groupe
-        mondial : `franke.com` rend 1887 profils, `verifone.com` 3282, tous pays
-        confondus, et rien d'autre ne permet d'en isoler la filiale française —
-        chaque reveal à l'aveugle coûtant un crédit.
+        LOCATION is what makes the domain usable on a global
+        group: `franke.com` returns 1887 profiles, `verifone.com` 3282, all countries
+        combined, and nothing else can isolate the French subsidiary —
+        each blind reveal costing a credit.
         """
         data = {"per_page": per_page, "page": page}
         if domains:
@@ -332,12 +332,12 @@ class ApolloClient:
 
     @staticmethod
     def _looks_like_stub(person: Optional[Dict[str, Any]]) -> bool:
-        """La fiche rendue est-elle un STUB créé faute de match ?
+        """Is the returned record a STUB created for lack of a match?
 
-        Sur un identifiant trop faible, Apollo ne renvoie pas « rien » : il CRÉE une
-        personne neuve, vide (`last_name`/`title`/`email`/`linkedin_url` à null) et la
-        marque `revealed_for_current_team` — le crédit est consommé, la donnée n'existe
-        pas. Sans ce test, l'appelant croit avoir enrichi.
+        On too weak an identifier, Apollo does not return "nothing": it CREATES a
+        new, empty person (`last_name`/`title`/`email`/`linkedin_url` null) and
+        marks it `revealed_for_current_team` — the credit is consumed, the data does not
+        exist. Without this test, the caller believes it has enriched.
         """
         if not isinstance(person, dict):
             return False
@@ -359,11 +359,11 @@ class ApolloClient:
         webhook_url: str = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Match a specific person (enrichment — 1 crédit Apollo par appel).
+        Match a specific person (enrichment — 1 Apollo credit per call).
 
         Args:
-            person_id: **id Apollo** de la personne (celui que rend `search_people`)
-                — l'identifiant le plus sûr, à préférer dès qu'on vient d'un search
+            person_id: **Apollo id** of the person (the one `search_people` returns)
+                — the safest identifier, to prefer whenever coming from a search
             linkedin_url: LinkedIn profile URL
             email: Email address
             first_name: First name
@@ -371,64 +371,64 @@ class ApolloClient:
             name: Full name
             domain: Company domain
             org_name: Organization name
-            reveal_personal_emails: demande les emails PERSONNELS. Synchrone —
-                ils reviennent dans la réponse. Coût crédit selon le plan Apollo.
-            reveal_phone_number: demande les téléphones, MOBILE ET DIRECT DIAL
-                compris. ⚠️ Ces numéros-là ne reviennent PAS dans la réponse :
-                Apollo les vérifie de son côté et les POSTe, plusieurs minutes
-                plus tard, à `webhook_url` — la réponse ne porte que
-                `request_id`, à repasser à `poll_webhook_result` pour les relire
-                sans webhook (relecture annoncée 0 crédit par Apollo — l'appel qui
-                a émis le `request_id`, lui, est déjà facturé). Exige `webhook_url`.
-            webhook_url: où Apollo POSTe les téléphones. OBLIGATOIRE dès que
-                `reveal_phone_number`, et interdit sinon (Apollo :
-                « Otherwise, do not use this parameter »).
+            reveal_personal_emails: requests the PERSONAL emails. Synchronous —
+                they come back in the response. Credit cost depends on the Apollo plan.
+            reveal_phone_number: requests the phones, MOBILE AND DIRECT DIAL
+                included. ⚠️ Those numbers do NOT come back in the response:
+                Apollo verifies them on its side and POSTs them, several minutes
+                later, to `webhook_url` — the response only carries
+                `request_id`, to pass to `poll_webhook_result` to read them back
+                without a webhook (re-read announced as 0 credit by Apollo — the call that
+                issued the `request_id` has already been billed). Requires `webhook_url`.
+            webhook_url: where Apollo POSTs the phones. REQUIRED whenever
+                `reveal_phone_number`, and forbidden otherwise (Apollo:
+                "Otherwise, do not use this parameter").
 
         Returns:
-            Matched person data, ou None (404). La fiche porte `_stub: True` quand
-            Apollo a fabriqué une coquille vide au lieu de matcher (cf. `_looks_like_stub`).
+            Matched person data, or None (404). The record carries `_stub: True` when
+            Apollo fabricated an empty shell instead of matching (see `_looks_like_stub`).
 
-            ⚠️ **Ni `None` ni `_stub` ne veut dire « gratuit ».** Le crédit se prend à
-            l'APPEL, pas au résultat : Apollo facture la coquille vide qu'il fabrique
-            lui-même — mesuré, ~12 crédits pour zéro donnée (commit `44acc08`) — et rien
-            n'a jamais montré qu'un non-match soit remboursé. Un appelant qui rend un
-            message d'échec ne doit donc RIEN affirmer sur le coût : ni « aucun crédit
-            dépensé », ni « réessaie », qui présenterait un second appel payant comme
-            offert. Soit on mesure la facturation, soit on se tait dessus.
+            ⚠️ **Neither `None` nor `_stub` means "free".** The credit is taken at
+            the CALL, not at the result: Apollo bills the empty shell it fabricates
+            itself — measured, ~12 credits for zero data (commit `44acc08`) — and nothing
+            has ever shown that a non-match is refunded. A caller that returns a
+            failure message must therefore assert NOTHING about cost: neither "no credit
+            spent", nor "retry", which would present a second paid call as
+            free. Either we measure the billing, or we stay silent on it.
 
-        ⚠️ **Un identifiant faible coûte un crédit pour rien.** `search_people` rend les
-        noms de famille OBFUSQUÉS (« Vi***l ») : matcher avec `first_name` + société
-        seuls ne retrouve pas la personne, Apollo crée un stub et facture quand même
-        (~12 crédits perdus en une session, feedbacks #347-350). D'où la garde
-        ci-dessous : sans identifiant fort (`person_id`/`email`/`linkedin_url`), un nom
-        COMPLET est exigé — l'appel est refusé AVANT de brûler le crédit.
+        ⚠️ **A weak identifier costs a credit for nothing.** `search_people` returns
+        OBFUSCATED family names ("Vi***l"): matching with `first_name` + company
+        alone does not find the person, Apollo creates a stub and bills anyway
+        (~12 credits lost in one session, feedbacks #347-350). Hence the guard
+        below: without a strong identifier (`person_id`/`email`/`linkedin_url`), a
+        FULL name is required — the call is refused BEFORE burning the credit.
         """
         strong = person_id or email or linkedin_url
         full_name = bool(last_name) or bool(name and len(name.split()) >= 2)
         if not strong and not full_name:
             raise ValueError(
-                "identifiant trop faible pour un match Apollo : passe `person_id` "
-                "(l'id rendu par search_people), `email` ou `linkedin_url` — sinon un "
-                "nom COMPLET (prénom + nom). Un prénom + une société ne matchent pas : "
-                "Apollo crée une fiche vide et consomme quand même le crédit.")
+                "identifier too weak for an Apollo match: pass `person_id` "
+                "(the id returned by search_people), `email` or `linkedin_url` — otherwise a "
+                "FULL name (first name + last name). A first name + a company do not match: "
+                "Apollo creates an empty record and still consumes the credit.")
 
-        # Les deux paramètres de reveal du téléphone vont PAR PAIRE, et Apollo le
-        # dit dans les deux sens : « If this parameter is set to `true`, you must
-        # enter a webhook URL » / « Otherwise, do not use this parameter ». Sans
-        # webhook il répond « Please add a valid 'webhook_url' parameter » — un
-        # aller-retour pour rien ; avec un webhook mais sans le drapeau, il ne
-        # refuse RIEN et n'enverra jamais rien, ce qui est pire : l'appelant
-        # attend un POST qui ne partira pas. On refuse les deux moitiés ici.
+        # The two phone reveal parameters go AS A PAIR, and Apollo says so in
+        # both directions: "If this parameter is set to `true`, you must
+        # enter a webhook URL" / "Otherwise, do not use this parameter". Without a
+        # webhook it answers "Please add a valid 'webhook_url' parameter" — a
+        # round trip for nothing; with a webhook but without the flag, it refuses
+        # NOTHING and will never send anything, which is worse: the caller
+        # waits for a POST that will never leave. We refuse both halves here.
         if reveal_phone_number and not webhook_url:
             raise ValueError(
-                "`reveal_phone_number` exige `webhook_url` : Apollo ne rend pas "
-                "les mobiles dans la réponse, il les POSTe à cette URL quelques "
-                "minutes plus tard. Sans elle l'appel est refusé par Apollo.")
+                "`reveal_phone_number` requires `webhook_url`: Apollo does not return "
+                "mobiles in the response, it POSTs them to this URL a few "
+                "minutes later. Without it the call is refused by Apollo.")
         if webhook_url and not reveal_phone_number:
             raise ValueError(
-                "`webhook_url` ne sert QUE le reveal de téléphone : passe aussi "
-                "`reveal_phone_number=True`, sinon Apollo n'enverra jamais rien "
-                "à cette URL.")
+                "`webhook_url` only serves the phone reveal: also pass "
+                "`reveal_phone_number=True`, otherwise Apollo will never send anything "
+                "to this URL.")
 
         data = {}
         if person_id:
@@ -444,23 +444,23 @@ class ApolloClient:
         if name:
             data["name"] = name
         if domain:
-            # `domain` est le nom attendu par l'API — `organization_domain` (utilisé
-            # jusqu'au 2026-08-04) est un champ INCONNU, donc ignoré en silence : le
-            # domaine ne participait pas au match, ce qui rendait les stubs plus probables.
+            # `domain` is the name the API expects — `organization_domain` (used
+            # until 2026-08-04) is an UNKNOWN field, hence silently ignored: the
+            # domain did not take part in the match, which made stubs more likely.
             data["domain"] = domain
         if org_name:
             data["organization_name"] = org_name
 
-        # ⚠️ Les trois paramètres de CONTRÔLE partent en QUERY STRING, pas dans le
-        # corps : le contrat publié par Apollo pour `people/match` ne déclare
-        # AUCUN `requestBody`, ses 14 paramètres sont tous `in: query`, et son
-        # propre exemple les y met. L'identité, elle, reste dans le corps — c'est
-        # ce que ce client fait depuis toujours et Apollo la lit bien de là
-        # (`domain` participe au match, vérifié le 2026-08-04). Et les booléens
-        # se sérialisent À LA MAIN : `requests` écrirait `reveal_phone_number=True`
-        # (majuscule Python), là où l'API attend `true` — une API qui ignore en
-        # silence ce qu'elle ne reconnaît pas ne rendrait aucune erreur, juste un
-        # reveal qui n'a pas lieu et un appelant qui attend un POST pour rien.
+        # ⚠️ The three CONTROL parameters go in the QUERY STRING, not in the
+        # body: the contract published by Apollo for `people/match` declares NO
+        # `requestBody`, its 14 parameters are all `in: query`, and its
+        # own example puts them there. Identity, for its part, stays in the body — that is
+        # what this client has always done and Apollo reads it fine from there
+        # (`domain` takes part in the match, verified on 2026-08-04). And the booleans
+        # are serialized BY HAND: `requests` would write `reveal_phone_number=True`
+        # (Python capital), where the API expects `true` — an API that silently
+        # ignores what it does not recognize would return no error, just a
+        # reveal that does not happen and a caller waiting for a POST for nothing.
         params = {}
         for nom, valeur in (("reveal_personal_emails", reveal_personal_emails),
                             ("reveal_phone_number", reveal_phone_number)):
@@ -482,38 +482,38 @@ class ApolloClient:
         return out
 
     def poll_webhook_result(self, request_id) -> Dict[str, Any]:
-        """Relire le résultat qu'Apollo a envoyé (ou enverra) à un webhook.
+        """Read back the result Apollo sent (or will send) to a webhook.
 
-        C'est ce qui rend le reveal de téléphone utilisable SANS héberger de
-        receveur : `match_person(reveal_phone_number=True, …)` rend un
-        `request_id`, et cet endpoint rend le même contenu que le POST — pendant
-        **trente jours**, pour **0 crédit** (durée et gratuité : doc Apollo, non
-        rejouée en vrai ici ; ce qui est déjà payé, c'est l'appel qui a émis le
+        This is what makes the phone reveal usable WITHOUT hosting a
+        receiver: `match_person(reveal_phone_number=True, …)` returns a
+        `request_id`, and this endpoint returns the same content as the POST — for
+        **thirty days**, for **0 credit** (duration and free of charge: Apollo doc, not
+        replayed for real here; what is already paid for is the call that issued the
         `request_id`).
 
         Args:
-            request_id: celui rendu par `match_person`. Entier signé 64 bits :
-                il peut être NÉGATIF et il dépasse la précision d'un nombre
-                JavaScript — on le transporte en CHAÎNE, tel quel, jamais
-                reconverti.
+            request_id: the one returned by `match_person`. Signed 64-bit integer:
+                it can be NEGATIVE and it exceeds the precision of a
+                JavaScript number — we carry it as a STRING, as is, never
+                reconverted.
 
         Returns:
-            `{"done": False, "retry_after_seconds": int}` tant qu'Apollo
-            travaille, `{"done": True, "result": {…}}` quand c'est prêt.
+            `{"done": False, "retry_after_seconds": int}` while Apollo
+            is working, `{"done": True, "result": {…}}` when it is ready.
 
-        ⚠️ **Un 404 ici ne veut pas dire « erreur »** : tant que le résultat n'est
-        pas prêt, Apollo répond 404 avec `error_code: "result_pending"` et le
-        délai à attendre. Seuls les trois autres cas sont terminaux et lèvent —
-        `request_id_unknown` (jamais émis), `request_id_expired` (au-delà des 30
-        jours) et `invalid_request_id`.
+        ⚠️ **A 404 here does not mean "error"**: as long as the result is not
+        ready, Apollo answers 404 with `error_code: "result_pending"` and the
+        delay to wait. Only the three other cases are terminal and raise —
+        `request_id_unknown` (never issued), `request_id_expired` (beyond the 30
+        days) and `invalid_request_id`.
         """
         rid = str(request_id).strip()
         if not rid or not rid.lstrip("-").isdigit():
-            # Apollo répondrait 400 `invalid_request_id` : autant le dire ici,
-            # où l'on peut nommer d'où vient la valeur attendue.
+            # Apollo would answer 400 `invalid_request_id`: better to say it here,
+            # where we can name where the expected value comes from.
             raise ValueError(
-                "`request_id` doit être l'entier rendu par match_person "
-                f"(entier signé 64 bits, éventuellement négatif) — reçu : {rid!r}")
+                "`request_id` must be the integer returned by match_person "
+                f"(signed 64-bit integer, possibly negative) — received: {rid!r}")
 
         status, body = self._request_tolerating(
             "GET", f"webhook_result/{rid}", tolere=(404,))
@@ -523,11 +523,11 @@ class ApolloClient:
                 return {"done": False,
                         "retry_after_seconds": body.get("retry_after_seconds")}
             raise ApolloError(
-                f"Apollo 404 sur webhook_result/{rid} : "
+                f"Apollo 404 on webhook_result/{rid}: "
                 f"{body.get('error_code') or body}", status_code=404)
         return {"done": True, "result": body}
 
-    #: Plafond imposé par l'API sur `people/bulk_match`.
+    #: Ceiling imposed by the API on `people/bulk_match`.
     BULK_MATCH_MAX = 10
 
     def bulk_match_people(
@@ -538,79 +538,79 @@ class ApolloClient:
         webhook_url: str = None,
     ) -> Dict[str, Any]:
         """
-        Enrichit jusqu'à 10 personnes en UN appel (`people/bulk_match`).
+        Enrich up to 10 people in ONE call (`people/bulk_match`).
 
-        C'est la forme qu'une construction de liste emploie RÉELLEMENT : un search
-        rend des centaines de personnes aux noms obfusqués, et il faut les révéler.
-        En unitaire, ce sont autant d'allers-retours — avec un `_rate_limit` d'une
-        seconde, révéler 300 personnes prend cinq minutes d'attente pure, et chaque
-        réponse porte la fiche entreprise entière.
+        This is the form list building ACTUALLY uses: a search
+        returns hundreds of people with obfuscated names, and they must be revealed.
+        One by one, that is as many round trips — with a one-second `_rate_limit`,
+        revealing 300 people takes five minutes of pure waiting, and each
+        response carries the entire company record.
 
         Args:
-            details: ≤10 personnes. Chaque entrée porte les mêmes identifiants que
-                `match_person` : `id` (le plus sûr, rendu par `search_people`),
-                `email`, `linkedin_url`, ou un nom COMPLET (`first_name` +
-                `last_name`) avec `domain`/`organization_name`.
-            reveal_personal_emails: emails personnels, dans la réponse (synchrone).
-            reveal_phone_number: téléphones — ASYNCHRONES, livrés à `webhook_url`.
-                Exige `webhook_url`, comme sur `match_person`.
-            webhook_url: destination des téléphones. Interdit sans
+            details: ≤10 people. Each entry carries the same identifiers as
+                `match_person`: `id` (the safest, returned by `search_people`),
+                `email`, `linkedin_url`, or a FULL name (`first_name` +
+                `last_name`) with `domain`/`organization_name`.
+            reveal_personal_emails: personal emails, in the response (synchronous).
+            reveal_phone_number: phones — ASYNCHRONOUS, delivered to `webhook_url`.
+                Requires `webhook_url`, as on `match_person`.
+            webhook_url: destination of the phones. Forbidden without
                 `reveal_phone_number`.
 
         Returns:
-            La réponse Apollo, dont `matches` : une entrée PAR personne demandée,
-            dans l'ordre, `None` là où rien n'a matché.
+            The Apollo response, including `matches`: one entry PER requested person,
+            in order, `None` where nothing matched.
 
-        ⚠️ **Le crédit se paie à la personne, pas à l'appel** : un lot de 10 coûte
-        10 fois un unitaire. Ce que le lot économise, ce sont les APPELS (et donc le
-        rate limit), jamais les crédits.
+        ⚠️ **The credit is paid per person, not per call**: a batch of 10 costs
+        10 times a single call. What the batch saves are CALLS (and thus the
+        rate limit), never credits.
 
-        ⚠️ **La garde d'identifiant faible s'applique à CHAQUE entrée**, et pour la
-        même raison qu'en unitaire : sur un identifiant trop faible Apollo ne rend
-        pas « rien », il CRÉE une fiche vide et la facture (feedbacks oto #347-350).
-        En lot le piège est pire — une entrée faible perdue au milieu de dix passe
-        inaperçue. L'entrée fautive est nommée par son INDEX avant tout départ.
+        ⚠️ **The weak identifier guard applies to EACH entry**, and for the
+        same reason as in single mode: on too weak an identifier Apollo does not return
+        "nothing", it CREATES an empty record and bills it (oto feedbacks #347-350).
+        In a batch the trap is worse — a weak entry lost among ten goes
+        unnoticed. The faulty entry is named by its INDEX before anything leaves.
         """
         entrees = list(details or [])
         if not entrees:
-            raise ValueError("details requis (au moins une personne)")
+            raise ValueError("details required (at least one person)")
         if len(entrees) > self.BULK_MATCH_MAX:
             raise ValueError(
-                f"{len(entrees)} personnes : l'API en accepte {self.BULK_MATCH_MAX} "
-                "au maximum par appel — découpe en lots")
+                f"{len(entrees)} people: the API accepts {self.BULK_MATCH_MAX} "
+                "at most per call — split into batches")
 
         for i, e in enumerate(entrees):
             if not isinstance(e, dict):
-                raise ValueError(f"details[{i}] doit être un objet, pas {type(e).__name__}")
+                raise ValueError(f"details[{i}] must be an object, not {type(e).__name__}")
             fort = e.get("id") or e.get("email") or e.get("linkedin_url")
             nom_complet = bool(e.get("last_name")) or bool(
                 e.get("name") and len(str(e["name"]).split()) >= 2)
             if not fort and not nom_complet:
                 raise ValueError(
-                    f"details[{i}] : identifiant trop faible pour un match Apollo — "
-                    "passe `id` (celui rendu par search_people), `email` ou "
-                    "`linkedin_url`, sinon un nom COMPLET (prénom + nom). Un prénom "
-                    "+ une société ne matchent pas : Apollo crée une fiche vide et "
-                    "consomme quand même le crédit.")
+                    f"details[{i}]: identifier too weak for an Apollo match — "
+                    "pass `id` (the one returned by search_people), `email` or "
+                    "`linkedin_url`, otherwise a FULL name (first name + last name). A first name "
+                    "+ a company do not match: Apollo creates an empty record and "
+                    "still consumes the credit.")
 
-        # Même appairage que `match_person`, et pour les mêmes raisons dans les deux
-        # sens (cf. sa garde) : sans webhook Apollo refuse, et avec un webhook sans
-        # le drapeau il accepte puis n'envoie jamais rien.
+        # Same pairing as `match_person`, and for the same reasons in both
+        # directions (see its guard): without a webhook Apollo refuses, and with a webhook without
+        # the flag it accepts then never sends anything.
         if reveal_phone_number and not webhook_url:
             raise ValueError(
-                "`reveal_phone_number` exige `webhook_url` : Apollo ne rend pas les "
-                "mobiles dans la réponse, il les POSTe à cette URL quelques minutes "
-                "plus tard. Sans elle l'appel est refusé par Apollo.")
+                "`reveal_phone_number` requires `webhook_url`: Apollo does not return "
+                "mobiles in the response, it POSTs them to this URL a few minutes "
+                "later. Without it the call is refused by Apollo.")
         if webhook_url and not reveal_phone_number:
             raise ValueError(
-                "`webhook_url` ne sert QUE le reveal de téléphone : passe aussi "
-                "`reveal_phone_number=True`, sinon Apollo n'enverra jamais rien à "
-                "cette URL.")
+                "`webhook_url` only serves the phone reveal: also pass "
+                "`reveal_phone_number=True`, otherwise Apollo will never send anything to "
+                "this URL.")
 
-        # Découpe identique à `match_person` : l'identité dans le CORPS (ici
-        # `details`, que le contrat d'Apollo déclare bien en `requestBody` pour ce
-        # endpoint-ci), les paramètres de CONTRÔLE en query string, booléens
-        # sérialisés à la main — `requests` écrirait `True`, l'API attend `true`.
+        # Same split as `match_person`: identity in the BODY (here
+        # `details`, which Apollo's contract does declare as `requestBody` for this
+        # endpoint), CONTROL parameters in the query string, booleans
+        # serialized by hand — `requests` would write `True`, the API expects `true`.
         params = {}
         for nom, valeur in (("reveal_personal_emails", reveal_personal_emails),
                             ("reveal_phone_number", reveal_phone_number)):
@@ -622,8 +622,8 @@ class ApolloClient:
         out = self._request("POST", "people/bulk_match",
                             json={"details": entrees}, params=params or None)
 
-        # Même marquage qu'en unitaire : une coquille vide facturée doit se VOIR,
-        # sinon l'appelant la compte comme un enrichissement réussi.
+        # Same marking as in single mode: a billed empty shell must be SEEN,
+        # otherwise the caller counts it as a successful enrichment.
         matches = (out or {}).get("matches") if isinstance(out, dict) else None
         if isinstance(matches, list):
             for m in matches:
@@ -644,41 +644,41 @@ class ApolloClient:
         return self._request("GET", f"organizations/{org_id}/job_postings")
 
     # ------------------------------------------------------------------
-    # Email accounts & schedules (prérequis en lecture des séquences/emails :
-    # sans un `id` d'ici, `create_sequence`/`add_contacts_to_sequence` n'ont
-    # rien à passer en `emailer_schedule_id`/`send_email_from_email_account_id`)
+    # Email accounts & schedules (read prerequisites for sequences/emails:
+    # without an `id` from here, `create_sequence`/`add_contacts_to_sequence` have
+    # nothing to pass as `emailer_schedule_id`/`send_email_from_email_account_id`)
     # ------------------------------------------------------------------
 
     def list_email_accounts(self) -> Dict[str, Any]:
         """
-        List the mailboxes connected to this Apollo account (0 crédit).
+        List the mailboxes connected to this Apollo account (0 credit).
 
         Returns:
-            Dict avec `email_accounts` — c'est ici qu'on trouve l'`id` à passer
-            en `send_email_from_email_account_id` à `add_contacts_to_sequence`.
+            Dict with `email_accounts` — this is where to find the `id` to pass
+            as `send_email_from_email_account_id` to `add_contacts_to_sequence`.
         """
         return self._request("GET", "email_accounts")
 
     def list_email_schedules(self) -> Dict[str, Any]:
         """
-        List the send schedules configured on this team (0 crédit).
+        List the send schedules configured on this team (0 credit).
 
         Returns:
-            Dict avec `emailer_schedules` — c'est ici qu'on trouve l'`id` à
-            passer en `emailer_schedule_id` à `create_sequence` (requis, sans
-            lui la création échoue).
+            Dict with `emailer_schedules` — this is where to find the `id` to
+            pass as `emailer_schedule_id` to `create_sequence` (required, without
+            it the creation fails).
         """
         return self._request("GET", "emailer_schedules")
 
     # ------------------------------------------------------------------
     # Sequences
     #
-    # ⚠️ Deux familles de chemin, PAS une incohérence : create/update utilisent
-    # `/sequences[...]` (REST plus récent), tout le reste — search, contacts,
-    # activate/deactivate/archive — reste sur l'objet legacy `/emailer_campaigns`.
-    # Vérifié endpoint par endpoint dans la doc Apollo (2026-08-20) ; pas encore
-    # rejoué en vrai (pas de clé dans cet environnement) — à confirmer au premier
-    # run réel plutôt qu'à supposer une symétrie qui n'existe pas.
+    # ⚠️ Two path families, NOT an inconsistency: create/update use
+    # `/sequences[...]` (newer REST), everything else — search, contacts,
+    # activate/deactivate/archive — stays on the legacy `/emailer_campaigns` object.
+    # Verified endpoint by endpoint in the Apollo doc (2026-08-20); not yet
+    # replayed for real (no key in this environment) — to be confirmed on the first
+    # real run rather than assuming a symmetry that does not exist.
     # ------------------------------------------------------------------
 
     def search_sequences(
@@ -688,15 +688,15 @@ class ApolloClient:
         page: int = 1,
     ) -> Dict[str, Any]:
         """
-        Search sequences by name (0 crédit).
+        Search sequences by name (0 credit).
 
         Args:
-            name: mots-clés, doit matcher une PARTIE du nom (`q_name` côté API)
-            per_page: résultats par page
-            page: numéro de page
+            name: keywords, must match a PART of the name (`q_name` on the API side)
+            per_page: results per page
+            page: page number
 
         Returns:
-            Dict avec `emailer_campaigns` (liste) et `pagination`
+            Dict with `emailer_campaigns` (list) and `pagination`
         """
         data: Dict[str, Any] = {"per_page": per_page, "page": page}
         if name:
@@ -715,31 +715,31 @@ class ApolloClient:
         **extra: Any,
     ) -> Dict[str, Any]:
         """
-        Create a sequence (0 crédit — le coût est dans l'envoi, pas la création).
+        Create a sequence (0 credit — the cost is in sending, not in creating).
 
         Args:
-            name: nom de la séquence
-            emailer_schedule_id: id d'un planning d'envoi — REQUIS par l'API,
-                obtenu via `list_email_schedules` (aucun défaut implicite documenté)
-            active: activer immédiatement (défaut False — préférer `activate_sequence`
-                une fois les étapes/templates relus)
-            label_names: labels à appliquer (créés si absents)
-            folder_id: id de dossier Apollo
-            max_emails_per_day: plafond d'envoi quotidien
-            emailer_steps: définition des étapes (voir doc Apollo — structure
-                imbriquée, non validée localement)
-            **extra: autres champs documentés (`sequence_by_exact_daytime`,
-                `mark_finished_if_reply`, `mark_paused_if_ooo`, etc.) passés tels quels
+            name: name of the sequence
+            emailer_schedule_id: id of a send schedule — REQUIRED by the API,
+                obtained via `list_email_schedules` (no implicit default documented)
+            active: activate immediately (default False — prefer `activate_sequence`
+                once the steps/templates have been reviewed)
+            label_names: labels to apply (created if absent)
+            folder_id: Apollo folder id
+            max_emails_per_day: daily send ceiling
+            emailer_steps: definition of the steps (see Apollo doc — nested
+                structure, not validated locally)
+            **extra: other documented fields (`sequence_by_exact_daytime`,
+                `mark_finished_if_reply`, `mark_paused_if_ooo`, etc.) passed as is
 
         Returns:
-            Dict avec `emailer_campaign`, `emailer_steps`, `emailer_touches`, `emailer_templates`
+            Dict with `emailer_campaign`, `emailer_steps`, `emailer_touches`, `emailer_templates`
         """
         if not (name or "").strip():
-            raise ValueError("name requis pour créer une séquence")
+            raise ValueError("name required to create a sequence")
         if not (emailer_schedule_id or "").strip():
             raise ValueError(
-                "emailer_schedule_id requis — obtiens-le via list_email_schedules(), "
-                "l'API refuse la création sans planning d'envoi")
+                "emailer_schedule_id required — get it via list_email_schedules(), "
+                "the API refuses creation without a send schedule")
         data: Dict[str, Any] = {
             "name": name,
             "emailer_schedule_id": emailer_schedule_id,
@@ -758,45 +758,45 @@ class ApolloClient:
 
     def update_sequence(self, sequence_id: str, **fields: Any) -> Dict[str, Any]:
         """
-        Update a sequence (0 crédit). Tous les champs sont optionnels côté API —
-        seuls ceux passés ici sont envoyés.
+        Update a sequence (0 credit). All fields are optional on the API side —
+        only those passed here are sent.
 
         Args:
-            sequence_id: id Apollo de la séquence
+            sequence_id: Apollo id of the sequence
             **fields: `name`, `active`, `emailer_schedule_id`, `label_names`,
                 `max_emails_per_day`, `cc_emails`, `bcc_emails`, `emailer_steps`
-                (inclure `id` par step pour MODIFIER, l'omettre pour EN CRÉER une),
-                `sharing_permission`, etc. — voir doc Apollo
+                (include `id` per step to MODIFY, omit it to CREATE one),
+                `sharing_permission`, etc. — see Apollo doc
 
         Returns:
-            Séquence mise à jour
+            Updated sequence
         """
         if not (sequence_id or "").strip():
-            raise ValueError("sequence_id requis")
+            raise ValueError("sequence_id required")
         return self._request("PUT", f"sequences/{sequence_id}", json=fields)
 
     def activate_sequence(self, sequence_id: str) -> Dict[str, Any]:
         """
-        Activate a sequence — démarre l'envoi programmé (0 crédit à l'appel,
-        les crédits sont consommés au fil des envois/reveals).
+        Activate a sequence — starts the scheduled sending (0 credit at call time,
+        credits are consumed as sends/reveals go out).
 
-        ⚠️ Échoue en 422 si la séquence est déjà active ou n'a pas d'étape.
+        ⚠️ Fails with 422 if the sequence is already active or has no step.
         """
         if not (sequence_id or "").strip():
-            raise ValueError("sequence_id requis")
+            raise ValueError("sequence_id required")
         return self._request("POST", f"emailer_campaigns/{sequence_id}/approve")
 
     def deactivate_sequence(self, sequence_id: str) -> Dict[str, Any]:
-        """Deactivate a sequence (0 crédit). 422 si déjà inactive."""
+        """Deactivate a sequence (0 credit). 422 if already inactive."""
         if not (sequence_id or "").strip():
-            raise ValueError("sequence_id requis")
+            raise ValueError("sequence_id required")
         return self._request("POST", f"emailer_campaigns/{sequence_id}/abort")
 
     def archive_sequence(self, sequence_id: str) -> Dict[str, Any]:
-        """Archive a sequence (0 crédit). Nécessite d'en être propriétaire ou
-        d'avoir un accès partagé « full access »."""
+        """Archive a sequence (0 credit). Requires being its owner or
+        having "full access" shared access."""
         if not (sequence_id or "").strip():
-            raise ValueError("sequence_id requis")
+            raise ValueError("sequence_id required")
         return self._request("POST", f"emailer_campaigns/{sequence_id}/archive")
 
     def add_contacts_to_sequence(
@@ -810,51 +810,51 @@ class ApolloClient:
         **flags: Any,
     ) -> Dict[str, Any]:
         """
-        Enroll contacts in a sequence — l'appel le plus à risque de ce client :
-        il démarre une campagne automatisée MULTI-ÉTAPES vers des personnes réelles,
-        pas un envoi unique. 0 crédit à l'appel (les envois/reveals suivants coûtent).
+        Enroll contacts in a sequence — the riskiest call of this client:
+        it starts a MULTI-STEP automated campaign toward real people,
+        not a single send. 0 credit at call time (the following sends/reveals cost).
 
         Args:
-            sequence_id: id Apollo de la séquence
-            send_email_from_email_account_id: id (ou liste d'ids pour rotation) de
-                la boîte CONNECTÉE qui enverra — REQUIS par l'API, obtenu via
-                `list_email_accounts`. Verrou local ci-dessous, même logique que
-                Lightfield `_check_from` : sans boîte explicite, aucun appel ne part.
-            contact_ids: ids Apollo des contacts (mutuellement substituable à `label_names`)
-            label_names: labels identifiant les contacts à ajouter
-            send_email_from_email_address: adresse précise dans le compte (si multi-alias)
-            status: `"active"` ou `"paused"` à l'ajout
+            sequence_id: Apollo id of the sequence
+            send_email_from_email_account_id: id (or list of ids for rotation) of
+                the CONNECTED mailbox that will send — REQUIRED by the API, obtained via
+                `list_email_accounts`. Local lock below, same logic as
+                Lightfield `_check_from`: without an explicit mailbox, no call goes out.
+            contact_ids: Apollo ids of the contacts (mutually substitutable with `label_names`)
+            label_names: labels identifying the contacts to add
+            send_email_from_email_address: precise address within the account (if multi-alias)
+            status: `"active"` or `"paused"` on adding
             **flags: `sequence_no_email`, `sequence_unverified_email`,
                 `sequence_job_change`, `sequence_active_in_other_campaigns`,
                 `sequence_finished_in_other_campaigns`,
                 `sequence_same_company_in_same_campaign`,
                 `contacts_without_ownership_permission`, `add_if_in_queue`,
                 `contact_verification_skipped`, `user_id`, `auto_unpause_at` —
-                tous des garde-fous Apollo à `False`/absent par défaut ; les passer
-                explicitement à `True` pour les lever
+                all Apollo safeguards at `False`/absent by default; pass them
+                explicitly as `True` to lift them
 
-        ⚠️ Doc Apollo : 403 « Master API key required » sur cet endpoint — à
-        confirmer avec une clé réelle, pas vérifié depuis cet environnement.
+        ⚠️ Apollo doc: 403 "Master API key required" on this endpoint — to be
+        confirmed with a real key, not verified from this environment.
 
         Returns:
-            Dict avec `contacts` (ajoutés), `skipped_contact_ids` (id → raison),
+            Dict with `contacts` (added), `skipped_contact_ids` (id → reason),
             `emailer_campaign`, `emailer_steps`, `emailer_touches`
         """
         if not (sequence_id or "").strip():
-            raise ValueError("sequence_id requis")
+            raise ValueError("sequence_id required")
         if not send_email_from_email_account_id:
             raise ValueError(
-                "send_email_from_email_account_id requis — obtiens-le via "
-                "list_email_accounts() : sans boîte CONNECTÉE explicite, l'API "
-                "refuse d'enrôler les contacts (et sans ce verrou, un appel "
-                "partirait sur un défaut qu'on ne contrôle pas)")
+                "send_email_from_email_account_id required — get it via "
+                "list_email_accounts(): without an explicit CONNECTED mailbox, the API "
+                "refuses to enroll the contacts (and without this lock, a call "
+                "would go out on a default we do not control)")
         if not contact_ids and not label_names:
-            raise ValueError("contact_ids ou label_names requis (au moins un des deux)")
+            raise ValueError("contact_ids or label_names required (at least one of the two)")
         params: Dict[str, Any] = {
-            # `emailer_campaign_id` en DOUBLE du segment de chemin — pas redondant,
-            # vérifié en LIVE le 2026-08-20 : sans lui, 422 « Please
-            # specify a emailer_campaign_id and send_email_from_email_account_id »
-            # MÊME avec l'id déjà dans l'URL.
+            # `emailer_campaign_id` DOUBLED with the path segment — not redundant,
+            # verified LIVE on 2026-08-20: without it, 422 "Please
+            # specify a emailer_campaign_id and send_email_from_email_account_id"
+            # EVEN with the id already in the URL.
             "emailer_campaign_id": sequence_id,
             "send_email_from_email_account_id": send_email_from_email_account_id,
         }
@@ -867,9 +867,9 @@ class ApolloClient:
         if status:
             params["status"] = status
         params.update(flags)
-        # Query params (doc Apollo), PAS un body JSON — un champ envoyé en `json`
-        # ici serait ignoré en silence, même défaut que `organization_domain`
-        # historique sur `match_person` (cf. commentaire plus haut dans ce fichier).
+        # Query params (Apollo doc), NOT a JSON body — a field sent as `json`
+        # here would be silently ignored, same flaw as the historical `organization_domain`
+        # on `match_person` (see the comment earlier in this file).
         return self._request(
             "POST", f"emailer_campaigns/{sequence_id}/add_contact_ids", params=params)
 
@@ -880,24 +880,24 @@ class ApolloClient:
         mode: str,
     ) -> Dict[str, Any]:
         """
-        Mark-as-finished / remove / stop des contacts dans une ou plusieurs
-        séquences (0 crédit).
+        Mark-as-finished / remove / stop contacts in one or more
+        sequences (0 credit).
 
         Args:
-            emailer_campaign_ids: ids Apollo des séquences concernées
-            contact_ids: ids Apollo des contacts concernés
-            mode: `"mark_as_finished"` (termine), `"remove"` (retire de la
-                séquence) ou `"stop"` (arrête la progression)
+            emailer_campaign_ids: Apollo ids of the sequences concerned
+            contact_ids: Apollo ids of the contacts concerned
+            mode: `"mark_as_finished"` (finishes), `"remove"` (removes from the
+                sequence) or `"stop"` (stops progression)
 
         Returns:
-            Dict avec `entity_progress_job` (job async — pas de statut final ici)
+            Dict with `entity_progress_job` (async job — no final status here)
         """
         if not emailer_campaign_ids:
-            raise ValueError("emailer_campaign_ids requis")
+            raise ValueError("emailer_campaign_ids required")
         if not contact_ids:
-            raise ValueError("contact_ids requis")
+            raise ValueError("contact_ids required")
         if mode not in ("mark_as_finished", "remove", "stop"):
-            raise ValueError('mode doit être "mark_as_finished", "remove" ou "stop"')
+            raise ValueError('mode must be "mark_as_finished", "remove" or "stop"')
         params = {
             "emailer_campaign_ids[]": emailer_campaign_ids,
             "contact_ids[]": contact_ids,
@@ -913,18 +913,18 @@ class ApolloClient:
         per_page: int = 50,
     ) -> Dict[str, Any]:
         """
-        Sequence activity feed for one contact (0 crédit).
+        Sequence activity feed for one contact (0 credit).
 
         Args:
-            contact_id: id Apollo du contact — doit appartenir à ton équipe (404 sinon)
-            sequence_id: filtre sur une séquence (toutes si omis)
-            per_page: 1-50, les événements les PLUS RÉCENTS (pas une pagination)
+            contact_id: Apollo id of the contact — must belong to your team (404 otherwise)
+            sequence_id: filter on one sequence (all if omitted)
+            per_page: 1-50, the MOST RECENT events (not pagination)
 
         Returns:
-            Dict avec `events` (ordre du plus récent au plus ancien, max `per_page`)
+            Dict with `events` (order from most recent to oldest, max `per_page`)
         """
         if not (contact_id or "").strip():
-            raise ValueError("contact_id requis")
+            raise ValueError("contact_id required")
         data: Dict[str, Any] = {"contact_id": contact_id, "per_page": per_page}
         if sequence_id:
             data["sequence_id"] = sequence_id
@@ -933,10 +933,10 @@ class ApolloClient:
     # ------------------------------------------------------------------
     # One-off emails
     #
-    # ⚠️ Brouillon et envoi restent deux appels distincts (create_email_draft
-    # PUIS send_email_now), jamais fusionnés — même choix que Lightfield
-    # (`draft_email`/`send_email`) et pour la même raison : que rien ne
-    # confonde « préparer » et « envoyer ».
+    # ⚠️ Draft and send remain two distinct calls (create_email_draft
+    # THEN send_email_now), never merged — same choice as Lightfield
+    # (`draft_email`/`send_email`) and for the same reason: so that nothing
+    # confuses "prepare" and "send".
     # ------------------------------------------------------------------
 
     def create_email_draft(
@@ -952,32 +952,32 @@ class ApolloClient:
         outreach_task_id: str = None,
     ) -> Dict[str, Any]:
         """
-        Create an email draft (ne part PAS — utiliser send_email_now pour envoyer).
+        Create an email draft (does NOT go out — use send_email_now to send).
 
         Args:
-            contact_id: id Apollo du destinataire — requis SAUF si
-                `in_response_to_emailer_message_id` est fourni (réponse à un fil)
-            subject / body_html: contenu (l'API assainit le HTML)
+            contact_id: Apollo id of the recipient — required UNLESS
+                `in_response_to_emailer_message_id` is provided (reply to a thread)
+            subject / body_html: content (the API sanitizes the HTML)
             recipients: `[{"email":, "contact_id":, "recipient_type_cd": "to"|"cc"|"bcc"}]`
-            in_response_to_emailer_message_id: id du message parent (fil de réponse)
-            emailer_template_id: template Apollo à associer
-            attachment_ids: ids de pièces jointes Apollo (issus d'un cycle d'upload
-                hors périmètre de ce client — non fabriqués ici, cf. limite similaire
-                documentée sur Lightfield `send_email`)
-            enable_tracking: activer le suivi ouverture/clic
-            outreach_task_id: tâche Apollo à lier au brouillon
+            in_response_to_emailer_message_id: id of the parent message (reply thread)
+            emailer_template_id: Apollo template to associate
+            attachment_ids: ids of Apollo attachments (from an upload cycle
+                outside the scope of this client — not fabricated here, see the similar limit
+                documented on Lightfield `send_email`)
+            enable_tracking: enable open/click tracking
+            outreach_task_id: Apollo task to link to the draft
 
-        ⚠️ Aucun champ de boîte d'envoi (`email_account_id`/`from`) n'est documenté
-        sur CET endpoint — la boîte se décide à `send_email_now` (implicitement, ou
-        via la boîte par défaut du compte). Pas de verrou local équivalent à
-        `add_contacts_to_sequence` ici : rien à vérifier avant l'écriture du brouillon.
+        ⚠️ No sending mailbox field (`email_account_id`/`from`) is documented
+        on THIS endpoint — the mailbox is decided at `send_email_now` (implicitly, or
+        via the account's default mailbox). No local lock equivalent to
+        `add_contacts_to_sequence` here: nothing to check before writing the draft.
 
         Returns:
-            Dict avec `emailer_message` (status `"drafted"`), `task` si lié
+            Dict with `emailer_message` (status `"drafted"`), `task` if linked
         """
         if not contact_id and not in_response_to_emailer_message_id:
             raise ValueError(
-                "contact_id requis, sauf en réponse à un fil "
+                "contact_id required, except when replying to a thread "
                 "(in_response_to_emailer_message_id)")
         data: Dict[str, Any] = {}
         if contact_id:
@@ -1002,18 +1002,18 @@ class ApolloClient:
 
     def send_email_now(self, message_id: str, surface: str = None) -> Dict[str, Any]:
         """
-        Send an existing draft NOW — le seul geste de ce client qui atteint une
-        personne réelle par email direct (hors séquence). Irréversible.
+        Send an existing draft NOW — the only action of this client that reaches a
+        real person by direct email (outside a sequence). Irreversible.
 
         Args:
-            message_id: id rendu par create_email_draft
-            surface: attribution interne Apollo (optionnel, ex. "emails")
+            message_id: id returned by create_email_draft
+            surface: internal Apollo attribution (optional, e.g. "emails")
 
         Returns:
-            Dict avec `emailer_message` (status mis à jour), `task` si lié
+            Dict with `emailer_message` (status updated), `task` if linked
         """
         if not (message_id or "").strip():
-            raise ValueError("message_id requis")
+            raise ValueError("message_id required")
         data: Dict[str, Any] = {}
         if surface:
             data["surface"] = surface
@@ -1021,17 +1021,17 @@ class ApolloClient:
 
     def check_email_send_status(self, message_id: str) -> Dict[str, Any]:
         """
-        Poll the send status of a message (0 crédit).
+        Poll the send status of a message (0 credit).
 
         Args:
-            message_id: id du message (rendu par create_email_draft/send_email_now)
+            message_id: id of the message (returned by create_email_draft/send_email_now)
 
         Returns:
-            Dict avec `status`, et selon l'état : `completed_at`, ou
-            `failure_reason`/`not_sent_reason`/`failed_at`, ou `retry_after_seconds`
+            Dict with `status`, and depending on the state: `completed_at`, or
+            `failure_reason`/`not_sent_reason`/`failed_at`, or `retry_after_seconds`
         """
         if not (message_id or "").strip():
-            raise ValueError("message_id requis")
+            raise ValueError("message_id required")
         return self._request("POST", "emailer_messages/email_send_status", json={"id": message_id})
 
     def search_emails(
@@ -1048,31 +1048,31 @@ class ApolloClient:
         page: int = 1,
     ) -> Dict[str, Any]:
         """
-        Search sent/outreach emails (0 crédit). Plafond amont : 50 000 résultats
-        affichables (100/page × 500 pages).
+        Search sent/outreach emails (0 credit). Upstream ceiling: 50,000 displayable
+        results (100/page × 500 pages).
 
         Args:
-            stats: statuts (`delivered`, `scheduled`, `drafted`, `not_opened`,
+            stats: statuses (`delivered`, `scheduled`, `drafted`, `not_opened`,
                 `opened`, `clicked`, `unsubscribed`, `demoed`, `bounced`,
                 `spam_blocked`, `failed_other`)
-            reply_classes: sentiment de la réponse (`willing_to_meet`,
+            reply_classes: reply sentiment (`willing_to_meet`,
                 `follow_up_question`, `person_referral`, `out_of_office`,
                 `already_left_company_or_not_right_person`, `not_interested`,
                 `unsubscribe`, `none_of_the_above`)
-            sequence_ids / exclude_sequence_ids: inclure/exclure par séquence
-            keywords: recherche plein texte (`q_keywords`)
-            date_range_mode: `"due_at"` ou `"completed_at"`
-            date_min / date_max: bornes `YYYY-MM-DD`
-            per_page: ≤100. page: numéro de page
+            sequence_ids / exclude_sequence_ids: include/exclude by sequence
+            keywords: full-text search (`q_keywords`)
+            date_range_mode: `"due_at"` or `"completed_at"`
+            date_min / date_max: `YYYY-MM-DD` bounds
+            per_page: ≤100. page: page number
 
-        ⚠️ `page`/`per_page` sont doc-claimed, pas vérifiés : le compte de test
-        (2026-08-20) avait 0 email envoyé — la requête rend 200 dans les
-        deux cas, sans doublon d'un résultat NON VIDE pour confirmer qu'ils sont
-        honorés (vs. ignorés en silence, comme `organization_domain` l'a été
-        ailleurs dans ce fichier).
+        ⚠️ `page`/`per_page` are doc-claimed, not verified: the test account
+        (2026-08-20) had 0 emails sent — the request returns 200 in both
+        cases, with no non-EMPTY result to compare for duplicates and confirm they are
+        honored (vs. silently ignored, as `organization_domain` was
+        elsewhere in this file).
 
         Returns:
-            Dict avec `emailer_messages`, `emailer_steps`
+            Dict with `emailer_messages`, `emailer_steps`
         """
         params: Dict[str, Any] = {"page": page, "per_page": per_page}
         if stats:
@@ -1095,20 +1095,20 @@ class ApolloClient:
 
     def get_email_content(self, ids: List[str], body_format: str = "plain") -> Dict[str, Any]:
         """
-        Fetch the body of up to 10 SENT emails (0 crédit).
+        Fetch the body of up to 10 SENT emails (0 credit).
 
         Args:
-            ids: ids Apollo des emails envoyés — 10 max, le surplus est ignoré
-                EN SILENCE côté API (pas d'erreur)
-            body_format: `"plain"` (défaut) ou `"html"` — toute autre valeur
-                retombe silencieusement sur `"plain"` côté API
+            ids: Apollo ids of the sent emails — 10 max, the excess is ignored
+                SILENTLY on the API side (no error)
+            body_format: `"plain"` (default) or `"html"` — any other value
+                silently falls back to `"plain"` on the API side
 
         Returns:
-            Dict avec `emailer_messages` (dans l'ordre demandé ; ids sans match
-            omis en silence — seuls les emails effectivement ENVOYÉS sont rendus)
+            Dict with `emailer_messages` (in the requested order; ids without a match
+            silently omitted — only emails actually SENT are returned)
         """
         if not ids:
-            raise ValueError("ids requis (au moins un)")
+            raise ValueError("ids required (at least one)")
         data: Dict[str, Any] = {"ids": ids[:10]}
         if body_format:
             data["body_format"] = body_format
@@ -1116,26 +1116,26 @@ class ApolloClient:
 
     def get_email_stats(self, message_id: str) -> Dict[str, Any]:
         """
-        Open/click stats for one sent email (0 crédit).
+        Open/click stats for one sent email (0 credit).
 
-        ⚠️ Doc Apollo : nécessite une clé « Master » et n'est PAS disponible en
-        OAuth — à confirmer avec une clé réelle, pas vérifié depuis cet
-        environnement (403 sinon).
+        ⚠️ Apollo doc: requires a "Master" key and is NOT available with
+        OAuth — to be confirmed with a real key, not verified from this
+        environment (403 otherwise).
 
         Args:
-            message_id: id du message — obtenu via search_emails
+            message_id: id of the message — obtained via search_emails
 
         Returns:
-            Dict avec `emailer_message` (`num_opens`, `num_clicks`, ...), `activities`
+            Dict with `emailer_message` (`num_opens`, `num_clicks`, ...), `activities`
         """
         if not (message_id or "").strip():
-            raise ValueError("message_id requis")
+            raise ValueError("message_id required")
         return self._request("GET", f"emailer_messages/{message_id}/activities")
 
     # ------------------------------------------------------------------
-    # Conversations (appels/visios enregistrés — coût conditionnel : 1 crédit
-    # seulement si la conversation a des insights IA, 0 sinon — imprévisible
-    # avant l'appel, donc pas métré ici ; connecteur byo-only côté backend)
+    # Conversations (recorded calls/video meetings — conditional cost: 1 credit
+    # only if the conversation has AI insights, 0 otherwise — unpredictable
+    # before the call, hence not metered here; byo-only connector on the backend side)
     # ------------------------------------------------------------------
 
     def search_conversations(
@@ -1151,17 +1151,17 @@ class ApolloClient:
         page: int = 1,
     ) -> Dict[str, Any]:
         """
-        Search recorded conversations (0 crédit — le coût est sur get_conversation).
+        Search recorded conversations (0 credit — the cost is on get_conversation).
 
         Args:
-            conversation_type: `"video_conference"` ou `"phone_call"`
-            account_id: filtre par compte Apollo
-            contact_ids / organization_ids / tag_ids / tracker_ids: filtres
+            conversation_type: `"video_conference"` or `"phone_call"`
+            account_id: filter by Apollo account
+            contact_ids / organization_ids / tag_ids / tracker_ids: filters
             date_range: `{"start": ISO8601, "end": ISO8601}`
-            per_page: résultats par page. page: numéro de page
+            per_page: results per page. page: page number
 
         Returns:
-            Dict avec `conversations`, `pagination`
+            Dict with `conversations`, `pagination`
         """
         data: Dict[str, Any] = {"page": page, "num_fetch_result": per_page}
         if conversation_type:
@@ -1182,43 +1182,43 @@ class ApolloClient:
 
     def get_conversation(self, conversation_id: str) -> Dict[str, Any]:
         """
-        Get one conversation — transcript, enregistrement, participants.
+        Get one conversation — transcript, recording, participants.
 
-        ⚠️ 1 crédit Apollo SI la conversation a des insights IA, 0 sinon —
-        imprévisible avant l'appel (pas un coût fixe qu'on peut prédire ni métrer
+        ⚠️ 1 Apollo credit IF the conversation has AI insights, 0 otherwise —
+        unpredictable before the call (not a fixed cost that can be predicted or metered
         a priori).
 
         Args:
-            conversation_id: id de conversation — accepte `id_shareid`
+            conversation_id: conversation id — accepts `id_shareid`
 
         Returns:
-            Dict avec `transcript`, `participants`, `video_recording`/`audio_recording`,
+            Dict with `transcript`, `participants`, `video_recording`/`audio_recording`,
             `opportunities`
         """
         if not (conversation_id or "").strip():
-            raise ValueError("conversation_id requis")
+            raise ValueError("conversation_id required")
         return self._request("GET", f"conversations/{conversation_id}")
 
     def export_conversations(self, start_time: str, end_time: str, email: str) -> Dict[str, Any]:
         """
         Kick off an async export of conversations over a time range.
 
-        N'attend PAS la fin de l'export — rend un `export_id` à repasser à
-        `get_conversations_export` pour poller (asynchrone côté Apollo ; ne pas
-        bloquer dessus côté appelant — un export peut prendre largement plus que
-        le timeout d'invocation d'un outil).
+        Does NOT wait for the export to finish — returns an `export_id` to pass to
+        `get_conversations_export` to poll (asynchronous on the Apollo side; do not
+        block on it on the caller side — an export can take far longer than
+        the invocation timeout of a tool).
 
         Args:
-            start_time / end_time: bornes ISO 8601 en GMT, `start_time` < `end_time`
-            email: adresse d'un membre de l'équipe à notifier quand l'export est prêt
+            start_time / end_time: ISO 8601 bounds in GMT, `start_time` < `end_time`
+            email: address of a team member to notify when the export is ready
 
         Returns:
-            Dict avec `export_url`, `export_id`
+            Dict with `export_url`, `export_id`
         """
         if not (start_time or "").strip() or not (end_time or "").strip():
-            raise ValueError("start_time et end_time requis (ISO 8601)")
+            raise ValueError("start_time and end_time required (ISO 8601)")
         if not (email or "").strip():
-            raise ValueError("email requis (notification à un membre de l'équipe)")
+            raise ValueError("email required (notification to a team member)")
         data = {"start_time": start_time, "end_time": end_time, "email": email}
         return self._request("POST", "conversations/export", json=data)
 
@@ -1227,71 +1227,71 @@ class ApolloClient:
         Poll an export started by export_conversations.
 
         Args:
-            export_id: id rendu par export_conversations
+            export_id: id returned by export_conversations
 
         Returns:
-            Dict avec `redirect_url` (URL signée de téléchargement) une fois prêt
+            Dict with `redirect_url` (signed download URL) once ready
         """
         if not (export_id or "").strip():
-            raise ValueError("export_id requis")
+            raise ValueError("export_id required")
         return self._request("GET", f"conversations/export/{export_id}")
 
     # ------------------------------------------------------------------
-    # Contacts — les personnes DANS l'espace de travail du propriétaire de la
-    # clé, PAS la base partagée Apollo. C'est une frontière de données, pas de
-    # verbe : `people/*` interroge les ~275M profils que tout le monde voit,
-    # `contacts/*` ne voit que ce que CETTE équipe a enregistré.
+    # Contacts — the people IN the key owner's workspace,
+    # NOT the shared Apollo database. This is a data boundary, not a verb
+    # boundary: `people/*` queries the ~275M profiles everyone sees,
+    # `contacts/*` only sees what THIS team has saved.
     #
-    # Les trois endpoints coûtent **0 crédit** (doc Apollo, vérifiée le
-    # 2026-08-22) — c'est la raison d'être de `get_contact` : relire un contact
-    # qu'on possède déjà ne doit pas repayer le crédit de `match_person`.
+    # All three endpoints cost **0 credit** (Apollo doc, verified on
+    # 2026-08-22) — that is the whole point of `get_contact`: re-reading a contact
+    # we already own must not pay again the credit of `match_person`.
     #
-    # ⚠️ Les trois demandent une clé **Master** (ou le scope nommé :
+    # ⚠️ All three require a **Master** key (or the named scope:
     # `api/v1/typed_custom_fields/index`, `api/v1/contacts/show`,
-    # `api/v1/contacts/update`) et rendent 403 sinon. Non rejoué en vrai (pas de clé Apollo dans cet
-    # environnement) — même réserve que les séquences ci-dessus.
+    # `api/v1/contacts/update`) and return 403 otherwise. Not replayed for real (no Apollo key in this
+    # environment) — same caveat as the sequences above.
     # ------------------------------------------------------------------
 
     def list_typed_custom_fields(self) -> Dict[str, Any]:
         """
-        List the custom field definitions of this Apollo team (0 crédit).
+        List the custom field definitions of this Apollo team (0 credit).
 
-        C'est l'endpoint qui donne les **ids** que `update_contact` exige :
-        `typed_custom_fields` est keyé par ID, pas par nom. Sans ce catalogue on
-        ne peut pas écrire un champ personnalisé, seulement le deviner.
+        This is the endpoint that gives the **ids** that `update_contact` requires:
+        `typed_custom_fields` is keyed by ID, not by name. Without this catalog we
+        cannot write a custom field, only guess it.
 
-        ⚠️ **Apollo marque cet endpoint déprécié au profit de `GET /fields`
-        (source=custom) — on reste ICI sciemment, et ce choix ne doit pas être
-        « modernisé » sans vérifier ce point** : les deux catalogues ne rendent
-        pas la même forme d'id. `typed_custom_fields` rend l'ObjectId NU
-        (`"<objectid>"`, 24 hexa), qui est exactement la clé attendue par
-        `PATCH /contacts/{id}` ; `/fields` rend un id PRÉFIXÉ de sa modalité
-        (`"account.<objectid>"`, `"contact.id"`), qu'aucune doc
-        n'autorise à découper. Prendre le catalogue « moderne » ferait donc
-        écrire des clés qu'Apollo ignore en silence, en rendant 200.
-        (Doc Apollo vérifiée le 2026-08-22 ; non rejoué en vrai, pas de clé ici.)
+        ⚠️ **Apollo marks this endpoint deprecated in favor of `GET /fields`
+        (source=custom) — we stay HERE deliberately, and this choice must not be
+        "modernized" without checking this point**: the two catalogs do not return
+        the same id shape. `typed_custom_fields` returns the BARE ObjectId
+        (`"<objectid>"`, 24 hex), which is exactly the key expected by
+        `PATCH /contacts/{id}`; `/fields` returns an id PREFIXED with its modality
+        (`"account.<objectid>"`, `"contact.id"`), which no doc
+        allows us to split. Taking the "modern" catalog would therefore make us
+        write keys that Apollo silently ignores, while returning 200.
+        (Apollo doc verified on 2026-08-22; not replayed for real, no key here.)
 
         Returns:
-            Dict avec `typed_custom_fields` : chaque entrée porte `id`
-            (ObjectId nu), `name`, `modality` (contact/account/opportunity),
+            Dict with `typed_custom_fields`: each entry carries `id`
+            (bare ObjectId), `name`, `modality` (contact/account/opportunity),
             `type` (text, number, date, datetime, boolean, picklist,
-            multi_select, url, email, phone, currency) et, pour une picklist,
-            `picklist_values` — dont il faut envoyer l'`id`, pas le `name`.
+            multi_select, url, email, phone, currency) and, for a picklist,
+            `picklist_values` — whose `id` must be sent, not the `name`.
         """
         return self._request("GET", "typed_custom_fields")
 
-    # Champs de tri documentés. Un nom hors liste est REFUSÉ plutôt qu'envoyé :
-    # Apollo ignore un tri qu'il ne connaît pas et rend son ordre par défaut, que
-    # l'appelant lira comme « voilà les plus récemment modifiés ».
+    # Documented sort fields. A name outside the list is REFUSED rather than sent:
+    # Apollo ignores a sort it does not know and returns its default order, which the
+    # caller will read as "here are the most recently modified".
     CONTACT_SORT_FIELDS = (
         "contact_last_activity_date", "contact_email_last_opened_at",
         "contact_email_last_clicked_at", "contact_created_at",
         "contact_updated_at",
     )
 
-    # Types acceptés à la création d'un champ personnalisé. ⚠️ `string` est BORNÉ
-    # (`text_field_max_length`, 120 par défaut côté Apollo) : un texte plus long y
-    # est tronqué. Pour une phrase d'accroche ou un corps d'email, c'est `textarea`.
+    # Types accepted when creating a custom field. ⚠️ `string` is BOUNDED
+    # (`text_field_max_length`, 120 by default on the Apollo side): a longer text is
+    # truncated there. For a hook sentence or an email body, use `textarea`.
     CUSTOM_FIELD_TYPES = (
         "string", "textarea", "number", "date", "datetime", "boolean",
     )
@@ -1305,42 +1305,42 @@ class ApolloClient:
         max_length: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Declare a new custom field on this Apollo team (0 crédit).
+        Declare a new custom field on this Apollo team (0 credit).
 
-        Geste de MISE EN PLACE, joué une fois par champ : c'est l'équivalent API
-        de Settings → Custom Fields, pour qui n'a pas accès à l'interface du
-        compte Apollo.
+        SETUP action, played once per field: it is the API equivalent of
+        Settings → Custom Fields, for whoever has no access to the Apollo
+        account interface.
 
-        ⚠️ **Apollo ne déduplique pas sur le libellé.** Rejouer cet appel crée un
-        SECOND champ portant le même nom, et rien ne le signale. Les deux
-        apparaissent au catalogue, la variable d'une séquence en désigne UN, et
-        les écritures qui visent l'autre n'apparaissent nulle part. Lire
-        `list_typed_custom_fields()` avant de créer.
+        ⚠️ **Apollo does not deduplicate on the label.** Replaying this call creates a
+        SECOND field with the same name, and nothing signals it. Both
+        appear in the catalog, a sequence variable designates ONE, and
+        writes aimed at the other appear nowhere. Read
+        `list_typed_custom_fields()` before creating.
 
         Args:
-            label: nom du champ tel qu'il s'affichera
+            label: name of the field as it will be displayed
             modality: `contact` | `account` | `opportunity`
-            field_type: cf. CUSTOM_FIELD_TYPES — `textarea` pour un texte long,
-                `string` étant borné et tronquant en silence
-            max_length: longueur max (texte seulement)
+            field_type: see CUSTOM_FIELD_TYPES — `textarea` for a long text,
+                `string` being bounded and silently truncating
+            max_length: max length (text only)
 
         Returns:
-            Dict avec `typed_custom_fields` : le champ créé, dont l'`id` — NU,
-            directement utilisable en clé de `typed_custom_fields`.
+            Dict with `typed_custom_fields`: the created field, whose `id` is BARE,
+            directly usable as a key of `typed_custom_fields`.
         """
         if not (label or "").strip():
-            raise ValueError("label requis (le nom du champ)")
+            raise ValueError("label required (the name of the field)")
         if modality not in self.CUSTOM_FIELD_MODALITIES:
             raise ValueError(
-                f"modality invalide : {modality!r} — attendu parmi "
+                f"invalid modality: {modality!r} — expected one of "
                 f"{list(self.CUSTOM_FIELD_MODALITIES)}")
         if field_type not in self.CUSTOM_FIELD_TYPES:
             raise ValueError(
-                f"field_type invalide : {field_type!r} — attendu parmi "
+                f"invalid field_type: {field_type!r} — expected one of "
                 f"{list(self.CUSTOM_FIELD_TYPES)}")
         if max_length is not None and field_type not in ("string", "textarea"):
             raise ValueError(
-                f"max_length n'a de sens que sur un champ texte, pas sur "
+                f"max_length only makes sense on a text field, not on "
                 f"{field_type!r}")
         data: Dict[str, Any] = {
             "label": label, "modality": modality, "type": field_type}
@@ -1359,36 +1359,36 @@ class ApolloClient:
         page: int = 1,
     ) -> Dict[str, Any]:
         """
-        Search the contacts SAVED BY THIS TEAM (0 crédit).
+        Search the contacts SAVED BY THIS TEAM (0 credit).
 
-        ⚠️ Ne cherche PAS dans la base Apollo partagée — c'est
-        `search_people`. Ici on ne voit que ce que l'équipe a enregistré ; en
-        retour, c'est le seul endroit qui rende un `id` utilisable comme
-        `contact_id` (et comme `contact_ids` d'un enrôlement en séquence).
+        ⚠️ Does NOT search the shared Apollo database — that is
+        `search_people`. Here we only see what the team has saved; in
+        return, it is the only place that returns an `id` usable as
+        `contact_id` (and as `contact_ids` of a sequence enrollment).
 
         Args:
-            q_keywords: recherche libre sur nom, intitulé, employeur, email
-            contact_stage_ids: ids de stages à inclure
-            contact_label_ids: ids de listes/labels à inclure
-            sort_by_field: parmi CONTACT_SORT_FIELDS
-            sort_ascending: ordre croissant — exige `sort_by_field`
-            per_page: résultats par page (Apollo plafonne à 100)
-            page: numéro de page (Apollo plafonne l'affichage à 500 pages,
-                soit 50 000 enregistrements : au-delà il faut filtrer)
+            q_keywords: free search on name, title, employer, email
+            contact_stage_ids: ids of stages to include
+            contact_label_ids: ids of lists/labels to include
+            sort_by_field: among CONTACT_SORT_FIELDS
+            sort_ascending: ascending order — requires `sort_by_field`
+            per_page: results per page (Apollo caps at 100)
+            page: page number (Apollo caps display at 500 pages,
+                i.e. 50,000 records: beyond that you must filter)
 
         Returns:
-            Dict avec `contacts`, `breadcrumbs`, `pagination`
-            (`page`, `per_page`, `total_entries`, `total_pages`) et
+            Dict with `contacts`, `breadcrumbs`, `pagination`
+            (`page`, `per_page`, `total_entries`, `total_pages`) and
             `partial_results_only`
         """
         if sort_by_field is not None and sort_by_field not in self.CONTACT_SORT_FIELDS:
             raise ValueError(
-                f"sort_by_field invalide : {sort_by_field!r} — attendu parmi "
+                f"invalid sort_by_field: {sort_by_field!r} — expected one of "
                 f"{list(self.CONTACT_SORT_FIELDS)}")
         if sort_ascending is not None and not sort_by_field:
             raise ValueError(
-                "sort_ascending n'a de sens qu'avec sort_by_field — sans lui "
-                "Apollo applique son ordre par défaut et l'ordre demandé est perdu")
+                "sort_ascending only makes sense with sort_by_field — without it "
+                "Apollo applies its default order and the requested order is lost")
         data: Dict[str, Any] = {"per_page": per_page, "page": page}
         if q_keywords:
             data["q_keywords"] = q_keywords
@@ -1404,31 +1404,31 @@ class ApolloClient:
 
     def get_contact(self, contact_id: str) -> Dict[str, Any]:
         """
-        Read one contact of this workspace by its Apollo id (0 crédit).
+        Read one contact of this workspace by its Apollo id (0 credit).
 
-        ⚠️ **Ne coûte rien, contrairement à `match_person`** : relire quelqu'un
-        qu'on possède déjà n'est pas un enrichissement. Passer par `people/match`
-        pour ça brûle un crédit et rend la fiche de la base PARTAGÉE, pas les
-        valeurs que l'équipe a écrites (stage, propriétaire, champs perso).
+        ⚠️ **Costs nothing, unlike `match_person`**: re-reading someone
+        we already own is not an enrichment. Going through `people/match` for that
+        burns a credit and returns the record from the SHARED database, not the
+        values the team wrote (stage, owner, custom fields).
 
         Args:
-            contact_id: id Apollo du contact
+            contact_id: Apollo id of the contact
 
         Returns:
-            Dict avec `contact` (dont `typed_custom_fields`, `label_ids`,
-            `contact_stage_id`, `owner_id`, `phone_numbers`) et `labels`.
+            Dict with `contact` (including `typed_custom_fields`, `label_ids`,
+            `contact_stage_id`, `owner_id`, `phone_numbers`) and `labels`.
 
         Raises:
-            ApolloError: 422 si le contact n'existe pas, a été supprimé, ou
-                n'appartient pas à l'équipe de cette clé.
+            ApolloError: 422 if the contact does not exist, was deleted, or
+                does not belong to this key's team.
         """
         if not (contact_id or "").strip():
-            raise ValueError("contact_id requis")
+            raise ValueError("contact_id required")
         return self._request("GET", f"contacts/{contact_id}")
 
-    # Champs documentés en écriture sur `PATCH /contacts/{id}`. Figés ici plutôt
-    # qu'ouverts au **kwargs libre : un nom de champ inventé part dans le corps,
-    # Apollo l'ignore en silence et rend 200 — l'appelant croit avoir écrit.
+    # Documented writable fields on `PATCH /contacts/{id}`. Frozen here rather than
+    # opened to free **kwargs: an invented field name goes into the body,
+    # Apollo silently ignores it and returns 200 — the caller believes it has written.
     UPDATABLE_CONTACT_FIELDS = (
         "first_name", "last_name", "organization_name", "title", "account_id",
         "email", "website_url", "label_names", "contact_stage_id",
@@ -1438,39 +1438,39 @@ class ApolloClient:
 
     def update_contact(self, contact_id: str, **fields: Any) -> Dict[str, Any]:
         """
-        Update one contact of this workspace (0 crédit). PATCH : les champs
-        non transmis sont laissés INTACTS.
+        Update one contact of this workspace (0 credit). PATCH: fields
+        not transmitted are left INTACT.
 
-        ⚠️ `label_names` fait exception à ce « intact » — Apollo REMPLACE
-        l'appartenance aux listes par ce qu'on envoie. Envoyer une seule liste
-        retire le contact de toutes les autres.
+        ⚠️ `label_names` is an exception to this "intact" — Apollo REPLACES
+        list membership with what is sent. Sending a single list
+        removes the contact from all the others.
 
-        ⚠️ `typed_custom_fields` est keyé par **id** de champ personnalisé, pas
-        par nom : `{"<id du champ>": "2026-08-07"}`. Pour une picklist, la valeur
-        est l'`id` de l'option (`picklist_values[].id`), pas son libellé. Les ids se lisent
-        avec `list_typed_custom_fields()`.
+        ⚠️ `typed_custom_fields` is keyed by custom field **id**, not
+        by name: `{"<field id>": "2026-08-07"}`. For a picklist, the value
+        is the option `id` (`picklist_values[].id`), not its label. The ids are read
+        with `list_typed_custom_fields()`.
 
         Args:
-            contact_id: id Apollo du contact à modifier
-            **fields: parmi UPDATABLE_CONTACT_FIELDS. Un nom hors liste lève
-                ValueError plutôt que de partir se faire ignorer par Apollo.
+            contact_id: Apollo id of the contact to modify
+            **fields: among UPDATABLE_CONTACT_FIELDS. A name outside the list raises
+                ValueError rather than going off to be ignored by Apollo.
 
         Returns:
-            Dict avec le `contact` à jour
+            Dict with the updated `contact`
         """
         if not (contact_id or "").strip():
-            raise ValueError("contact_id requis")
+            raise ValueError("contact_id required")
         unknown = sorted(set(fields) - set(self.UPDATABLE_CONTACT_FIELDS))
         if unknown:
             raise ValueError(
-                f"champs non modifiables sur un contact Apollo : {unknown} — "
-                f"attendu parmi {list(self.UPDATABLE_CONTACT_FIELDS)}")
+                f"fields not modifiable on an Apollo contact: {unknown} — "
+                f"expected one of {list(self.UPDATABLE_CONTACT_FIELDS)}")
         data = {k: v for k, v in fields.items() if v is not None}
         if not data:
-            raise ValueError("aucun champ à modifier")
+            raise ValueError("no field to modify")
         tcf = data.get("typed_custom_fields")
         if tcf is not None and not isinstance(tcf, dict):
             raise ValueError(
-                "typed_custom_fields doit être un objet {id_du_champ: valeur} — "
-                "keyé par l'id rendu par list_typed_custom_fields(), pas par le nom")
+                "typed_custom_fields must be an object {field_id: value} — "
+                "keyed by the id returned by list_typed_custom_fields(), not by name")
         return self._request("PATCH", f"contacts/{contact_id}", json=data)

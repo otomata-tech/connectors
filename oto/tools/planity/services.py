@@ -1,26 +1,25 @@
-"""Le catalogue de prestations, et son prix.
+"""The service catalogue, and its price.
 
-Une prestation n'a pas de champ `price`. Elle a `prices`, un objet à trois formes
-exclusives :
+A service has no `price` field. It has `prices`, an object with three mutually
+exclusive shapes:
 
-- `{"default": <centimes>}` — un prix ferme ;
-- `{"min": <centimes>, "max": <centimes>}` — une fourchette (la couleur, la
-  longueur de cheveux…) ;
-- `{"onQuotation": true}` — sur devis.
+- `{"default": <cents>}` — a firm price;
+- `{"min": <cents>, "max": <cents>}` — a range (colouring, hair length…);
+- `{"onQuotation": true}` — on quotation.
 
-Et elle peut n'en avoir aucune : `prices` est absent d'une prestation sur deux.
+And it may have none at all: `prices` is missing from one service in two.
 
-C'est le bug qui a rendu `price_eur: 0.00` sur TOUT le catalogue : le lecteur
-cherchait `price`, ne le trouvait jamais, et rendait zéro. Un zéro ne lève rien —
-il se lit comme une prestation offerte, et il l'a été pendant des semaines. D'où
-la forme rendue ici : un `kind` qui DIT laquelle des quatre situations on a, plutôt
-qu'un nombre qui ne peut pas dire qu'il n'existe pas.
+That is the bug that returned `price_eur: 0.00` on the WHOLE catalogue: the reader
+looked for `price`, never found it, and returned zero. A zero raises nothing —
+it reads as a free service, and it was for weeks. Hence the shape returned here:
+a `kind` that SAYS which of the four situations we have, rather than a number
+that cannot say it does not exist.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-#: Ce que rend `prix` dans `kind`.
+#: What `prix` returns in `kind`.
 FIXE = "fixed"
 FOURCHETTE = "range"
 SUR_DEVIS = "on_quotation"
@@ -28,7 +27,7 @@ ABSENT = "unpriced"
 
 
 def prix(prestation: dict) -> dict:
-    """Le prix d'une prestation, en CENTIMES, avec la forme qu'il a réellement."""
+    """A service's price, in CENTS, with the shape it actually has."""
     brut = (prestation or {}).get("prices")
     if not isinstance(brut, dict) or not brut:
         return {"kind": ABSENT, "default_cents": None,
@@ -54,12 +53,11 @@ def _centimes(v) -> Optional[int]:
 
 
 def aplatir(catalogue: dict) -> list[dict]:
-    """Le catalogue `{groupe: {children: {prestation}}}` à plat, prix compris.
+    """The catalogue `{group: {children: {service}}}` flattened, prices included.
 
-    La suppression se porte AUX DEUX niveaux : une prestation vivante dans un
-    groupe supprimé ne se propose plus. Les deux dates sont rendues séparément, et
-    `deleted` dit ce qui compte — sans elle, un catalogue périmé se présente comme
-    une offre."""
+    Deletion applies at BOTH levels: a live service inside a deleted group is no
+    longer offered. The two dates are returned separately, and `deleted` says what
+    matters — without it, a stale catalogue presents itself as an offer."""
     sortie = []
     for gid, groupe in (catalogue or {}).items():
         if not isinstance(groupe, dict):

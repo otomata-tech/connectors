@@ -1,20 +1,20 @@
 """SIRENE stock — client HTTP vers `mcp.oto.cx/api/sirene/*`.
 
-Le parquet INSEE complet vit côté serveur, query via DuckDB. Cette classe ne
-télécharge plus rien localement — elle fait des appels REST authentifiés.
+The full INSEE parquet lives server-side, queried via DuckDB. This class no longer
+downloads anything locally — it makes authenticated REST calls.
 
-Auth : token long-lived stocké dans le secret `OTO_API_KEY` (issu depuis
-`app.oto.ninja/account` → "tokens cli"). Override URL : `OTO_API_URL`.
+Auth: long-lived token stored in the `OTO_API_KEY` secret (issued from
+`app.oto.ninja/account` → "tokens cli"). URL override: `OTO_API_URL`.
 
-Use cases couverts :
-- `get_headquarters_addresses(sirens)` — batch enrichissement (1 call HTTP → 1 scan
-  serveur pour toute la liste, via POST /api/sirene/headquarters).
-- `get_all_establishments(siren)` — tous les établissements d'une boîte.
-- `lookup_siret(siret)` — fetch précis par SIRET.
-- `search(...)` — recherche multi-critères (NAF, commune, CP, enseigne, denomination).
+Use cases covered:
+- `get_headquarters_addresses(sirens)` — batch enrichment (1 HTTP call → 1 server
+  scan for the whole list, via POST /api/sirene/headquarters).
+- `get_all_establishments(siren)` — all the establishments of a company.
+- `lookup_siret(siret)` — precise fetch by SIRET.
+- `search(...)` — multi-criteria search (NAF, municipality, postal code, brand name, denomination).
 
-Pas de cache local — chaque appel HTTP. Si tu fais > 1000 lookups, considère
-batcher côté serveur (à dev si besoin).
+No local cache — every call is HTTP. If you do > 1000 lookups, consider
+batching server-side (to be developed if needed).
 """
 from __future__ import annotations
 
@@ -72,8 +72,8 @@ class SireneStock:
         return r.json()
 
     def _post(self, path: str, payload: dict) -> Any:
-        # timeout large : un scan batch côté serveur (parquet distant) peut durer
-        # quelques dizaines de secondes pour une grosse liste.
+        # wide timeout: a server-side batch scan (remote parquet) can take
+        # a few dozen seconds for a big list.
         r = self.session.post(f"{self.base_url}{path}", json=payload, timeout=180)
         if r.status_code >= 400:
             try:
@@ -87,26 +87,26 @@ class SireneStock:
 
     @staticmethod
     def _coord(value: Any) -> Optional[float]:
-        """Coordonnée Lambert, ou None quand l'INSEE ne la diffuse pas.
+        """Lambert coordinate, or None when INSEE does not publish it.
 
-        Le stock porte des SENTINELLES textuelles, pas seulement des nombres :
-        un établissement non diffusible sort `[ND]` dans les colonnes de
-        géolocalisation. Un `float()` nu plantait alors le scan ENTIER — un
-        `--all` sur un NAF (~10 000 établissements) mourait sur la première
-        ligne non diffusible (signal #358). Une coordonnée absente est une
-        donnée manquante ordinaire : le reste de la fiche (adresse, NAF,
-        effectifs) est valide et doit sortir."""
+        The stock carries textual SENTINELS, not just numbers:
+        a non-diffusible establishment comes out as `[ND]` in the
+        geolocation columns. A bare `float()` then crashed the ENTIRE scan — an
+        `--all` on a NAF (~10,000 establishments) died on the first
+        non-diffusible row (signal #358). A missing coordinate is an ordinary
+        missing datum: the rest of the record (address, NAF,
+        headcount) is valid and must come out."""
         if value is None or value == "":
             return None
         try:
             return float(value)
         except (TypeError, ValueError):
-            return None      # `[ND]` et toute autre sentinelle future
+            return None      # `[ND]` and any other future sentinel
 
     @staticmethod
     def _normalize(etab: dict) -> dict:
-        """Normalise un dict établissement (snake_case INSEE) → forme stable
-        pour les consommateurs historiques (street, postal_code, city, status…).
+        """Normalize an establishment dict (INSEE snake_case) → stable shape
+        for the historical consumers (street, postal_code, city, status…).
         """
         if not etab:
             return etab
@@ -135,16 +135,16 @@ class SireneStock:
             out["lambert_y"] = SireneStock._coord(etab.get("lambert_y"))
         return out
 
-    # --- high-level (legacy API preservée) -----------------------------------
+    # --- high-level (legacy API preserved) -----------------------------------
 
     def get_headquarters_addresses(self, sirens: List[str]) -> Dict[str, Dict[str, Any]]:
         """Headquarters address for each SIREN. Returns {siren: {street, postal_code, city, status, ...}}.
 
-        Vrai batch : UN appel HTTP → UN scan parquet côté serveur pour toute la
-        liste (vs un appel par SIREN). Indispensable sur parquet distant. Les
-        adresses renvoyées par /headquarters sont déjà normalisées côté serveur.
+        True batch: ONE HTTP call → ONE parquet scan server-side for the whole
+        list (vs one call per SIREN). Essential on remote parquet. The
+        addresses returned by /headquarters are already normalized server-side.
 
-        Pour les SIRENs introuvables : absents du dict (pas de siège côté serveur).
+        For SIRENs not found: absent from the dict (no head office on the server side).
         """
         clean = [str(s) for s in sirens]
         if not clean:
@@ -153,21 +153,21 @@ class SireneStock:
         return data.get("headquarters", {})
 
     def get_all_establishments(self, siren: str, active_only: bool = True) -> List[Dict[str, Any]]:
-        """Tous les établissements d'un SIREN (siège + secondaires)."""
+        """All the establishments of a SIREN (head office + secondary)."""
         params = {"siren": str(siren), "active_only": "true" if active_only else "false"}
         data = self._get("/api/sirene/etablissements", params=params)
         return [self._normalize(e) for e in data.get("items", [])]
 
-    # --- nouvelles méthodes ---------------------------------------------------
+    # --- new methods ---------------------------------------------------
 
     def lookup_siege(self, siren: str) -> Optional[Dict[str, Any]]:
-        """Siège (headquarters) d'un SIREN, ou None."""
+        """Head office (headquarters) of a SIREN, or None."""
         data = self._get("/api/sirene/siege", params={"siren": str(siren)})
         siege = data.get("siege")
         return self._normalize(siege) if siege else None
 
     def lookup_siret(self, siret: str) -> Optional[Dict[str, Any]]:
-        """Établissement précis par SIRET."""
+        """A precise establishment by SIRET."""
         data = self._get("/api/sirene/siret", params={"siret": str(siret)})
         etab = data.get("etablissement")
         return self._normalize(etab) if etab else None
@@ -186,12 +186,12 @@ class SireneStock:
         limit: int = 100,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Recherche multi-critères côté serveur (DuckDB). Tous filtres AND.
+        """Multi-criteria search server-side (DuckDB). All filters AND.
 
-        `tranche_effectifs` : codes INSEE TEFEN séparés par des virgules
-        (ex. "22,31,32" = 50 salariés et plus). C'est le critère qui fait choisir
-        cette voie plutôt que le tool MCP — énumérer des centaines de sièges PAR
-        TAILLE sans faire transiter le JSON par le contexte de l'agent (signal #331).
+        `tranche_effectifs`: INSEE TEFEN codes separated by commas
+        (e.g. "22,31,32" = 50 employees and more). This is the criterion that makes you pick
+        this route rather than the MCP tool — enumerating hundreds of head offices PER
+        SIZE without passing the JSON through the agent's context (signal #331).
 
         Returns: {items: [...], count: N, limit: N, offset: N}
         """
@@ -220,5 +220,5 @@ class SireneStock:
         return data
 
     def info(self) -> Dict[str, Any]:
-        """Métadonnées du parquet côté serveur (size, mtime, total_rows)."""
+        """Metadata of the parquet file server-side (size, mtime, total_rows)."""
         return self._get("/api/sirene/info")

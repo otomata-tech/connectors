@@ -9,7 +9,7 @@ from ..common.credentials import require
 from ..common import raise_for_upstream
 from .auth import ZohoAuthError, cred_key, get_access_token, invalidate
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 __all__ = ["ZohoAuthError", "ZohoClient"]
 
@@ -26,35 +26,34 @@ class ZohoClient:
         accounts_url: Optional[str] = None,
         on_refresh: Optional[Callable[[dict], None]] = None,
     ):
-        """Initialise le client.
+        """Initialize the client.
 
-        Les credentials sont toujours fournis par le consommateur (usage serveur
-        multi-utilisateur : chaque appel construit un client avec les creds
-        résolus du user). Le token
-        d'accès est mis en cache **en mémoire de process**, keyé par credential
-        (`.auth`) — jamais sur disque, jamais partagé entre credentials distincts."""
+        Credentials are always supplied by the consumer (multi-user server usage:
+        each call builds a client with the user's resolved creds). The access
+        token is cached **in process memory**, keyed by credential
+        (`.auth`) — never on disk, never shared between distinct credentials."""
         self.client_id = require(client_id, "ZOHO_CLIENT_ID")
         self.client_secret = require(client_secret, "ZOHO_CLIENT_SECRET")
-        # FACULTATIF à la construction : en mode server-based il est obtenu par le
-        # flux de consentement, pas collé. Son absence est signalée au moment
-        # du refresh (message actionnable) plutôt que par une erreur de config.
+        # OPTIONAL at construction: in server-based mode it is obtained through the
+        # consent flow, not pasted. Its absence is reported at refresh time
+        # (actionable message) rather than as a config error.
         self.refresh_token = refresh_token
         self.api_domain = api_domain or "https://www.zohoapis.com"
         self.accounts_url = accounts_url or "https://accounts.zoho.com"
         self._cred_key = cred_key(
             self.accounts_url, self.client_id, self.refresh_token)
-        # Appelé après chaque refresh RÉUSSI — jamais sur un succès de cache.
-        # Symétrique de l'`on_refresh` du client Salesforce : c'est le seul instant
-        # où l'appelant apprend que ce credential authentifie vraiment, maintenant.
+        # Called after every SUCCESSFUL refresh — never on a cache hit.
+        # Symmetric to the Salesforce client's `on_refresh`: it is the only moment
+        # when the caller learns that this credential really authenticates, now.
         self._on_refresh = on_refresh
 
     # --- Auth ---
 
     def _get_access_token(self) -> str:
-        """Token d'accès valide, rafraîchi au besoin. Cache PROCESS-WIDE keyé par
-        credential (#285) : le serveur crée une nouvelle instance de client à chaque
-        appel MCP, un cache d'instance provoquerait un refresh par appel — et Zoho
-        rate-limite alors `/oauth/v2/token` (tous les appels en 400 pendant ~5 min)."""
+        """Valid access token, refreshed as needed. PROCESS-WIDE cache keyed by
+        credential (#285): the server creates a new client instance on every
+        MCP call, an instance cache would cause one refresh per call — and Zoho
+        then rate-limits `/oauth/v2/token` (all calls return 400 for ~5 min)."""
         return get_access_token(self.accounts_url, self.client_id,
                                 self.client_secret, self.refresh_token,
                                 key=self._cred_key, on_refresh=self._on_refresh)

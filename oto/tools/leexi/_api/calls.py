@@ -1,12 +1,12 @@
-"""Appels et réunions Leexi — lecture, transcripts, et cycle d'import.
+"""Leexi calls and meetings — reading, transcripts, and the import lifecycle.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `LeexiClient`, qui
-fournit le transport (`_request`, `_list`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `LeexiClient`, which
+provides the transport (`_request`, `_list`, `_check_choice`).
 
-⚠️ **Ce que ces méthodes rendent dépend de la *call access scope* de la clé**
-(toute l'entreprise / l'accès d'un utilisateur / des règles d'accès). Hors
-périmètre, un appel n'est pas listé et répond **404** en direct : un 404 sur
-`get_call` ne signifie donc pas « n'existe pas ».
+⚠️ **What these methods return depends on the key's *call access scope***
+(the whole company / a user's access / access rules). Out of
+scope, a call is not listed and answers **404** when fetched directly: a 404 on
+`get_call` therefore does not mean « does not exist ».
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from ..const import (CALL_DATE_FILTERS, CALL_ORDERS, HTTP_TIMEOUT)
 
 
 class _CallsMixin:
-    """Appels et réunions."""
+    """Calls and meetings."""
 
     def list_calls(self, page: Optional[int] = None, items: Optional[int] = None,
                    order: Optional[str] = None, date_filter: Optional[str] = None,
@@ -32,22 +32,22 @@ class _CallsMixin:
                    customer_phone_number: Optional[Any] = None,
                    customer_email_address: Optional[Any] = None,
                    with_simple_transcript: Optional[bool] = None) -> Any:
-        """GET /v1/calls — appels et réunions DANS LE PÉRIMÈTRE de la clé. Scope `read_calls`.
+        """GET /v1/calls — calls and meetings WITHIN THE SCOPE of the key. Scope `read_calls`.
 
-        Une liste vide est un réglage possible (clé dont le périmètre ne couvre
-        aucun appel), pas une anomalie.
+        An empty list is a possible setting (a key whose scope covers no
+        call), not an anomaly.
 
-        `date_from`/`date_to` bornent le champ nommé par `date_filter` (défaut
-        `created_at`). Ils portent ce nom préfixé parce que `from` est un mot
-        réservé de Python ; ils partent bien en `from`/`to` sur le fil.
+        `date_from`/`date_to` bound the field named by `date_filter` (default
+        `created_at`). They carry this prefixed name because `from` is a reserved
+        word in Python; they do go out as `from`/`to` on the wire.
 
-        `with_simple_transcript=True` joint le transcript à granularité paragraphe
-        — la réponse en devient nettement plus lourde, page par page.
+        `with_simple_transcript=True` attaches the paragraph-granularity transcript
+        — the response becomes noticeably heavier, page by page.
 
-        Cinq filtres sont multi-valués (`source_id`, `owner_uuid`,
+        Five filters are multi-valued (`source_id`, `owner_uuid`,
         `participating_user_uuid`, `customer_phone_number`,
-        `customer_email_address`) : passer une liste, le transport pose les
-        crochets `[]` attendus par l'amont.
+        `customer_email_address`): pass a list, the transport adds the
+        `[]` brackets expected by upstream.
         """
         self._check_choice("order", order, CALL_ORDERS)
         self._check_choice("date_filter", date_filter, CALL_DATE_FILTERS)
@@ -64,69 +64,69 @@ class _CallsMixin:
         })
 
     def get_call(self, uuid: str) -> Any:
-        """GET /v1/calls/{uuid} — un appel, **avec ses topics et son transcript**.
+        """GET /v1/calls/{uuid} — one call, **with its topics and transcript**.
 
-        Scope `read_calls`. Mêmes attributs que la liste, plus `simple_transcript`
-        (horodatage au paragraphe) et `transcript` (horodatage au MOT).
+        Scope `read_calls`. Same attributes as the list, plus `simple_transcript`
+        (paragraph-level timestamps) and `transcript` (WORD-level timestamps).
 
-        ⚠️ **404 = hors périmètre de la clé**, pas nécessairement inexistant.
+        ⚠️ **404 = outside the key's scope**, not necessarily nonexistent.
         """
         return self._request("GET", f"/calls/{uuid}")
 
     def presign_recording_url(self, extension: str) -> Any:
-        """POST /v1/calls/presign_recording_url — URL de téléversement. Scope `write_calls`.
+        """POST /v1/calls/presign_recording_url — upload URL. Scope `write_calls`.
 
-        Premier temps du cycle d'import : rend l'URL et **les en-têtes** à rejouer
-        pour un PUT en une seule partie (cf. `upload_recording`), plus la clé de
-        stockage à passer ensuite en `recording_s3_key` à `create_call`. Le fichier
-        téléversé expire au bout de **3 jours** s'il ne sert à aucun appel.
+        First step of the import lifecycle: returns the URL and **the headers** to replay
+        for a single-part PUT (see `upload_recording`), plus the storage key
+        to then pass as `recording_s3_key` to `create_call`. The uploaded file
+        expires after **3 days** if it is used for no call.
         """
         return self._request("POST", "/calls/presign_recording_url",
                              json={"extension": extension})
 
     def upload_recording(self, presigned: Dict[str, Any], data: Any,
                          timeout: Any = None) -> int:
-        """PUT du fichier sur l'URL pré-signée. **Hors API Leexi** (stockage objet).
+        """PUT of the file to the pre-signed URL. **Outside the Leexi API** (object storage).
 
-        `presigned` = la réponse de `presign_recording_url` telle quelle. Ses
-        en-têtes sont rejoués À L'IDENTIQUE : ils sont signés avec l'URL, donc en
-        changer un — ou en ajouter un — invalide la signature et le stockage
-        répond 403.
+        `presigned` = the response of `presign_recording_url` as-is. Its
+        headers are replayed IDENTICALLY: they are signed with the URL, so
+        changing one — or adding one — invalidates the signature and the storage
+        answers 403.
 
-        ⚠️ Requête faite **hors session** (`requests.put`, pas `self.session`) : la
-        session porte l'en-tête `Authorization` de Leexi, qui n'a rien à faire chez
-        le stockage objet et y casserait justement la signature. Rend le status du PUT.
+        ⚠️ Request made **outside the session** (`requests.put`, not `self.session`): the
+        session carries Leexi's `Authorization` header, which has no business at
+        the object storage and would break the signature there. Returns the PUT's status.
         """
         if not isinstance(presigned, dict):
             raise ValueError(
-                "`presigned` doit être la réponse de `presign_recording_url` "
-                f"(un objet), reçu {type(presigned).__name__}.")
+                "`presigned` must be the response of `presign_recording_url` "
+                f"(an object), got {type(presigned).__name__}.")
         url = presigned.get("url") or presigned.get("presigned_url")
         if not url:
             raise ValueError(
-                "réponse de `presign_recording_url` sans `url` : "
-                f"clés reçues {sorted(presigned)}")
+                "`presign_recording_url` response without `url`: "
+                f"keys received {sorted(presigned)}")
         headers = presigned.get("headers") or {}
         if not isinstance(headers, dict):
-            raise ValueError("`headers` de la réponse pré-signée doit être un objet.")
+            raise ValueError("`headers` of the pre-signed response must be an object.")
         resp = requests.put(url, data=data, headers=headers,
                             timeout=timeout or HTTP_TIMEOUT)
-        raise_for_upstream(resp, service="leexi (stockage)")
+        raise_for_upstream(resp, service="leexi (storage)")
         return resp.status_code
 
     def create_call(self, payload: Dict[str, Any]) -> Any:
-        """POST /v1/calls — crée un appel **de façon asynchrone**. Scope `write_calls`.
+        """POST /v1/calls — creates a call **asynchronously**. Scope `write_calls`.
 
-        Requis : `direction`, `external_id`, `performed_at`, `recording_s3_key`,
-        `user_uuid`. Optionnels : `customers`, `description`, `emails`, `locale`,
+        Required: `direction`, `external_id`, `performed_at`, `recording_s3_key`,
+        `user_uuid`. Optional: `customers`, `description`, `emails`, `locale`,
         `participating_user_uuids`, `raw_phone_number`, `tags`, `title`.
 
-        ⚠️ Le téléversement doit être **terminé** avant cet appel (cf.
-        `presign_recording_url` puis `upload_recording`). Le traitement prend
-        typiquement quelques minutes, et les complétions de prompt (résumé,
-        chapitrage) n'arrivent qu'ENSUITE : relire l'appel plus tard, et ne pas
-        conclure de leur absence immédiate qu'elles manquent.
+        ⚠️ The upload must be **finished** before this call (see
+        `presign_recording_url` then `upload_recording`). Processing typically
+        takes a few minutes, and the prompt completions (summary,
+        chaptering) only arrive AFTERWARDS: re-read the call later, and do not
+        conclude from their immediate absence that they are missing.
 
-        ⚠️ Rate limit propre et bas : **10 requêtes/minute** (contre 50 ailleurs).
+        ⚠️ Own, low rate limit: **10 requests/minute** (versus 50 elsewhere).
         """
         return self._request("POST", "/calls", json=dict(payload))

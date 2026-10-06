@@ -1,18 +1,18 @@
-"""Zapier AI Actions API client — actions exposées + exécution.
+"""Zapier AI Actions API client — exposed actions + execution.
 
-Zapier est une plateforme d'automatisation (« Zaps »). Plutôt qu'une API de
-gestion des Zaps, Zapier expose pour les agents l'**AI Actions API**
-(`actions.zapier.com`) : un catalogue d'**actions** que l'utilisateur a
-explicitement exposées (ex. « créer une ligne Google Sheets », « envoyer un
-Slack »), exécutables en langage naturel + paramètres.
+Zapier is an automation platform ("Zaps"). Rather than a Zap-management API,
+Zapier exposes the **AI Actions API** for agents (`actions.zapier.com`): a
+catalogue of **actions** that the user has explicitly exposed (e.g. "create a
+Google Sheets row", "send a Slack message"), executable via natural language +
+parameters.
 
-Auth = **API key** (en-tête `x-api-key`). La clé se crée sur
-https://actions.zapier.com/credentials/ (chaque clé porte le jeu d'actions
-exposées par l'utilisateur).
+Auth = **API key** (`x-api-key` header). The key is created at
+https://actions.zapier.com/credentials/ (each key carries the set of actions
+exposed by the user).
 
-Clé passée au constructeur.
+Key passed to the constructor.
 
-Docs : https://actions.zapier.com/docs/
+Docs: https://actions.zapier.com/docs/
 
 Requires: requests
 """
@@ -27,12 +27,12 @@ from ..common import raise_for_upstream
 
 
 class ZapierClient:
-    """Client Zapier AI Actions — liste + exécution d'actions exposées."""
+    """Zapier AI Actions client — list + execute exposed actions."""
 
     BASE_URL = "https://actions.zapier.com/api/v1"
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: Zapier AI Actions API key.
@@ -52,10 +52,10 @@ class ZapierClient:
         return resp.json() if resp.content else {}
 
     def list_actions(self) -> Dict[str, Any]:
-        """Liste les actions exposées par cette clé (id, description, params).
+        """List the actions exposed by this key (id, description, params).
 
-        Chaque action porte un `id` (à passer à `execute_action`) et la liste de
-        ses champs paramétrables."""
+        Each action carries an `id` (to pass to `execute_action`) and the list of
+        its configurable fields."""
         return self._request("GET", "/exposed/")
 
     def execute_action(
@@ -65,15 +65,15 @@ class ZapierClient:
         params: Optional[Dict[str, Any]] = None,
         preview_only: bool = False,
     ) -> Dict[str, Any]:
-        """Exécute une action exposée.
+        """Execute an exposed action.
 
         Args:
-            action_id: id de l'action (cf. `list_actions`).
-            instructions: consigne en langage naturel — Zapier remplit les
-                champs laissés en mode « AI guess » à partir de ce texte.
-            params: surcharges explicites des champs de l'action (priment sur
-                la déduction depuis `instructions`).
-            preview_only: True = ne pas exécuter, renvoyer ce qui serait fait.
+            action_id: action id (see `list_actions`).
+            instructions: natural-language directive — Zapier fills the
+                fields left in "AI guess" mode from this text.
+            params: explicit overrides for the action's fields (take precedence
+                over what is inferred from `instructions`).
+            preview_only: True = don't run, return what would be done.
         """
         body: Dict[str, Any] = {"instructions": instructions}
         if params:
@@ -83,6 +83,6 @@ class ZapierClient:
         return self._request("POST", f"/exposed/{action_id}/execute/", json=body)
 
     def execution_log(self, execution_log_id: str) -> Dict[str, Any]:
-        """Récupère le détail d'une exécution (`execution_log_id` renvoyé par
+        """Fetch the detail of one execution (`execution_log_id` returned by
         `execute_action`)."""
         return self._request("GET", f"/execution-log/{execution_log_id}/")

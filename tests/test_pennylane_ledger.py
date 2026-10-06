@@ -81,7 +81,7 @@ def test_le_corps_du_lettrage_porte_les_deux_champs_requis():
 def test_le_lettrage_refuse_une_seule_ligne():
     """Lettrer, c'est associer : une ligne seule n'est pas un lettrage, et
     Pennylane l'aurait refusé après un aller-retour."""
-    with pytest.raises(ValueError, match="au moins deux"):
+    with pytest.raises(ValueError, match="at least two"):
         _client().letter_ledger_entry_lines([1])
 
 
@@ -104,7 +104,7 @@ def test_une_ecriture_desequilibree_ne_part_pas_et_chiffre_l_ecart():
     c = _client()
     lignes = [{"debit": "120.00", "credit": "0", "ledger_account_id": 11},
               {"debit": "0", "credit": "100.00", "ledger_account_id": 22}]
-    with pytest.raises(ValueError, match="écart de 20.00"):
+    with pytest.raises(ValueError, match="gap of 20.00"):
         c.create_ledger_entry("2026-09-04", "OD", 5, lignes)
     assert c.appels == [], "rien ne doit partir sur le réseau"
 
@@ -128,7 +128,7 @@ def test_les_optionnels_ne_sont_envoyes_que_fournis():
 
 
 def test_une_ecriture_sans_ligne_est_refusee():
-    with pytest.raises(ValueError, match="au moins une ligne"):
+    with pytest.raises(ValueError, match="at least one line"):
         _client().create_ledger_entry("2026-09-04", "OD", 5, [])
 
 
@@ -136,7 +136,7 @@ def test_une_ligne_sans_compte_est_refusee_en_nommant_son_rang():
     c = _client()
     lignes = [{"debit": "10", "credit": "0"},
               {"debit": "0", "credit": "10", "ledger_account_id": 22}]
-    with pytest.raises(ValueError, match="Ligne 0"):
+    with pytest.raises(ValueError, match="Line 0"):
         c.create_ledger_entry("2026-09-04", "OD", 5, lignes)
 
 
@@ -208,8 +208,8 @@ def test_controler_ecriture_applique_la_MEME_regle_que_la_creation():
     c = _client()
     faux = [{"debit": "120.00", "credit": "0", "ledger_account_id": 11},
             {"debit": "0", "credit": "100.00", "ledger_account_id": 22}]
-    with pytest.raises(ValueError, match="écart de 20.00"):
+    with pytest.raises(ValueError, match="gap of 20.00"):
         c.controler_ecriture(faux)
-    with pytest.raises(ValueError, match="écart de 20.00"):
+    with pytest.raises(ValueError, match="gap of 20.00"):
         c.create_ledger_entry("2026-09-04", "OD", 5, faux)
     assert c.appels == []

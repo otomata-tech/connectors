@@ -15,10 +15,10 @@ from datetime import datetime, date, timedelta
 from typing import Optional, Tuple
 from zoneinfo import ZoneInfo
 
-# Aucun repli sur un décalage fixe : `+02:00` serait faux la moitié de l'année,
-# et un intervalle décalé d'une heure ne se voit pas — il se lit comme un chiffre
-# d'affaires. Un système sans base de fuseaux lève ici, à l'import, où c'est
-# visible (et se répare en installant `tzdata`).
+# No fallback to a fixed offset: `+02:00` would be wrong half the year, and an
+# interval shifted by an hour goes unnoticed — it reads as a revenue figure. A
+# system without a timezone database raises here, at import, where it is
+# visible (and is fixed by installing `tzdata`).
 FR_TZ = ZoneInfo("Europe/Paris")
 
 

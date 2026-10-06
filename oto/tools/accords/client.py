@@ -1,4 +1,4 @@
-"""Client HTTP de l'index ACCO (accords d'entreprise), exposé par oto-mcp."""
+"""HTTP client for the ACCO index (company agreements), exposed by oto-mcp."""
 
 import os
 from typing import Any, Dict, List, Optional
@@ -18,7 +18,7 @@ class AccordsError(RuntimeError):
 
 
 class AccordsClient:
-    """Recherche dans l'index ACCO via `/api/fr/accords/*`.
+    """Search the ACCO index via `/api/fr/accords/*`.
 
     Example:
         acc = AccordsClient()
@@ -53,11 +53,11 @@ class AccordsClient:
                date_to: Optional[str] = None, latest_per_siret: bool = False,
                sort_by: str = "date", sort_dir: str = "desc",
                limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """Page de résultats + `total_count` (renvoyé même avec limit=1 : de quoi
-        dimensionner une campagne sans rapatrier les lignes).
+        """A page of results + `total_count` (returned even with limit=1: enough to
+        size a campaign without pulling back the rows).
 
-        `idcc` : un code de convention. L'index le stocke sans zéro de tête, le
-        serveur accepte les deux formes — « 0573 » comme « 573 ».
+        `idcc`: a convention code. The index stores it without a leading zero, the
+        server accepts both forms — "0573" as well as "573".
         """
         payload = {
             "query": query, "themes": themes, "nature": nature, "siren": siren,
@@ -70,24 +70,24 @@ class AccordsClient:
             f"{self.base_url}/api/fr/accords/search", json=payload, timeout=60))
 
     def get(self, id_or_numero: str) -> Dict[str, Any]:
-        """Un accord par son id DILA (`ACCOTEXT000…`) ou son numéro de dépôt (`T…`)."""
+        """One agreement by its DILA id (`ACCOTEXT000…`) or its filing number (`T…`)."""
         return self._raise(self.session.get(
             f"{self.base_url}/api/fr/accords/{id_or_numero}", timeout=30))
 
     def themes(self) -> List[Dict[str, Any]]:
-        """Nomenclature des thèmes (code + libellé) pour composer un filtre."""
+        """Theme nomenclature (code + label) for building a filter."""
         res = self._raise(self.session.get(
             f"{self.base_url}/api/fr/accords/themes", timeout=30))
         return res.get("themes", res) if isinstance(res, dict) else res
 
     def sirens_by_idcc(self, idccs: List[str], limit_per_idcc: int = 1000,
                        **filters: Any) -> List[str]:
-        """SIREN distincts couverts par PLUSIEURS conventions collectives.
+        """Distinct SIRENs covered by SEVERAL collective agreements.
 
-        Une même entreprise porte souvent 3-4 IDCC (le BTP, typiquement) et l'API
-        amont n'accepte qu'un code par requête : sans ce helper, chaque appelant
-        réécrit la boucle et la déduplication — 1 094 lignes pour 386 entreprises
-        distinctes sur un cas réel. Ordre d'apparition conservé (déterministe).
+        A single company often carries 3-4 IDCCs (construction, typically) and the
+        upstream API only accepts one code per request: without this helper, every
+        caller rewrites the loop and the deduplication — 1,094 rows for 386 distinct
+        companies on a real case. Order of first appearance is kept (deterministic).
         """
         seen: Dict[str, None] = {}
         for code in idccs:

@@ -5,10 +5,10 @@ Async bulk API: POST job → GET status (FINISHED after ~30s-4min).
 Pricing: 10 cr/phone, 1 cr/work_email, 3 cr/personal_email (pay-per-result).
 Phone hit rate ~70% vs Kaspr ~13%.
 
-⚠️ Surface async assumée (signal #252, 2026-07-22) : l'ancien `enrich_linkedin`
-synchrone pollait in-process (131-147s mesurés) → tout client MCP raccroche avant
-(~60s), résultat perdu ET crédits consommés. Le couple `submit`/`fetch` rend chaque
-appel court ; le POLLING appartient à l'APPELANT (agent), pas au client HTTP.
+⚠️ Async surface by design (signal #252, 2026-07-22): the old synchronous
+`enrich_linkedin` polled in-process (131-147s measured) → every MCP client hangs up before
+(~60s), result lost AND credits consumed. The `submit`/`fetch` pair keeps each
+call short; POLLING belongs to the CALLER (agent), not the HTTP client.
 
 Requires: requests
 """
@@ -21,34 +21,34 @@ import requests
 
 from ..common.credentials import require
 
-# Plafond de l'endpoint bulk FullEnrich (contacts par job).
+# Cap of the FullEnrich bulk endpoint (contacts per job).
 MAX_CONTACTS_PER_JOB = 100
 
 DEFAULT_ENRICH_FIELDS = ["contact.work_emails", "contact.phones"]
 
-# Statut NOMMÉ par ce client (pas un statut de l'amont) : le job n'existe pas ou plus
-# chez FullEnrich (`404 error.enrichment.not_found`).
+# Status NAMED by this client (not an upstream status): the job does not exist or no longer
+# exists at FullEnrich (`404 error.enrichment.not_found`).
 STATUS_NOT_FOUND = "NOT_FOUND"
 
-# Réponses d'ERREUR HTTP documentées du `GET /contact/enrich/bulk/{id}` qui disent en
-# réalité un STATUT du job (doc API v2). `400 error.enrichment.in_progress` est la
-# réponse NORMALE d'un job pas encore prêt : levée en erreur, elle faisait échouer
-# chaque relevé jusqu'à la fin du job (signaux #1027-#1029). Classées sur le code
-# HTTP ET le `code` du corps, jamais sur le texte du message.
+# Documented HTTP ERROR responses of `GET /contact/enrich/bulk/{id}` that actually
+# express a job STATUS (API v2 doc). `400 error.enrichment.in_progress` is the
+# NORMAL response of a job that is not ready yet: raised as an error, it made
+# every poll fail until the job finished (signals #1027-#1029). Classified on the HTTP
+# code AND the body's `code`, never on the message text.
 _GET_ERREUR_VERS_STATUT = {
     (400, "error.enrichment.in_progress"): "IN_PROGRESS",
     (404, "error.enrichment.not_found"): STATUS_NOT_FOUND,
     (429, "error.rate.limit"): "RATE_LIMIT",
 }
 
-_CREDITS_INSUFFISANTS = "FullEnrich : crédits insuffisants. Recharger sur app.fullenrich.com."
+_CREDITS_INSUFFISANTS = "FullEnrich: insufficient credits. Top up at app.fullenrich.com."
 
 
 def _cost_credits(body) -> int | None:
-    """`cost.credits` d'un résultat de job, s'il s'agit d'un entier `>= 0` — sinon `None`.
+    """`cost.credits` of a job result, if it is an integer `>= 0` — otherwise `None`.
 
-    `bool` est écarté explicitement (`True` est un `int` en Python) : un drapeau n'est
-    pas un nombre de crédits, et le prendre pour `1` inventerait une consommation."""
+    `bool` is explicitly excluded (`True` is an `int` in Python): a flag is not a
+    number of credits, and taking it for `1` would invent a consumption."""
     cost = body.get("cost") if isinstance(body, dict) else None
     credits = cost.get("credits") if isinstance(cost, dict) else None
     if isinstance(credits, bool) or not isinstance(credits, int) or credits < 0:
@@ -125,20 +125,20 @@ class FullenrichClient:
         contacts: list[dict],
         enrich_fields: list[str] | None = None,
     ) -> str:
-        """Soumet un job d'enrichissement bulk. Retourne l'enrichment_id (le job
-        tourne côté FullEnrich, ~30s-4min ; récupérer via `fetch`).
+        """Submit a bulk enrichment job. Returns the enrichment_id (the job
+        runs on the FullEnrich side, ~30s-4min; retrieve via `fetch`).
 
         contacts: [{first_name, last_name, linkedin_slug?, company_name?, domain?}, ...]
-        Chaque contact doit porter `linkedin_slug` OU `domain` (site de
-        l'entreprise) — l'API FullEnrich rejette sinon le job entier
-        (`error.enrichment.domain.empty`, vérifié live 2026-07-22).
+        Each contact must carry `linkedin_slug` OR `domain` (the company's
+        website) — otherwise the FullEnrich API rejects the entire job
+        (`error.enrichment.domain.empty`, verified live 2026-07-22).
         """
         if not contacts:
-            raise ValueError("FullEnrich submit: aucun contact fourni.")
+            raise ValueError("FullEnrich submit: no contact provided.")
         if len(contacts) > MAX_CONTACTS_PER_JOB:
             raise ValueError(
-                f"FullEnrich submit: {len(contacts)} contacts > plafond "
-                f"{MAX_CONTACTS_PER_JOB}/job — découper en plusieurs jobs."
+                f"FullEnrich submit: {len(contacts)} contacts > cap "
+                f"{MAX_CONTACTS_PER_JOB}/job — split into several jobs."
             )
         fields = enrich_fields or DEFAULT_ENRICH_FIELDS
 
@@ -147,7 +147,7 @@ class FullenrichClient:
             first_name, last_name = c.get("first_name"), c.get("last_name")
             if not first_name or not last_name:
                 raise ValueError(
-                    f"FullEnrich submit: first_name et last_name requis par contact (reçu {c!r})."
+                    f"FullEnrich submit: first_name and last_name required per contact (received {c!r})."
                 )
             entry: dict = {
                 "first_name": first_name,
@@ -162,8 +162,8 @@ class FullenrichClient:
                 entry["domain"] = c["domain"]
             if not slug and not c.get("domain"):
                 raise ValueError(
-                    f"FullEnrich submit: linkedin_slug OU domain requis par contact "
-                    f"(l'API rejette sinon le job entier ; reçu {c!r})."
+                    f"FullEnrich submit: linkedin_slug OR domain required per contact "
+                    f"(the API otherwise rejects the entire job; received {c!r})."
                 )
             if c.get("company_name"):
                 entry["company_name"] = c["company_name"]
@@ -185,19 +185,19 @@ class FullenrichClient:
         return enrichment_id
 
     def fetch(self, enrichment_id: str) -> dict:
-        """Un GET de statut, sans attente. Retourne
+        """A single status GET, without waiting. Returns
         `{"status": <str>, "profiles": [FullenrichProfile] | None, "cost_credits": int | None}` —
-        `profiles` n'est peuplé que si status == FINISHED. `status` vaut aussi
-        `IN_PROGRESS` sur un `400 error.enrichment.in_progress`, `RATE_LIMIT` sur un
-        `429`, et `NOT_FOUND` (`STATUS_NOT_FOUND`) sur un `404` : ce sont des réponses
-        d'erreur HTTP de l'amont qui disent un statut du job, pas une panne.
+        `profiles` is only populated if status == FINISHED. `status` is also
+        `IN_PROGRESS` on a `400 error.enrichment.in_progress`, `RATE_LIMIT` on a
+        `429`, and `NOT_FOUND` (`STATUS_NOT_FOUND`) on a `404`: these are upstream HTTP
+        error responses that express a job status, not a failure.
 
-        `cost_credits` = les crédits que FULLENRICH a déduits pour ce job, tels que
-        l'amont les déclare (`cost.credits` du résultat, agrégé sur tout le job — pas de
-        détail par contact). Lu dans la réponse, jamais recalculé ici : le barème
-        (1 / 3 / 10 par valeur trouvée) est celui de l'amont et peut changer sans
-        prévenir. `None` quand la réponse n'en porte pas un entier `>= 0`, quel que
-        soit le statut."""
+        `cost_credits` = the credits that FULLENRICH deducted for this job, as
+        the upstream declares them (`cost.credits` of the result, aggregated over the whole job — no
+        per-contact detail). Read from the response, never recomputed here: the rate card
+        (1 / 3 / 10 per value found) is the upstream's and may change without
+        notice. `None` when the response does not carry an integer `>= 0`, whatever
+        the status."""
         resp = requests.get(
             f"{self.BASE_URL}/contact/enrich/bulk/{enrichment_id}",
             headers=self._headers(),

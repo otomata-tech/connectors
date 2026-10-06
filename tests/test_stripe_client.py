@@ -60,7 +60,7 @@ def test_auth_header_is_bearer():
 def test_publishable_key_is_refused_at_construction():
     """Une `pk_` ne peut lire aucune donnée de compte : la refuser ici change un
     401 incompréhensible au premier appel en un message de configuration."""
-    with pytest.raises(ValueError, match="PUBLIABLE"):
+    with pytest.raises(ValueError, match="PUBLISHABLE"):
         st.StripeClient(api_key="pk_test_123")
 
 
@@ -232,7 +232,7 @@ def test_search_builds_the_resource_path(capture):
 def test_search_refuses_a_resource_stripe_cannot_search(capture):
     """`/v1/refunds/search` n'existe pas : le dire ici évite un 404 amont
     qu'on prendrait pour un id introuvable."""
-    with pytest.raises(ValueError, match="ne sait chercher que dans"):
+    with pytest.raises(ValueError, match="can only search in"):
         _client().search("refunds", "amount>100")
 
 

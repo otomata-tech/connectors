@@ -72,7 +72,7 @@ class _CrmMixin:
                 `lead_desired_treatment`, `lead_zone` (sent as repeated `type`).
         """
         if isinstance(types, str):
-            raise ValueError(f"types doit être une liste — reçu {types!r}.")
+            raise ValueError(f"types must be a list — got {types!r}.")
         return self._list(f"/v4/clinics/{_id(clinic_id, 'clinic_id')}/object_labels",
                           limit, offset, type=types)
 

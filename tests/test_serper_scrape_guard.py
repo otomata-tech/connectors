@@ -35,7 +35,7 @@ def test_the_refusal_prescribes_no_tool():
     `unipile_*`, une famille que l'appelant n'a pas forcément, et qui n'existe même plus
     sous ce nom."""
     why = SerperClient._refuses_scraping("https://fr.linkedin.com/in/qqun")
-    assert "ne se lisent pas par extraction" in why
+    assert "cannot be read by extraction" in why
     for reason in SerperClient._NEVER_SCRAPABLE.values():
         assert not re.search(r"(?<![\w`])[a-z]+_(?:[a-z_]+|\*)", reason), reason
 

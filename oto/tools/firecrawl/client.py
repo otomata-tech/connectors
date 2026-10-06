@@ -1,15 +1,15 @@
-"""Firecrawl client — scraping & crawl de sites en markdown/JSON (firecrawl.dev).
+"""Firecrawl client — site scraping & crawling to markdown/JSON (firecrawl.dev).
 
-API v2, auth Bearer. Quatre surfaces métier :
-- **scrape** (sync) : une URL → markdown/html/liens/screenshot, JS exécuté.
-- **crawl** (async) : un domaine entier → job id, puis pagination des pages extraites.
-- **map** (sync) : découverte rapide de toutes les URLs d'un site (pas de contenu).
-- **search** (sync) : recherche web + contenu complet des résultats en un appel.
-- **extract** (async) : extraction structurée guidée par un prompt/schéma sur N URLs.
+API v2, Bearer auth. Five business surfaces:
+- **scrape** (sync): one URL → markdown/html/links/screenshot, JS executed.
+- **crawl** (async): a whole domain → job id, then pagination of the extracted pages.
+- **map** (sync): fast discovery of all of a site's URLs (no content).
+- **search** (sync): web search + full content of the results in one call.
+- **extract** (async): structured extraction guided by a prompt/schema over N URLs.
 
-Le crawl et l'extract sont des **jobs** : le start rend un `id`, le statut se relit
-tant que `status != "completed"`. Les corps de requête sont passés tels quels à
-l'API (l'appelant choisit ses options) — voir https://docs.firecrawl.dev.
+Crawl and extract are **jobs**: the start call returns an `id`, and the status is re-read
+while `status != "completed"`. Request bodies are passed as-is to the
+API (the caller chooses its options) — see https://docs.firecrawl.dev.
 
 Requires: requests
 """
@@ -24,14 +24,14 @@ from ..common import raise_for_upstream
 
 
 class FirecrawlClient:
-    """Client Firecrawl v2 (https://api.firecrawl.dev/v2), auth Bearer `fc-…`."""
+    """Firecrawl v2 client (https://api.firecrawl.dev/v2), Bearer auth `fc-…`."""
 
     BASE_URL = "https://api.firecrawl.dev/v2"
 
     def __init__(self, api_key: str = None):
         """
         Args:
-            api_key: clé Firecrawl.
+            api_key: Firecrawl key.
         """
         self.api_key = require(api_key, "FIRECRAWL_API_KEY")
         self.session = requests.Session()
@@ -50,7 +50,7 @@ class FirecrawlClient:
 
     @staticmethod
     def _compact(body: Dict[str, Any]) -> Dict[str, Any]:
-        """Retire les clés à None — l'API applique alors SES défauts."""
+        """Drop keys set to None — the API then applies ITS defaults."""
         return {k: v for k, v in body.items() if v is not None}
 
     # --- scrape (sync) ------------------------------------------------------
@@ -72,23 +72,23 @@ class FirecrawlClient:
         timeout_ms: Optional[int] = None,
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """POST /scrape — extrait UNE page (JS exécuté côté Firecrawl).
+        """POST /scrape — extract ONE page (JS executed on the Firecrawl side).
 
         Args:
-            url: page à extraire.
-            formats: sortie(s) voulue(s) — `["markdown"]` par défaut côté API.
-                Accepte les formes objet de l'API (ex. `[{"type": "json",
-                "schema": {...}}]` pour de l'extraction structurée en un appel,
+            url: page to extract.
+            formats: desired output(s) — `["markdown"]` by default on the API side.
+                Accepts the API's object forms (e.g. `[{"type": "json",
+                "schema": {...}}]` for structured extraction in one call,
                 `[{"type": "screenshot", "fullPage": true}]`).
-            only_main_content: retirer nav/footer/pubs (défaut API: true).
-            include_tags / exclude_tags: sélecteurs CSS à garder / retirer.
-            wait_for: ms d'attente avant capture (pages qui peuplent en JS).
-            actions: séquence d'interactions avant capture (click, write, scroll,
-                wait…) — permet de passer un formulaire ou un cookie wall.
-            max_age: âge max (ms) d'une version en cache acceptée — un cache hit
-                est bien plus rapide et moins cher qu'un scrape neuf.
-            timeout_ms: budget côté Firecrawl (max 60000 par défaut).
-            timeout: timeout HTTP local (secondes).
+            only_main_content: strip nav/footer/ads (API default: true).
+            include_tags / exclude_tags: CSS selectors to keep / remove.
+            wait_for: ms to wait before capture (pages that populate via JS).
+            actions: sequence of interactions before capture (click, write, scroll,
+                wait…) — lets you get past a form or a cookie wall.
+            max_age: max age (ms) of an accepted cached version — a cache hit
+                is much faster and cheaper than a fresh scrape.
+            timeout_ms: Firecrawl-side budget (max 60000 by default).
+            timeout: local HTTP timeout (seconds).
 
         Returns: `{success, data: {markdown?, html?, links?, screenshot?, json?,
             metadata: {title, description, sourceURL, statusCode, …}}}`.
@@ -129,24 +129,24 @@ class FirecrawlClient:
         webhook: Optional[Dict[str, Any]] = None,
         timeout: int = 60,
     ) -> Dict[str, Any]:
-        """POST /crawl — lance le crawl d'un site. **Asynchrone** : rend un job id.
+        """POST /crawl — start crawling a site. **Asynchronous**: returns a job id.
 
         Args:
-            url: URL de départ.
-            limit: plafond de pages (défaut API 10000 — le poser est la première
-                protection contre une facture surprise).
-            include_paths / exclude_paths: regex de chemins à suivre / ignorer.
-            max_discovery_depth: profondeur max de découverte depuis l'URL de départ.
-            crawl_entire_domain: sortir de l'arborescence de l'URL de départ.
-            allow_subdomains / allow_external_links: élargir au-delà de l'hôte.
-            sitemap: `"include"` (défaut) | `"skip"` | `"only"`.
-            delay: secondes entre deux requêtes (politesse / anti-blocage).
-            prompt: consigne en langage naturel dont Firecrawl dérive les options.
-            scrape_options: options de scrape appliquées à CHAQUE page (mêmes clés
-                que `scrape`, camelCase).
-            webhook: notification `{url, events: ["completed", …]}` au lieu de poller.
+            url: starting URL.
+            limit: page cap (API default 10000 — setting it is the first
+                protection against a surprise bill).
+            include_paths / exclude_paths: path regexes to follow / ignore.
+            max_discovery_depth: max discovery depth from the starting URL.
+            crawl_entire_domain: go beyond the starting URL's tree.
+            allow_subdomains / allow_external_links: widen beyond the host.
+            sitemap: `"include"` (default) | `"skip"` | `"only"`.
+            delay: seconds between two requests (politeness / anti-blocking).
+            prompt: natural-language instruction from which Firecrawl derives the options.
+            scrape_options: scrape options applied to EVERY page (same keys
+                as `scrape`, camelCase).
+            webhook: notification `{url, events: ["completed", …]}` instead of polling.
 
-        Returns: `{success, id, url}` — `id` à passer à `crawl_status`.
+        Returns: `{success, id, url}` — `id` to pass to `crawl_status`.
         """
         body = self._compact({
             "url": url,
@@ -171,24 +171,24 @@ class FirecrawlClient:
         next_url: Optional[str] = None,
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """GET /crawl/{id} — état + pages déjà extraites d'un crawl.
+        """GET /crawl/{id} — status + pages already extracted by a crawl.
 
         Args:
-            crawl_id: id rendu par `crawl`.
-            next_url: URL `next` d'une réponse précédente — la réponse est
-                plafonnée à 10 Mo, `next` sert à récupérer la tranche suivante.
-                Passer `next_url` ignore `crawl_id`.
+            crawl_id: id returned by `crawl`.
+            next_url: `next` URL from a previous response — the response is
+                capped at 10 MB, `next` is used to fetch the next slice.
+                Passing `next_url` ignores `crawl_id`.
 
         Returns: `{status: scraping|completed|failed, total, completed,
             creditsUsed, expiresAt, next?, data: [pages]}`.
         """
         if not next_url and not crawl_id:
-            raise ValueError("crawl_status: crawl_id ou next_url requis.")
+            raise ValueError("crawl_status: crawl_id or next_url required.")
         path = next_url or f"/crawl/{crawl_id}"
         return self._request("GET", path, timeout=timeout)
 
     def cancel_crawl(self, crawl_id: str, timeout: int = 60) -> Dict[str, Any]:
-        """DELETE /crawl/{id} — arrête un crawl en cours (stoppe la consommation)."""
+        """DELETE /crawl/{id} — stop a running crawl (stops credit consumption)."""
         return self._request("DELETE", f"/crawl/{crawl_id}", timeout=timeout)
 
     # --- map (sync) ---------------------------------------------------------
@@ -203,10 +203,10 @@ class FirecrawlClient:
         ignore_query_parameters: Optional[bool] = None,
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """POST /map — liste les URLs d'un site, SANS extraire le contenu.
+        """POST /map — list a site's URLs, WITHOUT extracting content.
 
-        Bien plus rapide et moins cher qu'un crawl : sert à repérer les pages qui
-        valent un scrape (`search` filtre les URLs, ex. "pricing", "carriere").
+        Much faster and cheaper than a crawl: used to spot the pages worth a
+        scrape (`search` filters the URLs, e.g. "pricing", "carriere").
 
         Returns: `{success, links: [{url, title?, description?}]}`.
         """
@@ -236,19 +236,19 @@ class FirecrawlClient:
         scrape_options: Optional[Dict[str, Any]] = None,
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        """POST /search — recherche web, avec le contenu des pages si demandé.
+        """POST /search — web search, with page content if requested.
 
         Args:
-            query: requête (opérateurs supportés : `"exact"`, `-exclu`, `site:`,
-                `filetype:`). Max 500 caractères.
-            limit: nombre de résultats (défaut 10, max 100).
-            sources: `[{"type": "web"|"news"|"images"}]` — défaut web.
+            query: query (supported operators: `"exact"`, `-excluded`, `site:`,
+                `filetype:`). Max 500 characters.
+            limit: number of results (default 10, max 100).
+            sources: `[{"type": "web"|"news"|"images"}]` — web by default.
             categories: `[{"type": "github"|"research"|"pdf"}]`.
-            tbs: filtre temporel (ex. `"qdr:w"` = dernière semaine).
-            include_domains / exclude_domains: restreindre / écarter des domaines
-                (mutuellement exclusifs côté API).
-            scrape_options: si fourni, chaque résultat est AUSSI scrapé (ex.
-                `{"formats": ["markdown"]}`) — sinon seuls titre/description/URL.
+            tbs: time filter (e.g. `"qdr:w"` = last week).
+            include_domains / exclude_domains: restrict to / exclude domains
+                (mutually exclusive on the API side).
+            scrape_options: if provided, each result is ALSO scraped (e.g.
+                `{"formats": ["markdown"]}`) — otherwise only title/description/URL.
 
         Returns: `{success, data: {web?: [...], news?: [...], images?: [...]},
             creditsUsed}`.
@@ -278,16 +278,16 @@ class FirecrawlClient:
         show_sources: Optional[bool] = None,
         timeout: int = 60,
     ) -> Dict[str, Any]:
-        """POST /extract — extraction structurée sur N URLs. **Asynchrone**.
+        """POST /extract — structured extraction over N URLs. **Asynchronous**.
 
         Args:
-            urls: pages à traiter ; un `/*` en suffixe étend au site entier
-                (ex. `"https://acme.com/*"`).
-            prompt: ce qu'on cherche, en langage naturel.
-            schema: JSON Schema de la sortie voulue (plus fiable qu'un prompt seul).
-            enable_web_search: autoriser Firecrawl à compléter hors des URLs données.
+            urls: pages to process; a trailing `/*` extends to the whole site
+                (e.g. `"https://acme.com/*"`).
+            prompt: what to look for, in natural language.
+            schema: JSON Schema of the desired output (more reliable than a prompt alone).
+            enable_web_search: allow Firecrawl to fill in beyond the given URLs.
 
-        Returns: `{success, id}` — à relire via `extract_status`.
+        Returns: `{success, id}` — to re-read via `extract_status`.
         """
         body = self._compact({
             "urls": urls,
@@ -299,7 +299,7 @@ class FirecrawlClient:
         return self._request("POST", "/extract", json=body, timeout=timeout)
 
     def extract_status(self, job_id: str, timeout: int = 120) -> Dict[str, Any]:
-        """GET /extract/{id} — état + données d'un job d'extraction.
+        """GET /extract/{id} — status + data of an extraction job.
 
         Returns: `{success, status: processing|completed|failed, data?, sources?}`.
         """

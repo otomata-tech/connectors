@@ -102,7 +102,7 @@ def test_list_lists_switches_path_for_folder(client, calls):
 
 
 def test_add_to_list_rejects_mixed_identifiers(client, calls):
-    with pytest.raises(ValueError, match="UN type d'identifiant"):
+    with pytest.raises(ValueError, match="ONE identifier type"):
         client.add_to_list(1, emails=["a@b.c"], ids=[2])
     assert calls == []
 
@@ -144,7 +144,7 @@ def test_crm_filter_prefix_differs_by_entity(client, calls):
 
 
 def test_crm_unknown_entity(client):
-    with pytest.raises(ValueError, match="entity inconnue"):
+    with pytest.raises(ValueError, match="unknown entity"):
         client.crm_list("tickets")
 
 
@@ -169,7 +169,7 @@ def test_crm_link_maps_complementary_object(client, calls):
 
 
 def test_crm_link_rejects_tasks(client):
-    with pytest.raises(ValueError, match="deals et companies"):
+    with pytest.raises(ValueError, match="deals and companies"):
         client.crm_link("tasks", "t1", link_contact_ids=[1])
 
 

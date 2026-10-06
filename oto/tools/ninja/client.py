@@ -1,11 +1,11 @@
-"""HTTP client vers les endpoints `/api/*` de `mcp.oto.cx`.
+"""HTTP client for the `/api/*` endpoints of `mcp.oto.cx`.
 
-Auth via API token long-lived (`token`, fourni par le consommateur), même mécanisme que
-`oto.tools.datastore.client`. Base URL override : env `OTO_API_URL`
-(défaut `https://mcp.oto.cx`).
+Auth via long-lived API token (`token`, supplied by the consumer), same mechanism as
+`oto.tools.datastore.client`. Base URL override: env `OTO_API_URL`
+(default `https://mcp.oto.cx`).
 
-Scope : lecture/écriture des secrets multi-user (cookies LinkedIn,
-Crunchbase, API keys par provider) que la DB oto-mcp est seule à connaître.
+Scope: read/write of multi-user secrets (LinkedIn cookies,
+Crunchbase, per-provider API keys) that only the oto-mcp DB knows about.
 """
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class NinjaClient:
     # --- LinkedIn -----------------------------------------------------------
 
     def get_linkedin(self) -> dict:
-        """Renvoie `{cookie, user_agent, set_at}`. Raise NinjaError(404) si non configuré."""
+        """Returns `{cookie, user_agent, set_at}`. Raises NinjaError(404) if not configured."""
         return self._req("GET", "/api/settings/linkedin")
 
     def set_linkedin(self, cookie: str, user_agent: Optional[str] = None) -> dict:

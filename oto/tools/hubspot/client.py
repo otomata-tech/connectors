@@ -1,38 +1,38 @@
 """HubSpot CRM API client (v3).
 
-Auth = **private app access token** (Bearer). Créé dans HubSpot :
+Auth = **private app access token** (Bearer). Created in HubSpot:
 Settings → Integrations → Private Apps → scopes `crm.objects.*` (read/write).
-Passé en clair au constructeur.
+Passed in clear text to the constructor.
 
-Surface générique sur les objets CRM : `contacts`, `companies`, `deals`,
-`tickets` (et tout objet custom) partagent les mêmes verbes
-(`list/get/search/create/update/delete` + associations). Les notes/engagements
-ont un helper dédié car ils s'attachent à un objet via une association.
+Generic surface over CRM objects: `contacts`, `companies`, `deals`,
+`tickets` (and any custom object) share the same verbs
+(`list/get/search/create/update/delete` + associations). Notes/engagements
+have a dedicated helper because they attach to an object via an association.
 
-Trois propriétés de ce client valent d'être sues avant de l'appeler :
+Three properties of this client are worth knowing before calling it:
 
-- **Le 429 se rattrape, borné ; rien d'autre ne se rattrape.** Une private app a
-  droit à 190 requêtes / 10 s, et une phase de synchro CRM en fait ~4 par lead :
-  ~40 leads suffisent à taper le plafond. Un 429 dit que la requête a été REFUSÉE
-  (rien n'a été fait), donc la rejouer est sans effet de bord ; un 5xx ne dit pas
-  si l'écriture est passée, et le rejouer créerait un doublon dans un CRM. Cf.
+- **A 429 is retried, bounded; nothing else is retried.** A private app is
+  allowed 190 requests / 10 s, and a CRM sync phase makes ~4 per lead:
+  ~40 leads are enough to hit the ceiling. A 429 says the request was REFUSED
+  (nothing was done), so replaying it has no side effects; a 5xx does not say
+  whether the write went through, and replaying it would create a duplicate in a CRM. See
   `_request`.
-  ⚠️ **Ceci change le TEMPS D'ÉCHEC de TOUS les appels de ce client**, pas
-  seulement des nouveaux : un 429 qui rendait son refus nommé en ≤ 30 s peut
-  désormais occuper l'appelant jusqu'à ~110 s avant de rendre le MÊME
-  `UpstreamHTTPError(429)`. Un appelant qui a une échéance plus courte que ça
-  recevra un timeout — un refus anonyme à la place d'un refus nommé. La borne est
-  sur le SOMMEIL, pas sur le temps mural : détail chiffré au-dessus de
+  ⚠️ **This changes the FAILURE TIME of ALL calls of this client**, not
+  just new ones: a 429 that used to return its named refusal in ≤ 30 s can
+  now hold the caller for up to ~110 s before returning the SAME
+  `UpstreamHTTPError(429)`. A caller with a shorter deadline than that
+  will get a timeout — an anonymous refusal instead of a named one. The bound is
+  on SLEEP, not on wall-clock time: the numbers are worked out above
   `RATE_LIMIT_ATTEMPTS`.
-- **`batch_read_objects` rend une ENVELOPPE, pas une liste** :
-  `{"results": [...], "missing_ids": [...]}`. `missing_ids` est le seul endroit où
-  se lit qu'une page a rétréci (HubSpot répond 207 pour un id disparu, donc rien
-  ne lève). Le contrat complet est dans sa docstring — il fait foi.
-- **`batch_read_objects` est STRICT sur les noms de propriétés**, contrairement au
-  GET unitaire : une propriété absente du portail fait un 400
-  `PROPERTY_DOESNT_EXIST` sur la tranche ENTIÈRE, elle ne revient pas vide. C'est
-  le piège que l'appelant hérite en passant de N lectures unitaires à une lecture
-  groupée.
+- **`batch_read_objects` returns an ENVELOPE, not a list**:
+  `{"results": [...], "missing_ids": [...]}`. `missing_ids` is the only place where
+  you can tell that a page shrank (HubSpot answers 207 for a vanished id, so nothing
+  raises). The full contract is in its docstring — it is authoritative.
+- **`batch_read_objects` is STRICT about property names**, unlike the
+  single GET: a property absent from the portal makes a 400
+  `PROPERTY_DOESNT_EXIST` on the ENTIRE slice, it does not come back empty. This is
+  the trap the caller inherits when moving from N single reads to one
+  batched read.
 
 Docs : https://developers.hubspot.com/docs/api/crm/understanding-the-crm
 
@@ -49,8 +49,8 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-# Type d'association par défaut HubSpot (note → objet). 202 = Note↔Contact,
-# mais l'API accepte les "HUBSPOT_DEFINED" via le endpoint /associations/default.
+# Default HubSpot association type (note → object). 202 = Note↔Contact,
+# but the API accepts "HUBSPOT_DEFINED" via the /associations/default endpoint.
 _NOTE_ASSOCIATION_TYPE = {
     "contacts": 202,
     "companies": 190,
@@ -60,55 +60,55 @@ _NOTE_ASSOCIATION_TYPE = {
 
 logger = logging.getLogger(__name__)
 
-# HubSpot plafonne TOUT endpoint `batch/*` à 100 entrées par requête (« Object API
-# batch endpoints are limited to 100 inputs per request »). Une page d'appartenances
-# de liste en vaut 250 : découper est la seule façon de la servir.
+# HubSpot caps EVERY `batch/*` endpoint at 100 entries per request ("Object API
+# batch endpoints are limited to 100 inputs per request"). A page of list memberships
+# is worth 250: slicing is the only way to serve it.
 BATCH_READ_MAX = 100
 
-# Débit d'une private app : 190 requêtes / 10 s. Une phase de synchro CRM fait ~4
-# appels par lead, donc ~40 leads suffisent à taper le plafond — et un 429 non
-# rattrapé arrête le run AU MILIEU d'un enregistrement à moitié écrit.
+# Private app rate: 190 requests / 10 s. A CRM sync phase makes ~4
+# calls per lead, so ~40 leads are enough to hit the ceiling — and an uncaught 429
+# stops the run IN THE MIDDLE of a half-written record.
 #
-# La reprise est bornée EN DURÉE, pas seulement en nombre de tentatives : le
-# handler tourne dans le threadpool du serveur MCP, qui borne la CONCURRENCE et
-# pas le temps (oto-backend `docs/event-loop-perf.md`).
+# Retrying is bounded in DURATION, not only in number of attempts: the
+# handler runs in the MCP server's threadpool, which bounds CONCURRENCY and
+# not time (oto-backend `docs/event-loop-perf.md`).
 #
-# ⚠️ CE QUI EST BORNÉ, EXACTEMENT — et ce qui ne l'est pas :
-#   • le SOMMEIL est borné par OPÉRATION LOGIQUE, pas par appel HTTP.
-#     `RATE_LIMIT_MAX_TOTAL_SLEEP` au total, que l'opération tienne en une requête
-#     ou en trois tranches de `batch_read_objects` (cf. `_RetryBudget`). Cette
-#     borne-là est ABSOLUE : elle ne bouge pas avec le nombre d'ids.
-#   • le TEMPS D'ATTENTE RÉSEAU, lui, N'EST PAS borné au niveau de l'opération.
-#     Chaque appel HTTP porte son timeout de transport de 30 s, et une opération en
-#     fait autant que de tranches. Pire cas HONNÊTE d'un `batch_read_objects` :
-#         tranches × RATE_LIMIT_ATTEMPTS × 30 s  +  RATE_LIMIT_MAX_TOTAL_SLEEP
-#     soit, pour 250 ids (3 tranches), 9 × 30 + 20 = 290 s. Un appelant qui a une
-#     échéance la pose LUI : ce client ne la connaît pas.
-#   • relever `RATE_LIMIT_ATTEMPTS` RALLONGE donc le pire cas, d'un aller-retour
-#     HTTP (jusqu'à 30 s) par tentative ajoutée. Ce n'est pas un réglage gratuit,
-#     et c'est ce terme-là qui pèse — pas le sommeil, qui est plafonné.
-RATE_LIMIT_ATTEMPTS = 3            # >= 1 ; 1 = pas de reprise. Compté par appel HTTP.
-RATE_LIMIT_MAX_SLEEP = 10.0        # plafond d'UNE attente
-RATE_LIMIT_MAX_TOTAL_SLEEP = 20.0  # plafond du CUMUL par OPÉRATION — la borne de durée
+# ⚠️ WHAT IS BOUNDED, EXACTLY — and what is not:
+#   • SLEEP is bounded per LOGICAL OPERATION, not per HTTP call.
+#     `RATE_LIMIT_MAX_TOTAL_SLEEP` in total, whether the operation fits in one request
+#     or in three slices of `batch_read_objects` (see `_RetryBudget`). That
+#     bound is ABSOLUTE: it does not move with the number of ids.
+#   • NETWORK WAIT TIME, on the other hand, IS NOT bounded at the operation level.
+#     Each HTTP call carries its 30 s transport timeout, and an operation makes
+#     as many as it has slices. HONEST worst case of a `batch_read_objects`:
+#         slices × RATE_LIMIT_ATTEMPTS × 30 s  +  RATE_LIMIT_MAX_TOTAL_SLEEP
+#     i.e., for 250 ids (3 slices), 9 × 30 + 20 = 290 s. A caller that has a
+#     deadline sets it ITSELF: this client does not know it.
+#   • raising `RATE_LIMIT_ATTEMPTS` therefore EXTENDS the worst case, by one HTTP
+#     round trip (up to 30 s) per added attempt. It is not a free setting,
+#     and that is the term that weighs — not the sleep, which is capped.
+RATE_LIMIT_ATTEMPTS = 3            # >= 1 ; 1 = no retry. Counted per HTTP call.
+RATE_LIMIT_MAX_SLEEP = 10.0        # cap on ONE wait
+RATE_LIMIT_MAX_TOTAL_SLEEP = 20.0  # cap on the CUMULATIVE wait per OPERATION — the duration bound
 
-# Un 429 ne dit pas toujours « réessaie ». HubSpot nomme la politique franchie dans
-# le corps (`policyName`) : les fenêtres courtes se rattrapent, un quota JOURNALIER
-# ou MENSUEL ne se rattrape pas — attendre puis rejouer immobilise un worker pour
-# rien, et le refus arrivera de toute façon.
+# A 429 does not always mean "retry". HubSpot names the policy that was crossed in
+# the body (`policyName`): short windows can be retried, a DAILY
+# or MONTHLY quota cannot — waiting and replaying ties up a worker for
+# nothing, and the refusal will come anyway.
 _RATE_LIMIT_POLICY_NOT_RETRYABLE = frozenset({"DAILY", "MONTHLY"})
 
 
 class _RetryBudget:
-    """Ce qu'une OPÉRATION LOGIQUE a encore le droit de DORMIR pour rattraper des 429.
+    """What a LOGICAL OPERATION is still allowed to SLEEP to ride out 429s.
 
-    Un budget par défaut naît et meurt dans un `_request` : un appel simple garde
-    exactement le comportement écrit. Une opération qui fait N appels HTTP —
-    `batch_read_objects` et ses tranches de 100 — en fabrique UN SEUL et le passe à
-    chacune de ses tranches : sans ça le plafond écrit serait celui d'UNE requête,
-    et une page de 250 ids dormirait 3 × `RATE_LIMIT_MAX_TOTAL_SLEEP` tout en
-    respectant la constante à la lettre — le plafond aurait l'air tenu sans l'être.
+    A default budget is born and dies inside a `_request`: a simple call keeps
+    exactly the documented behaviour. An operation that makes N HTTP calls —
+    `batch_read_objects` and its slices of 100 — builds ONE and passes it to
+    each of its slices: without that the documented cap would be that of ONE request,
+    and a page of 250 ids would sleep 3 × `RATE_LIMIT_MAX_TOTAL_SLEEP` while
+    respecting the constant to the letter — the cap would look held without being so.
 
-    Épuisé, il ne dégrade rien : le 429 suivant devient un refus nommé, immédiat.
+    Once exhausted, it degrades nothing: the next 429 becomes a named, immediate refusal.
     """
 
     __slots__ = ("sleep_left",)
@@ -118,12 +118,12 @@ class _RetryBudget:
 
 
 class HubSpotClient:
-    """Client HubSpot CRM v3 — objets CRM génériques + notes + owners."""
+    """HubSpot CRM v3 client — generic CRM objects + notes + owners."""
 
     BASE_URL = "https://api.hubapi.com"
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: private app access token.
@@ -143,32 +143,32 @@ class HubSpotClient:
         _budget: Optional["_RetryBudget"] = None,
         **kwargs,
     ) -> Any:
-        """Un appel HubSpot, avec la seule reprise qui soit sûre : le 429.
+        """One HubSpot call, with the only retry that is safe: the 429.
 
-        ⚠️ **Le 429 est réessayé, les 5xx non.** Un 429 dit que la requête a été
-        REFUSÉE — rien n'a été fait, la rejouer est sans effet de bord, quel que
-        soit le verbe. Un 502/504 ne dit pas si l'écriture est passée : rejouer un
-        POST dessus créerait un doublon, et un doublon dans un CRM coûte plus cher
-        que l'erreur qu'on voulait éviter. La différence est le tout du sujet.
+        ⚠️ **A 429 is retried, 5xx are not.** A 429 says the request was
+        REFUSED — nothing was done, replaying it has no side effects, whatever
+        the verb. A 502/504 does not say whether the write went through: replaying a
+        POST on it would create a duplicate, and a duplicate in a CRM costs more
+        than the error we wanted to avoid. That difference is the whole point.
 
-        À bout de tentatives (ou de budget d'attente) on ne rend RIEN de dégradé :
-        `raise_for_upstream` lève l'`UpstreamHTTPError(429)` du dernier essai,
-        `status_code` compris — un refus nommé, que l'appelant peut router.
+        When attempts (or the wait budget) run out we return NOTHING degraded:
+        `raise_for_upstream` raises the `UpstreamHTTPError(429)` of the last try,
+        `status_code` included — a named refusal that the caller can route.
 
-        ⚠️ **Ce que cet appel garantit, et rien de plus** :
-        `RATE_LIMIT_ATTEMPTS` appels HTTP au plus, et `RATE_LIMIT_MAX_TOTAL_SLEEP`
-        secondes de sommeil au plus — ce dernier plafond étant celui du `_budget`
-        REÇU, donc partagé avec les autres appels de la même opération logique s'il
-        y en a. Ce n'est PAS une borne de temps mural : chaque appel HTTP peut
-        encore attendre son timeout de transport de 30 s. Pire cas d'un `_request`
-        isolé : 3 × 30 s de réseau + 20 s de sommeil ≈ 110 s avant le refus 429
-        nommé — là où, avant cette reprise, le même refus arrivait en ≤ 30 s. Les
-        appelants qui ont une échéance doivent la poser eux-mêmes.
+        ⚠️ **What this call guarantees, and nothing more**:
+        at most `RATE_LIMIT_ATTEMPTS` HTTP calls, and at most `RATE_LIMIT_MAX_TOTAL_SLEEP`
+        seconds of sleep — this last cap being that of the `_budget`
+        RECEIVED, hence shared with the other calls of the same logical operation if
+        there are any. It is NOT a wall-clock bound: each HTTP call can
+        still wait for its 30 s transport timeout. Worst case of an isolated
+        `_request`: 3 × 30 s of network + 20 s of sleep ≈ 110 s before the named
+        429 refusal — where, before this retry, the same refusal arrived in ≤ 30 s.
+        Callers that have a deadline must set it themselves.
 
         Args:
-            _budget: budget de sommeil PARTAGÉ, quand plusieurs appels HTTP
-                forment une seule opération (les tranches de
-                `batch_read_objects`). Omis ⇒ un budget neuf pour cet appel seul.
+            _budget: SHARED sleep budget, when several HTTP calls
+                form a single operation (the slices of
+                `batch_read_objects`). Omitted ⇒ a fresh budget for this call alone.
         """
         url = f"{self.BASE_URL}{path}"
         budget = _budget if _budget is not None else _RetryBudget()
@@ -179,49 +179,49 @@ class HubSpotClient:
             if resp.status_code != 429 or attempt >= RATE_LIMIT_ATTEMPTS:
                 break
             if budget.sleep_left <= 0:
-                # Budget de DURÉE épuisé (par cet appel ou par les tranches
-                # précédentes de la même opération) : on refuse, on ne dort pas —
-                # et on ne rejoue pas « gratuitement » non plus, ce serait marteler
-                # un amont qui vient de dire non.
+                # DURATION budget exhausted (by this call or by the previous
+                # slices of the same operation): we refuse, we don't sleep —
+                # and we don't replay "for free" either, that would be hammering
+                # an upstream that just said no.
                 break
             if not self._rate_limit_is_retryable(resp):
-                break              # quota journalier : attendre n'y change rien
+                break              # daily quota: waiting changes nothing
             delay = min(self._retry_delay(resp, attempt), budget.sleep_left)
             if delay > 0:
                 logger.info(
-                    "hubspot 429 sur %s %s — nouvelle tentative dans %.1f s "
-                    "(%d/%d, reste %.1f s de budget)",
+                    "hubspot 429 on %s %s — retrying in %.1f s "
+                    "(%d/%d, %.1f s of budget left)",
                     method, path, delay, attempt, RATE_LIMIT_ATTEMPTS,
                     budget.sleep_left - delay)
                 time.sleep(delay)
                 budget.sleep_left -= delay
             else:
-                # `Retry-After: 0` (ou négatif) = « rejoue TOUT DE SUITE ». Ce
-                # n'est pas « je n'ai plus de budget » : les deux états se
-                # ressemblaient et abandonnaient tous les deux la reprise. Ici on
-                # rejoue, sans dormir — la tentative se dépense, l'attente non.
+                # `Retry-After: 0` (or negative) = "replay RIGHT NOW". This is
+                # not "I have no budget left": the two states used to look alike and
+                # both gave up retrying. Here we replay, without sleeping —
+                # the attempt is spent, the wait is not.
                 logger.info(
-                    "hubspot 429 sur %s %s — Retry-After nul, on rejoue "
-                    "immédiatement (%d/%d)",
+                    "hubspot 429 on %s %s — Retry-After zero, replaying "
+                    "immediately (%d/%d)",
                     method, path, attempt, RATE_LIMIT_ATTEMPTS)
         if resp.status_code == 429:
             logger.warning(
-                "hubspot 429 non rattrapé après %d tentative(s) sur %s %s",
+                "hubspot 429 not recovered after %d attempt(s) on %s %s",
                 attempt, method, path)
         raise_for_upstream(resp, service="hubspot")
         return resp.json() if resp.content else {}
 
     @staticmethod
     def _rate_limit_is_retryable(resp: Any) -> bool:
-        """Un 429 se rattrape-t-il ?
+        """Can a 429 be retried?
 
-        HubSpot nomme la politique franchie dans le corps (`policyName` : SECONDLY
-        | TEN_SECONDLY_ROLLING | DAILY…). Politique inconnue ou corps illisible ⇒
-        on RÉESSAIE : le cas fréquent est la rafale.
+        HubSpot names the policy that was crossed in the body (`policyName`: SECONDLY
+        | TEN_SECONDLY_ROLLING | DAILY…). Unknown policy or unreadable body ⇒
+        we RETRY: the frequent case is a burst.
         """
         try:
             body = resp.json()
-        # noqa: SILENT — corps non-JSON : le défaut « rafale » ci-dessous
+        # noqa: SILENT — non-JSON body: the "burst" default below
         except Exception:
             return True
         policy = body.get("policyName") if isinstance(body, dict) else None
@@ -229,18 +229,18 @@ class HubSpotClient:
 
     @staticmethod
     def _retry_delay(resp: Any, attempt: int) -> float:
-        """Combien attendre après un 429 : `Retry-After` s'il est là (l'amont sait
-        mieux que nous), sinon un palier exponentiel.
+        """How long to wait after a 429: `Retry-After` if present (upstream knows
+        better than we do), otherwise an exponential step.
 
-        HubSpot ne garantit pas l'en-tête, donc le repli est ÉCRIT plutôt que
-        deviné — et il est plafonné, parce qu'une attente non bornée dans un
-        handler est un gel sous un autre nom. `Retry-After` peut aussi être une
-        date HTTP : non parsable ⇒ palier.
+        HubSpot does not guarantee the header, so the fallback is WRITTEN rather than
+        guessed — and it is capped, because an unbounded wait in a
+        handler is a freeze by another name. `Retry-After` can also be an HTTP
+        date: unparseable ⇒ step.
 
-        ⚠️ Rend 0.0 quand l'amont dit `Retry-After: 0` (ou une valeur négative,
-        c.-à-d. une échéance déjà passée). 0.0 veut dire « rejoue tout de suite »,
-        PAS « abandonne » : c'est `_request` qui distingue les deux, et les
-        confondre coûtait la reprise à un serveur qui l'accordait.
+        ⚠️ Returns 0.0 when upstream says `Retry-After: 0` (or a negative value,
+        i.e. a deadline already past). 0.0 means "replay right now",
+        NOT "give up": it is `_request` that tells the two apart, and
+        confusing them cost the retry to a server that granted it.
         """
         raw = (getattr(resp, "headers", None) or {}).get("Retry-After")
         try:
@@ -249,7 +249,7 @@ class HubSpotClient:
             delay = float(2 ** attempt)
         return min(max(delay, 0.0), RATE_LIMIT_MAX_SLEEP)
 
-    # --- Objets CRM (génériques) -------------------------------------------
+    # --- CRM objects (generic) ---------------------------------------------
 
     def list_objects(
         self,
@@ -259,7 +259,7 @@ class HubSpotClient:
         after: Optional[str] = None,
         associations: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les objets d'un type (paginé). `after` = curseur de page suivante."""
+        """List the objects of a type (paginated). `after` = next-page cursor."""
         params: Dict[str, Any] = {"limit": min(limit, 100)}
         if properties:
             params["properties"] = ",".join(properties)
@@ -276,7 +276,7 @@ class HubSpotClient:
         properties: Optional[List[str]] = None,
         associations: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Récupère un objet par id."""
+        """Fetch an object by id."""
         params: Dict[str, Any] = {}
         if properties:
             params["properties"] = ",".join(properties)
@@ -297,14 +297,14 @@ class HubSpotClient:
         after: Optional[str] = None,
         sorts: Optional[List[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
-        """Recherche d'objets via l'endpoint /search.
+        """Search objects via the /search endpoint.
 
         Args:
-            query: recherche plein-texte.
-            filters: liste de `{propertyName, operator, value}` combinés en ET
-                (operators HubSpot : EQ, NEQ, GT, GTE, LT, LTE, CONTAINS_TOKEN,
-                HAS_PROPERTY, IN…). Pour `IN`, passer `values` (liste).
-            sorts: ex. `[{"propertyName": "createdate", "direction": "DESCENDING"}]`.
+            query: full-text search.
+            filters: list of `{propertyName, operator, value}` combined with AND
+                (HubSpot operators: EQ, NEQ, GT, GTE, LT, LTE, CONTAINS_TOKEN,
+                HAS_PROPERTY, IN…). For `IN`, pass `values` (list).
+            sorts: e.g. `[{"propertyName": "createdate", "direction": "DESCENDING"}]`.
         """
         body: Dict[str, Any] = {"limit": min(limit, 100)}
         if query:
@@ -327,7 +327,7 @@ class HubSpotClient:
         properties: Dict[str, Any],
         associations: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Crée un objet. `associations` = format HubSpot v3 (liste de `to`+`types`)."""
+        """Create an object. `associations` = HubSpot v3 format (list of `to`+`types`)."""
         body: Dict[str, Any] = {"properties": properties}
         if associations:
             body["associations"] = associations
@@ -336,14 +336,14 @@ class HubSpotClient:
     def update_object(
         self, object_type: str, object_id: str, properties: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Met à jour (PATCH) les propriétés d'un objet."""
+        """Update (PATCH) an object's properties."""
         return self._request(
             "PATCH", f"/crm/v3/objects/{object_type}/{object_id}",
             json={"properties": properties},
         )
 
     def delete_object(self, object_type: str, object_id: str) -> Dict[str, Any]:
-        """Archive un objet (corbeille HubSpot)."""
+        """Archive an object (HubSpot recycle bin)."""
         return self._request("DELETE", f"/crm/v3/objects/{object_type}/{object_id}")
 
     def batch_read_objects(
@@ -353,79 +353,79 @@ class HubSpotClient:
         properties: Optional[List[str]] = None,
         id_property: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Lit N objets en un appel par tranche de 100, au lieu de N appels.
+        """Read N objects in one call per slice of 100, instead of N calls.
 
-        **CONTRAT DE RETOUR — une ENVELOPPE, jamais une liste.** Cette méthode rend
-        toujours, et exactement, un `dict` à DEUX clés, toutes deux TOUJOURS
-        présentes et jamais `None` :
+        **RETURN CONTRACT — an ENVELOPE, never a list.** This method always
+        returns, and exactly, a `dict` with TWO keys, both ALWAYS
+        present and never `None`:
 
             {
-              "results":     [ <fiche HubSpot>, ... ],   # list[dict]
-              "missing_ids": [ "<id demandé>", ... ],    # list[str]
+              "results":     [ <HubSpot record>, ... ],   # list[dict]
+              "missing_ids": [ "<requested id>", ... ],   # list[str]
             }
 
-        - `results` : la concaténation, dans l'ordre des tranches, des tableaux
-          `results` rendus par HubSpot. Chaque élément est la fiche BRUTE de
-          HubSpot, non retouchée (`{"id": str, "properties": {...}, "createdAt":
-          …, "updatedAt": …, "archived": bool}`). ⚠️ L'ordre est celui des RÉPONSES
-          HubSpot, PAS celui des `ids` demandés, et HubSpot ne le garantit pas :
-          un appelant qui a besoin de son ordre d'entrée s'indexe sur `id`.
-        - `missing_ids` : les ids DEMANDÉS (en `str`, dédupliqués, dans l'ordre
-          d'entrée) dont aucune fiche n'est revenue. `[]` quand tout est revenu.
-        - Aucun id exploitable en entrée ⇒ `{"results": [], "missing_ids": []}` et
-          ZÉRO appel HTTP.
-        - Une tranche qui échoue LÈVE (`UpstreamHTTPError`) : jamais une demi-page
-          qui passerait pour la liste entière, jamais un retour partiel muet.
+        - `results`: the concatenation, in slice order, of the `results` arrays
+          returned by HubSpot. Each element is the RAW HubSpot record,
+          untouched (`{"id": str, "properties": {...}, "createdAt":
+          …, "updatedAt": …, "archived": bool}`). ⚠️ The order is that of the HubSpot
+          RESPONSES, NOT that of the requested `ids`, and HubSpot does not guarantee it:
+          a caller that needs its input order indexes on `id`.
+        - `missing_ids`: the REQUESTED ids (as `str`, deduplicated, in input
+          order) for which no record came back. `[]` when everything came back.
+        - No usable id in input ⇒ `{"results": [], "missing_ids": []}` and
+          ZERO HTTP calls.
+        - A slice that fails RAISES (`UpstreamHTTPError`): never a half page
+          passing for the whole list, never a silent partial return.
 
-        ⚠️ `missing_ids` est un DIFF LOCAL (ce qu'on a demandé moins ce qui est
-        revenu), pas une lecture du corps d'erreur : un id supprimé, archivé ou
-        d'un autre portail est simplement ABSENT des `results` et HubSpot répond
-        207 — donc `raise_for_upstream` ne lève pas. Sans ce relevé, une page de
-        250 membres reviendrait à 247 lignes sans que personne ne l'apprenne :
-        c'est le « succès déguisé » que la maison refuse. Un appelant qui jette
-        `missing_ids` rouvre ce trou.
+        ⚠️ `missing_ids` is a LOCAL DIFF (what was requested minus what came
+        back), not a reading of the error body: an id that is deleted, archived or
+        from another portal is simply ABSENT from `results` and HubSpot answers
+        207 — so `raise_for_upstream` does not raise. Without this tally, a page of
+        250 members would come back as 247 rows without anyone learning of it:
+        that is the "disguised success" the house refuses. A caller that throws away
+        `missing_ids` reopens that hole.
 
-        ⚠️ **Sommeil borné pour TOUTE l'opération, pas par tranche.** Les tranches
-        partagent UN `_RetryBudget` : le cumul des attentes sur 429 reste sous
-        `RATE_LIMIT_MAX_TOTAL_SLEEP` quel que soit le nombre d'ids. Le temps MURAL,
-        lui, n'est pas borné au niveau de l'opération — il croît avec le nombre de
-        tranches (chaque appel HTTP porte son timeout de transport de 30 s). Le
-        calcul du pire cas est écrit au-dessus de `RATE_LIMIT_ATTEMPTS`.
+        ⚠️ **Sleep bounded for the WHOLE operation, not per slice.** The slices
+        share ONE `_RetryBudget`: the cumulative waits on 429 stay under
+        `RATE_LIMIT_MAX_TOTAL_SLEEP` whatever the number of ids. WALL-CLOCK time,
+        on the other hand, is not bounded at the operation level — it grows with the number of
+        slices (each HTTP call carries its 30 s transport timeout). The
+        worst-case computation is written above `RATE_LIMIT_ATTEMPTS`.
 
         Args:
-            object_type: contacts | companies | deals | tickets | objet custom.
-            ids: les ids (ou, avec `id_property`, les valeurs de cette propriété).
-                Dédupliqués en gardant l'ordre d'entrée ; les vides sont écartés.
-            properties: noms INTERNES des propriétés à rendre. ⚠️ `batch/read` est
-                STRICT là-dessus, contrairement au GET unitaire : une propriété
-                absente du portail fait un 400 `PROPERTY_DOESNT_EXIST` sur la
-                tranche entière, elle ne revient pas vide. ⚠️ `[]` et `None` sont
-                traités PAREIL — la clé `properties` est omise du corps et HubSpot
-                rend sa projection PAR DÉFAUT. Une liste vide ne demande donc pas
-                « zéro colonne » : si l'appelant veut dire ça, c'est à SA surface
-                de le refuser par son nom.
-            id_property: lire par clé d'unicité (`email`…) au lieu du record id.
-                Elle est alors AJOUTÉE aux `properties` demandées si elle n'y est
-                pas — sans elle dans la réponse, `missing_ids` serait incalculable
-                (les `results` sont keyés sur le record id, pas sur la clé). La
-                comparaison est exacte d'abord, puis insensible à la casse :
-                HubSpot normalise certaines clés (un email revient en minuscules),
-                et signaler ces lignes en `missing_ids` serait un faux.
+            object_type: contacts | companies | deals | tickets | custom object.
+            ids: the ids (or, with `id_property`, the values of that property).
+                Deduplicated keeping input order; empty ones are dropped.
+            properties: INTERNAL names of the properties to return. ⚠️ `batch/read` is
+                STRICT about this, unlike the single GET: a property
+                absent from the portal makes a 400 `PROPERTY_DOESNT_EXIST` on the
+                whole slice, it does not come back empty. ⚠️ `[]` and `None` are
+                treated the SAME — the `properties` key is omitted from the body and HubSpot
+                returns its DEFAULT projection. An empty list therefore does not ask for
+                "zero columns": if the caller means that, it is up to THEIR surface
+                to refuse it by name.
+            id_property: read by uniqueness key (`email`…) instead of the record id.
+                It is then ADDED to the requested `properties` if it is not
+                there — without it in the response, `missing_ids` would be incomputable
+                (the `results` are keyed on the record id, not on the key). The
+                comparison is exact first, then case-insensitive:
+                HubSpot normalizes some keys (an email comes back lowercased),
+                and flagging those rows in `missing_ids` would be false.
         """
         wanted: List[str] = list(dict.fromkeys(
             str(i) for i in ids if i is not None and str(i) != ""))
         if not wanted:
-            # Aucun id : pas d'appel du tout. HubSpot refuserait un `inputs` vide,
-            # et « rien à lire » n'est pas une erreur.
+            # No id: no call at all. HubSpot would refuse an empty `inputs`,
+            # and "nothing to read" is not an error.
             return {"results": [], "missing_ids": []}
 
         props = list(properties or [])
         if id_property and id_property not in props:
             props.append(id_property)
 
-        # UN budget de sommeil pour TOUTES les tranches. S'il vivait dans
-        # `_request`, il repartirait à neuf à chaque tranche : 250 ids feraient
-        # trois fois le plafond en le respectant à la lettre.
+        # ONE sleep budget for ALL the slices. If it lived in
+        # `_request`, it would start fresh on each slice: 250 ids would hit
+        # three times the cap while respecting it to the letter.
         budget = _RetryBudget()
 
         out: List[Dict[str, Any]] = []
@@ -459,22 +459,22 @@ class HubSpotClient:
     def list_associations(
         self, object_type: str, object_id: str, to_object_type: str,
     ) -> Dict[str, Any]:
-        """Liste les objets `to_object_type` associés à un objet (ex. deals d'un contact)."""
+        """List the `to_object_type` objects associated with an object (e.g. a contact's deals)."""
         return self._request(
             "GET",
             f"/crm/v3/objects/{object_type}/{object_id}/associations/{to_object_type}",
         )
 
-    # --- Notes (engagement attaché à un objet) ------------------------------
+    # --- Notes (engagement attached to an object) ---------------------------
 
     def _note_association_type(self, object_type: str) -> int:
-        """Type d'association Note→<objet>.
+        """Note→<object> association type.
 
-        Les quatre objets standard sont en table (aucun appel). Pour tout autre
-        type (objet custom notamment), on DEMANDE le libellé par défaut à
-        `/crm/v4/associations/notes/<type>/labels` plutôt que de retomber
-        silencieusement sur 202 (= Note↔Contact) : ce défaut accrochait la note
-        au mauvais type d'association sans rien signaler.
+        The four standard objects are in a table (no call). For any other
+        type (custom objects in particular), we ASK for the default label from
+        `/crm/v4/associations/notes/<type>/labels` rather than silently falling back
+        on 202 (= Note↔Contact): that default attached the note
+        to the wrong association type without signalling anything.
         """
         known = _NOTE_ASSOCIATION_TYPE.get(object_type)
         if known is not None:
@@ -488,20 +488,20 @@ class HubSpotClient:
         if results:
             return results[0]["typeId"]
         raise ValueError(
-            f"aucun type d'association note→{object_type} : rattache la note "
-            "toi-même via create_object('notes', ..., associations=[...])")
+            f"no note→{object_type} association type: attach the note "
+            "yourself via create_object('notes', ..., associations=[...])")
 
     def create_note(
         self, body: str, object_type: str, object_id: str,
         timestamp: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Attache une note à un objet CRM.
+        """Attach a note to a CRM object.
 
         Args:
-            body: contenu de la note (texte/HTML).
+            body: note content (text/HTML).
             object_type: contacts | companies | deals | tickets.
-            object_id: id de l'objet auquel rattacher la note.
-            timestamp: ISO 8601 ou epoch ms (défaut = maintenant côté HubSpot).
+            object_id: id of the object to attach the note to.
+            timestamp: ISO 8601 or epoch ms (default = now on the HubSpot side).
         """
         props: Dict[str, Any] = {
             "hs_note_body": body,
@@ -520,24 +520,24 @@ class HubSpotClient:
     # --- Owners -------------------------------------------------------------
 
     def list_owners(self, limit: int = 100, after: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les owners (utilisateurs HubSpot) — pour assigner contacts/deals."""
+        """List owners (HubSpot users) — for assigning contacts/deals."""
         params: Dict[str, Any] = {"limit": min(limit, 100)}
         if after:
             params["after"] = after
         return self._request("GET", "/crm/v3/owners", params=params)
 
-    # --- Propriétés (schéma) ------------------------------------------------
-    # Sans ce référentiel, tout create/update est une devinette : les noms
-    # internes ne sont PAS les libellés de l'UI (`dealstage`, pas « Deal stage »)
-    # et les listes déroulantes n'acceptent que leurs `options[].value`. C'est
-    # aussi ce qui permet d'écrire un `filterBranch` de liste dynamique, qui
-    # référence des propriétés par nom interne.
+    # --- Properties (schema) ------------------------------------------------
+    # Without this reference, every create/update is guesswork: internal names
+    # are NOT the UI labels (`dealstage`, not "Deal stage")
+    # and dropdowns only accept their `options[].value`. It is
+    # also what makes it possible to write a dynamic list's `filterBranch`, which
+    # references properties by internal name.
 
     def list_properties(
         self, object_type: str, archived: bool = False,
         properties: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les propriétés d'un type d'objet (nom interne, type, options)."""
+        """List the properties of an object type (internal name, type, options)."""
         params: Dict[str, Any] = {"archived": str(archived).lower()}
         if properties:
             params["properties"] = ",".join(properties)
@@ -547,7 +547,7 @@ class HubSpotClient:
     def get_property(
         self, object_type: str, property_name: str, archived: bool = False,
     ) -> Dict[str, Any]:
-        """Récupère UNE propriété par son nom interne."""
+        """Fetch ONE property by its internal name."""
         return self._request(
             "GET", f"/crm/v3/properties/{object_type}/{property_name}",
             params={"archived": str(archived).lower()})
@@ -555,40 +555,40 @@ class HubSpotClient:
     def create_property(
         self, object_type: str, definition: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Crée une propriété. `definition` = {name, label, type, fieldType,
-        groupName, options?} (cf. doc HubSpot Properties)."""
+        """Create a property. `definition` = {name, label, type, fieldType,
+        groupName, options?} (see the HubSpot Properties docs)."""
         return self._request(
             "POST", f"/crm/v3/properties/{object_type}", json=definition)
 
     def update_property(
         self, object_type: str, property_name: str, definition: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Met à jour (PATCH) une propriété."""
+        """Update (PATCH) a property."""
         return self._request(
             "PATCH", f"/crm/v3/properties/{object_type}/{property_name}",
             json=definition)
 
     def delete_property(self, object_type: str, property_name: str) -> Dict[str, Any]:
-        """Archive une propriété."""
+        """Archive a property."""
         return self._request(
             "DELETE", f"/crm/v3/properties/{object_type}/{property_name}")
 
     def list_property_groups(self, object_type: str) -> Dict[str, Any]:
-        """Liste les groupes de propriétés (onglets de la fiche) d'un type d'objet."""
+        """List the property groups (record tabs) of an object type."""
         return self._request("GET", f"/crm/v3/properties/{object_type}/groups")
 
-    # --- Listes (= les « segments » HubSpot) --------------------------------
-    # `/crm/v3/lists` ; l'API v1 (`/contacts/v1/lists`) est sunset depuis le
-    # 2026-04-30, ne pas y retomber. Les listes sont keyées sur un
-    # `objectTypeId` NUMÉRIQUE (`0-1` contacts, `0-2` companies, `0-3` deals,
-    # `0-5` tickets, `2-<n>` objets custom) et non sur le nom d'objet utilisé
-    # partout ailleurs dans ce client — la traduction se fait côté appelant.
+    # --- Lists (= HubSpot "segments") ---------------------------------------
+    # `/crm/v3/lists`; the v1 API (`/contacts/v1/lists`) has been sunset since
+    # 2026-04-30, do not fall back to it. Lists are keyed on a NUMERIC
+    # `objectTypeId` (`0-1` contacts, `0-2` companies, `0-3` deals,
+    # `0-5` tickets, `2-<n>` custom objects) and not on the object name used
+    # everywhere else in this client — translation is done on the caller side.
     #
-    # `processingType` :
-    #   MANUAL   → membres gérés à la main / par l'API (les endpoints memberships)
-    #   DYNAMIC  → membres recalculés par HubSpot depuis `filterBranch` ; les
-    #              endpoints memberships d'écriture sont REFUSÉS dessus
-    #   SNAPSHOT → filtré une fois puis figé, membres gérés à la main ensuite
+    # `processingType`:
+    #   MANUAL   → members managed by hand / by the API (the memberships endpoints)
+    #   DYNAMIC  → members recomputed by HubSpot from `filterBranch`; the write
+    #              memberships endpoints are REFUSED on it
+    #   SNAPSHOT → filtered once then frozen, members managed by hand afterwards
 
     def create_list(
         self,
@@ -598,15 +598,15 @@ class HubSpotClient:
         filter_branch: Optional[Dict[str, Any]] = None,
         custom_properties: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Crée une liste.
+        """Create a list.
 
         Args:
-            name: nom de la liste (unique par type d'objet).
+            name: list name (unique per object type).
             object_type_id: `0-1` (contacts), `0-2`, `0-3`, `0-5`, `2-<n>`…
             processing_type: MANUAL | DYNAMIC | SNAPSHOT.
-            filter_branch: arbre de critères (DYNAMIC/SNAPSHOT). Passé tel quel :
-                c'est une structure récursive HubSpot (filterBranchType
-                OR/AND/UNIFIED_EVENTS/ASSOCIATION), pas modélisée ici.
+            filter_branch: criteria tree (DYNAMIC/SNAPSHOT). Passed as is:
+                it is a recursive HubSpot structure (filterBranchType
+                OR/AND/UNIFIED_EVENTS/ASSOCIATION), not modelled here.
         """
         body: Dict[str, Any] = {
             "name": name,
@@ -620,7 +620,7 @@ class HubSpotClient:
         return self._request("POST", "/crm/v3/lists", json=body)
 
     def get_list(self, list_id: str, include_filters: bool = False) -> Dict[str, Any]:
-        """Récupère une liste par id. `include_filters` renvoie son `filterBranch`."""
+        """Fetch a list by id. `include_filters` returns its `filterBranch`."""
         return self._request(
             "GET", f"/crm/v3/lists/{list_id}",
             params={"includeFilters": str(include_filters).lower()})
@@ -628,7 +628,7 @@ class HubSpotClient:
     def get_lists(
         self, list_ids: List[str], include_filters: bool = False,
     ) -> Dict[str, Any]:
-        """Récupère plusieurs listes en un appel (`listIds` répété)."""
+        """Fetch several lists in one call (repeated `listIds`)."""
         return self._request(
             "GET", "/crm/v3/lists",
             params={
@@ -639,7 +639,7 @@ class HubSpotClient:
     def get_list_by_name(
         self, object_type_id: str, list_name: str, include_filters: bool = False,
     ) -> Dict[str, Any]:
-        """Récupère une liste par son nom (dans un type d'objet donné)."""
+        """Fetch a list by its name (within a given object type)."""
         return self._request(
             "GET",
             f"/crm/v3/lists/object-type-id/{object_type_id}/name/{list_name}",
@@ -654,7 +654,7 @@ class HubSpotClient:
         offset: Optional[int] = None,
         additional_properties: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Cherche des listes par nom / type de traitement / type d'objet."""
+        """Search lists by name / processing type / object type."""
         body: Dict[str, Any] = {}
         if query:
             body["query"] = query
@@ -673,7 +673,7 @@ class HubSpotClient:
     def update_list_name(
         self, list_id: str, list_name: str, include_filters: bool = False,
     ) -> Dict[str, Any]:
-        """Renomme une liste (le nom passe en query param, pas en body)."""
+        """Rename a list (the name goes in a query param, not in the body)."""
         return self._request(
             "PUT", f"/crm/v3/lists/{list_id}/update-list-name",
             params={
@@ -687,7 +687,7 @@ class HubSpotClient:
         filter_branch: Dict[str, Any],
         enroll_objects_in_workflows: bool = False,
     ) -> Dict[str, Any]:
-        """Remplace l'arbre de critères d'une liste DYNAMIC/SNAPSHOT."""
+        """Replace the criteria tree of a DYNAMIC/SNAPSHOT list."""
         return self._request(
             "PUT", f"/crm/v3/lists/{list_id}/update-list-filters",
             params={
@@ -696,19 +696,19 @@ class HubSpotClient:
             json={"filterBranch": filter_branch})
 
     def delete_list(self, list_id: str) -> Dict[str, Any]:
-        """Supprime une liste — restaurable pendant 90 jours (`restore_list`)."""
+        """Delete a list — restorable for 90 days (`restore_list`)."""
         return self._request("DELETE", f"/crm/v3/lists/{list_id}")
 
     def restore_list(self, list_id: str) -> Dict[str, Any]:
-        """Restaure une liste supprimée (fenêtre de 90 jours)."""
+        """Restore a deleted list (90-day window)."""
         return self._request("PUT", f"/crm/v3/lists/{list_id}/restore")
 
-    # --- Appartenances (membres d'une liste) --------------------------------
+    # --- Memberships (members of a list) ------------------------------------
 
     def get_list_memberships(
         self, list_id: str, limit: int = 100, after: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les ids des enregistrements membres d'une liste (paginé)."""
+        """List the ids of the records that are members of a list (paginated)."""
         params: Dict[str, Any] = {"limit": min(limit, 250)}
         if after:
             params["after"] = after
@@ -718,9 +718,9 @@ class HubSpotClient:
     def add_list_memberships(
         self, list_id: str, record_ids: List[str],
     ) -> Dict[str, Any]:
-        """Ajoute des enregistrements à une liste MANUAL/SNAPSHOT.
+        """Add records to a MANUAL/SNAPSHOT list.
 
-        ⚠️ Le body est un TABLEAU NU d'ids (`["1","2"]`), pas un objet.
+        ⚠️ The body is a BARE ARRAY of ids (`["1","2"]`), not an object.
         """
         return self._request(
             "PUT", f"/crm/v3/lists/{list_id}/memberships/add", json=record_ids)
@@ -728,7 +728,7 @@ class HubSpotClient:
     def remove_list_memberships(
         self, list_id: str, record_ids: List[str],
     ) -> Dict[str, Any]:
-        """Retire des enregistrements d'une liste (body = tableau nu d'ids)."""
+        """Remove records from a list (body = bare array of ids)."""
         return self._request(
             "PUT", f"/crm/v3/lists/{list_id}/memberships/remove", json=record_ids)
 
@@ -738,7 +738,7 @@ class HubSpotClient:
         record_ids_to_add: Optional[List[str]] = None,
         record_ids_to_remove: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Ajoute ET retire en une seule opération (une seule révision de liste)."""
+        """Add AND remove in a single operation (a single list revision)."""
         return self._request(
             "PUT", f"/crm/v3/lists/{list_id}/memberships/add-and-remove",
             json={
@@ -747,13 +747,13 @@ class HubSpotClient:
             })
 
     def delete_all_list_memberships(self, list_id: str) -> Dict[str, Any]:
-        """Vide une liste de TOUS ses membres (la liste elle-même survit)."""
+        """Empty a list of ALL its members (the list itself survives)."""
         return self._request("DELETE", f"/crm/v3/lists/{list_id}/memberships")
 
     def add_memberships_from_list(
         self, list_id: str, source_list_id: str,
     ) -> Dict[str, Any]:
-        """Copie les membres d'une autre liste (plafond HubSpot : 100 000)."""
+        """Copy the members of another list (HubSpot cap: 100,000)."""
         return self._request(
             "PUT",
             f"/crm/v3/lists/{list_id}/memberships/add-from/{source_list_id}")
@@ -761,7 +761,7 @@ class HubSpotClient:
     def get_record_memberships(
         self, object_type_id: str, record_id: str,
     ) -> Dict[str, Any]:
-        """Listes auxquelles UN enregistrement appartient."""
+        """Lists that ONE record belongs to."""
         return self._request(
             "GET",
             f"/crm/v3/lists/records/{object_type_id}/{record_id}/memberships")

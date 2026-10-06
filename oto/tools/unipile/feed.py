@@ -1,8 +1,8 @@
-"""Parsing du feed d'accueil LinkedIn (passthrough Voyager).
+"""Parsing of the LinkedIn home feed (Voyager passthrough).
 
-Extrait de `client.py` — contenu inchangé. `parse_feed` et les helpers privés
-restent réexportés par `client.py` (chemin d'import figé, cf. les tests
-`test_unipile_feed.py` qui importent `_activity_urn_from` & co. depuis là).
+Extracted from `client.py` — content unchanged. `parse_feed` and the private helpers
+remain re-exported by `client.py` (frozen import path, see the tests
+`test_unipile_feed.py` which import `_activity_urn_from` & co. from there).
 """
 
 from __future__ import annotations
@@ -15,19 +15,19 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
-# ---- feed parsing (Voyager graphe normalisé) ----------------------------
-# Voyager renvoie un graphe NORMALISÉ : `data.feedDashMainFeedByMainFeed.elements[]`
-# (les updates) + `data.included[]` (entités déréférencées par URN, ex. le
-# socialDetail qui porte les compteurs). Le mapping est DÉFENSIF par conception :
-# le schéma Voyager n'est pas contractuel, donc chaque champ est extrait en
-# best-effort (accès imbriqué tolérant aux clés absentes) et un item qui casse
-# le mapping est journalisé + renvoyé en mode dégradé plutôt que de tout faire
-# échouer. Si la forme globale est inattendue, on remonte le payload brut.
+# ---- feed parsing (Voyager normalized graph) ----------------------------
+# Voyager returns a NORMALIZED graph: `data.feedDashMainFeedByMainFeed.elements[]`
+# (the updates) + `data.included[]` (entities dereferenced by URN, e.g. the
+# socialDetail that carries the counters). The mapping is DEFENSIVE by design:
+# the Voyager schema is not contractual, so each field is extracted
+# best-effort (nested access tolerant of missing keys) and an item that breaks
+# the mapping is logged + returned in degraded mode rather than making everything
+# fail. If the overall shape is unexpected, we surface the raw payload.
 
 
 def _unpack_cursor(cursor: Optional[str]) -> tuple[int, Optional[str]]:
-    """Curseur opaque `"<start>|<paginationToken>"` → (start, token). Tolérant :
-    cursor None/vide → (0, None) ; sans `|` → traité comme un token nu (start 0)."""
+    """Opaque cursor `"<start>|<paginationToken>"` → (start, token). Tolerant:
+    cursor None/empty → (0, None); without `|` → treated as a bare token (start 0)."""
     if not cursor:
         return 0, None
     if "|" in cursor:
@@ -41,8 +41,8 @@ def _unpack_cursor(cursor: Optional[str]) -> tuple[int, Optional[str]]:
 
 
 def _deep_get(obj: Any, *keys: str, default: Any = None) -> Any:
-    """Accès imbriqué tolérant : retourne `default` dès qu'un maillon manque ou
-    n'est pas un dict (jamais de KeyError/TypeError sur un graphe Voyager partiel)."""
+    """Tolerant nested access: returns `default` as soon as a link is missing or
+    is not a dict (never a KeyError/TypeError on a partial Voyager graph)."""
     cur = obj
     for k in keys:
         if not isinstance(cur, dict):
@@ -54,8 +54,8 @@ def _deep_get(obj: Any, *keys: str, default: Any = None) -> Any:
 
 
 def _text_of(node: Any) -> Optional[str]:
-    """Voyager enveloppe souvent le texte dans `{text: "..."}` (parfois imbriqué).
-    Accepte une string nue, `{text: str}` ou `{text: {text: str}}`."""
+    """Voyager often wraps text in `{text: "..."}` (sometimes nested).
+    Accepts a bare string, `{text: str}` or `{text: {text: str}}`."""
     if isinstance(node, str):
         return node
     if isinstance(node, dict):
@@ -68,10 +68,10 @@ def _text_of(node: Any) -> Optional[str]:
 
 
 def _activity_urn_from(el: dict) -> Optional[str]:
-    """Extrait `urn:li:activity:<id>` d'un update Voyager.
+    """Extract `urn:li:activity:<id>` from a Voyager update.
 
-    Pistes (dans l'ordre) : updateMetadata.urn / updateMetadata.shareUrn /
-    le `entityUrn` de l'update (`urn:li:fsd_update:(urn:li:activity:...,...)`)."""
+    Leads (in order): updateMetadata.urn / updateMetadata.shareUrn /
+    the update's `entityUrn` (`urn:li:fsd_update:(urn:li:activity:...,...)`)."""
     for path in (("updateMetadata", "urn"), ("updateMetadata", "shareUrn")):
         v = _deep_get(el, *path)
         if isinstance(v, str) and "urn:li:activity:" in v:
@@ -83,7 +83,7 @@ def _activity_urn_from(el: dict) -> Optional[str]:
 
 
 def _extract_activity(s: str) -> Optional[str]:
-    """Isole `urn:li:activity:<id>` d'une chaîne (URN composé ou nu)."""
+    """Isolate `urn:li:activity:<id>` from a string (composite or bare URN)."""
     marker = "urn:li:activity:"
     idx = s.find(marker)
     if idx < 0:
@@ -99,9 +99,9 @@ def _extract_activity(s: str) -> Optional[str]:
 
 
 def _posted_at_from_activity(activity_urn: Optional[str]) -> Optional[str]:
-    """Décode l'horodatage encodé dans l'id d'activité LinkedIn : les 41 bits de
-    poids fort de l'id 64-bit = un timestamp en ms (`id >> 22`). Astuce robuste,
-    indépendante du libellé relatif ('2h') affiché par Voyager."""
+    """Decode the timestamp encoded in the LinkedIn activity id: the 41 most
+    significant bits of the 64-bit id = a timestamp in ms (`id >> 22`). Robust trick,
+    independent of the relative label ('2h') displayed by Voyager."""
     if not activity_urn:
         return None
     try:
@@ -109,7 +109,7 @@ def _posted_at_from_activity(activity_urn: Optional[str]) -> Optional[str]:
     except (TypeError, ValueError):
         return None
     ms = aid >> 22
-    # garde-fou : un epoch ms plausible (> 2001-09, < 2100)
+    # guard: a plausible epoch ms (> 2001-09, < 2100)
     if not (1_000_000_000_000 < ms < 4_102_444_800_000):
         return None
     try:
@@ -119,8 +119,8 @@ def _posted_at_from_activity(activity_urn: Optional[str]) -> Optional[str]:
 
 
 def _social_counts(el: dict, included_by_urn: dict) -> tuple[Optional[int], Optional[int]]:
-    """(reactions_count, comments_count) depuis le socialDetail — inliné ou
-    déréférencé via `*socialDetail` dans `included`. Best-effort."""
+    """(reactions_count, comments_count) from the socialDetail — inlined or
+    dereferenced via `*socialDetail` in `included`. Best-effort."""
     sd = el.get("socialDetail")
     if sd is None:
         ref = el.get("*socialDetail")
@@ -141,11 +141,11 @@ def _social_counts(el: dict, included_by_urn: dict) -> tuple[Optional[int], Opti
 
 
 def _annotated_entity(node: Any) -> Optional[str]:
-    """Nom de la PREMIÈRE entité annotée d'un texte Voyager. Voyager livre ses
-    libellés en texte annoté — `{text: "Jean Dupont a commenté ceci", attributes:
-    [{start, length, …}]}` — où la 1re annotation couvre l'acteur. On en découpe
-    la tranche plutôt que de deviner par expression régulière (indépendant de la
-    langue de l'interface). None si la forme n'est pas celle-là."""
+    """Name of the FIRST annotated entity of a Voyager text. Voyager delivers its
+    labels as annotated text — `{text: "Jean Dupont commented on this", attributes:
+    [{start, length, …}]}` — where the 1st annotation covers the actor. We slice
+    it out rather than guess with a regular expression (independent of the
+    interface language). None if the shape is not that one."""
     if not isinstance(node, dict):
         return None
     text = node.get("text")
@@ -165,16 +165,16 @@ def _annotated_entity(node: Any) -> Optional[str]:
 
 
 def _feed_context(el: dict) -> tuple[Optional[str], Optional[str]]:
-    """(feed_reason, surfaced_by) — POURQUOI ce post remonte dans MON feed.
+    """(feed_reason, surfaced_by) — WHY this post shows up in MY feed.
 
-    Un post d'inconnu apparaît presque toujours par REBOND d'une relation : « X a
-    commenté ceci », « X a réagi », repartage. Cette raison est le cœur du social
-    selling par rebond (qui de mon réseau interagit avec qui) et elle était perdue
-    au mapping (feedback #280) : `feed_reason` = le libellé Voyager verbatim,
-    `surfaced_by` = le nom de la relation à l'origine de la remontée.
+    A stranger's post almost always appears through a connection's REBOUND: "X
+    commented on this", "X reacted", reshare. This reason is the core of
+    rebound social selling (who in my network interacts with whom) and it was lost
+    in the mapping (feedback #280): `feed_reason` = the Voyager label verbatim,
+    `surfaced_by` = the name of the connection that caused it to surface.
 
-    Best-effort : `header` (emplacement usuel du libellé de rebond) puis
-    `socialContext`. Aucune des deux ⇒ (None, None) = post remonté directement."""
+    Best-effort: `header` (usual location of the rebound label) then
+    `socialContext`. Neither ⇒ (None, None) = post surfaced directly."""
     for node in (el.get("header"), el.get("socialContext")):
         reason = _text_of(node)
         if reason:
@@ -184,18 +184,18 @@ def _feed_context(el: dict) -> tuple[Optional[str], Optional[str]]:
 
 def _comment_authors(el: dict, included_by_urn: dict,
                      activity_urn: Optional[str]) -> list[str]:
-    """Auteurs des commentaires visibles sur cet update, dans l'ordre de rencontre.
+    """Authors of the comments visible on this update, in order of appearance.
 
-    Le feed ne porte pas les commentaires complets, mais Voyager y joint les
-    commentaires MIS EN AVANT (ceux qui font remonter le post) : à défaut du fil
-    entier, garder QUI a commenté suffit à répondre « qui de mon réseau interagit
-    avec qui » (feedback #280). Deux pistes : le `socialDetail` (inline ou
-    déréférencé) puis les objets `comment` d'`included` rattachés à cette activité
-    (leur `entityUrn` porte l'id d'activité). Best-effort, dédupliqué."""
+    The feed doesn't carry the full comments, but Voyager attaches the
+    HIGHLIGHTED comments (those that make the post surface): without the whole
+    thread, keeping WHO commented is enough to answer "who in my network interacts
+    with whom" (feedback #280). Two leads: the `socialDetail` (inline or
+    dereferenced) then the `comment` objects of `included` attached to this activity
+    (their `entityUrn` carries the activity id). Best-effort, deduplicated."""
     names: list[str] = []
 
     def _add(commenter: Any) -> None:
-        if isinstance(commenter, str):  # référence `*commenter` → included
+        if isinstance(commenter, str):  # `*commenter` reference → included
             commenter = included_by_urn.get(commenter)
         name = (_text_of(_deep_get(commenter, "name"))
                 or _text_of(_deep_get(commenter, "title"))
@@ -219,42 +219,42 @@ def _comment_authors(el: dict, included_by_urn: dict,
     return names
 
 
-# --- DE QUOI un post est fait (bloc `content` de l'update) -------------------
-# Voyager range le média d'un post dans `content`, sous une clé qui NOMME le type de
-# composant (`imageComponent`, `pollComponent`, `carouselContent`… — 42 noms relevés
-# sur un feed réel). Ce bloc était intégralement jeté au mapping : un post à 2 775
-# réactions dont le texte se réduit à « 🧐 » (tout le propos est dans l'image) devenait
-# INCLASSABLE pour un agent — le post le plus engageant d'une page, invisible.
-# Le bloc brut pèse ~4 700 caractères (images en 4 résolutions + tracking) : on n'en
-# garde que le TYPE normalisé + l'intitulé porteur de sens quand il est là, ~100
-# caractères. Le type est DÉRIVÉ du nom de la clé (suffixe `Component`/`Content`
-# retiré, camelCase → snake_case), pas d'une table exhaustive à maintenir : un
-# composant jamais vu rend son propre nom normalisé plutôt qu'un « unknown » muet.
-# La table ci-dessous ne porte donc QUE les synonymes à replier.
+# --- WHAT a post is made of (the update's `content` block) -------------------
+# Voyager stores a post's media in `content`, under a key that NAMES the component
+# type (`imageComponent`, `pollComponent`, `carouselContent`… — 42 names seen
+# on a real feed). This block was entirely dropped by the mapping: a post with 2,775
+# reactions whose text boils down to "🧐" (the whole point is in the image) became
+# UNCLASSIFIABLE for an agent — the most engaging post of a page, invisible.
+# The raw block weighs ~4,700 characters (images in 4 resolutions + tracking): we only
+# keep the normalized TYPE + the meaningful label when there is one, ~100
+# characters. The type is DERIVED from the key name (`Component`/`Content` suffix
+# removed, camelCase → snake_case), not from an exhaustive table to maintain: a
+# never-seen component returns its own normalized name rather than a silent "unknown".
+# The table below therefore ONLY carries the synonyms to fold.
 _CONTENT_ALIASES = {
-    "linked_in_video": "video",     # vidéo native LinkedIn
-    "external_video": "video",      # YouTube & co. embarqués
+    "linked_in_video": "video",     # native LinkedIn video
+    "external_video": "video",      # embedded YouTube & co.
     "native_video": "video",
-    "slideshow": "carousel",        # diaporama d'images = un carrousel
+    "slideshow": "carousel",        # image slideshow = a carousel
 }
-# Ordre de DOMINANCE quand un update porte plusieurs composants : le premier de cette
-# liste gagne. Classement par pouvoir de tri décroissant — ce qui appelle une action
-# précise (sondage, document, article) avant le simple habillage (image). Un type
-# inconnu passe après tous les connus (il informe, mais on ne sait pas encore combien).
+# DOMINANCE order when an update carries several components: the first of this
+# list wins. Ranked by decreasing triage power — what calls for a
+# specific action (poll, document, article) before mere decoration (image). An
+# unknown type comes after all the known ones (it informs, but we don't know yet how much).
 _CONTENT_PRIORITY = ("poll", "document", "article", "newsletter", "event", "job",
                      "celebration", "video", "carousel", "image", "entity")
-# Clés d'intitulé sondées sur le composant dominant (titre d'article, question d'un
-# sondage, titre d'un document, texte alternatif d'une image…).
+# Label keys probed on the dominant component (article title, poll question,
+# document title, image alt text…).
 _CONTENT_LABEL_KEYS = ("title", "question", "headline", "name",
                        "altText", "accessibilityText")
-_CONTENT_LABEL_MAX = 140   # borne le pire cas (≈ la limite d'une question de sondage)
+_CONTENT_LABEL_MAX = 140   # bounds the worst case (≈ the limit of a poll question)
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
 def _content_key_to_type(key: str) -> Optional[str]:
     """`imageComponent` → `image`, `linkedInVideoComponent` → `video`,
-    `carouselContent` → `carousel`. None si la clé n'est pas un composant de contenu
-    (`resharedUpdate`, `$type`… restent hors du compte)."""
+    `carouselContent` → `carousel`. None if the key is not a content component
+    (`resharedUpdate`, `$type`… stay out of the count)."""
     for suffix in ("Component", "Content"):
         if key.endswith(suffix) and len(key) > len(suffix):
             base = _CAMEL_SPLIT.sub("_", key[: -len(suffix)]).lower()
@@ -263,12 +263,12 @@ def _content_key_to_type(key: str) -> Optional[str]:
 
 
 def _content_label(node: Any) -> Optional[str]:
-    """Intitulé porteur de sens d'un composant, s'il est disponible SANS COÛT (déjà
-    dans la charge utile) : titre d'article, question de sondage, titre de document,
-    texte alternatif d'une image. Sondé sur le composant, puis UN cran plus bas — ses
-    sous-objets (`document.title`) et le 1er élément de ses listes
-    (`images[0].accessibilityText`), là où Voyager range ces intitulés.
-    Tronqué à `_CONTENT_LABEL_MAX`. None si le composant n'en porte pas."""
+    """Meaningful label of a component, if available AT NO COST (already
+    in the payload): article title, poll question, document title,
+    image alt text. Probed on the component, then ONE level down — its
+    sub-objects (`document.title`) and the 1st element of its lists
+    (`images[0].accessibilityText`), where Voyager stores these labels.
+    Truncated to `_CONTENT_LABEL_MAX`. None if the component carries none."""
     if not isinstance(node, dict):
         return None
     candidates = [node]
@@ -286,24 +286,24 @@ def _content_label(node: Any) -> Optional[str]:
 
 
 def _content_facets(content: Any) -> tuple[str, Optional[str]]:
-    """(content_type, content_title) d'un bloc `content` Voyager.
+    """(content_type, content_title) of a Voyager `content` block.
 
-    Pas de bloc / aucun composant reconnaissable → `("text", None)` : le post ne porte
-    que son texte, ce n'est pas un échec de mapping (un vrai schéma inattendu, lui,
-    fait lever `_map_feed_item` et l'item est journalisé puis ignoré).
-    Plusieurs composants → le DOMINANT (`_CONTENT_PRIORITY`, puis ordre d'apparition)
-    donne le type ET l'intitulé : un champ scalaire reste filtrable à l'égalité en aval
-    (miroir datastore), là où une liste ou un « image+article » ne l'est pas."""
+    No block / no recognizable component → `("text", None)`: the post carries
+    only its text, this is not a mapping failure (a truly unexpected schema, on the other hand,
+    makes `_map_feed_item` raise and the item is logged then ignored).
+    Several components → the DOMINANT one (`_CONTENT_PRIORITY`, then order of appearance)
+    gives the type AND the label: a scalar field stays filterable by equality downstream
+    (datastore mirror), whereas a list or an "image+article" is not."""
     if not isinstance(content, dict):
         return "text", None
     found: list[tuple[int, int, str, Any]] = []
     for i, (key, node) in enumerate(content.items()):
-        # ⚠️ Voyager déclare TOUTES les clés de son schéma GraphQL, la quasi-totalité à
-        # `null` : la PRÉSENCE d'une clé ne dit rien, seule sa VALEUR compte. Sans ce
-        # test, `dynamicPollComponent: null` faisait un sondage de n'importe quel post —
-        # et `poll` étant en tête de la dominance, 48 posts sur 60 sont sortis en `poll`
-        # au premier run réel (12/08). Une donnée fausse écrite à chaque sync est pire
-        # que pas de donnée : l'agent trie dessus sans pouvoir en douter.
+        # ⚠️ Voyager declares ALL the keys of its GraphQL schema, almost all of them
+        # `null`: a key's PRESENCE means nothing, only its VALUE counts. Without this
+        # test, `dynamicPollComponent: null` made a poll out of any post —
+        # and since `poll` tops the dominance, 48 posts out of 60 came out as `poll`
+        # on the first real run (12/08). Wrong data written at every sync is worse
+        # than no data: the agent sorts on it with no way to doubt it.
         if node is None or node == {} or node == [] or node == "":
             continue
         ctype = _content_key_to_type(key)
@@ -317,44 +317,44 @@ def _content_facets(content: Any) -> tuple[str, Optional[str]]:
     found.sort(key=lambda f: (f[0], f[1]))
     _, _, ctype, node = found[0]
     if ctype not in _CONTENT_PRIORITY:
-        # Composant jamais vu : on rend son nom tel que Voyager le nomme (normalisé)
-        # plutôt qu'un « unknown » muet — traçable quand LinkedIn en ajoute un.
-        logger.debug("unipile feed: composant de contenu inconnu (%s)", ctype)
+        # Never-seen component: we return its name as Voyager names it (normalized)
+        # rather than a silent "unknown" — traceable when LinkedIn adds one.
+        logger.debug("unipile feed: unknown content component (%s)", ctype)
     return ctype, _content_label(node)
 
 
 def _map_feed_item(el: dict, included_by_urn: dict) -> dict:
-    """Un update Voyager → item normalisé. Lève si `el` n'est pas un update
-    exploitable (ni actor ni commentary) — l'appelant gère le fallback."""
+    """A Voyager update → normalized item. Raises if `el` is not a usable
+    update (neither actor nor commentary) — the caller handles the fallback."""
     actor = el.get("actor") if isinstance(el.get("actor"), dict) else {}
     commentary = el.get("commentary") if isinstance(el.get("commentary"), dict) else {}
     if not actor and not commentary:
-        raise ValueError("element sans actor/commentary (pas un update feed)")
+        raise ValueError("element without actor/commentary (not a feed update)")
 
     activity_urn = _activity_urn_from(el)
     reactions, comments = _social_counts(el, included_by_urn)
-    # POURQUOI ce post remonte dans MON feed (« Untel a commenté ceci », « Untel a
-    # réagi ») : c'est le souvenir le plus fréquent de l'utilisateur — il se rappelle
-    # QUI a fait remonter le post, pas son auteur. Sans ce champ, un post retrouvé
-    # « par rebond » est introuvable dans le miroir (signal #280 : recherche d'un post
-    # vu via le commentaire d'une relation → 0 résultat sur 710 posts miroir).
-    # `_feed_context` lit `header` PUIS `socialContext` (repli) et rend aussi le NOM de
-    # la relation à l'origine de la remontée — une lecture du seul `header` perdait les
-    # deux.
+    # WHY this post shows up in MY feed ("Someone commented on this", "Someone
+    # reacted"): it's what the user remembers most often — they remember
+    # WHO made the post surface, not its author. Without this field, a post found
+    # "by rebound" can't be found in the mirror (signal #280: searching for a post
+    # seen via a connection's comment → 0 results out of 710 mirror posts).
+    # `_feed_context` reads `header` THEN `socialContext` (fallback) and also returns the NAME of
+    # the connection that caused it to surface — reading `header` alone lost
+    # both.
     feed_reason, surfaced_by = _feed_context(el)
     post_url = (
         f"https://www.linkedin.com/feed/update/{activity_urn}"
         if activity_urn else None
     )
-    # REPOST : `author_name` est alors le re-partageur et `text` son commentaire de
-    # partage — l'auteur ORIGINAL, celui qu'on cherche, se perdait entièrement.
+    # REPOST: `author_name` is then the resharer and `text` their share
+    # comment — the ORIGINAL author, the one we're looking for, was entirely lost.
     reshared = el.get("resharedUpdate") if isinstance(el.get("resharedUpdate"), dict) else {}
     if not reshared:
         reshared = _deep_get(el, "content", "resharedUpdate", default={}) or {}
     reshared_actor = reshared.get("actor") if isinstance(reshared.get("actor"), dict) else {}
-    # …et son COMMENTAIRE aussi : sur un repost, `text` porte le mot du re-partageur —
-    # souvent vide ou « 👏 » — pendant que le contenu réel, celui sur lequel la règle de
-    # tri veut juger, restait introuvable. Même traitement de type que le post porteur.
+    # …and its COMMENTARY too: on a repost, `text` carries the resharer's note —
+    # often empty or "👏" — while the real content, the one the triage rule
+    # wants to judge, stayed unreachable. Same type treatment as the carrier post.
     reshared_commentary = (reshared.get("commentary")
                            if isinstance(reshared.get("commentary"), dict) else {})
     content_type, content_title = _content_facets(el.get("content"))
@@ -367,24 +367,24 @@ def _map_feed_item(el: dict, included_by_urn: dict) -> dict:
         "posted_relative": _text_of(actor.get("subDescription")),
         "reactions_count": reactions,
         "comments_count": comments,
-        # Pourquoi ce post remonte + qui l'a fait remonter + qui a commenté
-        # (feedback #280 : le rebond par une relation était perdu au mapping).
+        # Why this post surfaces + who made it surface + who commented
+        # (feedback #280: the rebound through a connection was lost in the mapping).
         "feed_reason": feed_reason,
         "surfaced_by": surfaced_by,
         "comment_authors": _comment_authors(el, included_by_urn, activity_urn),
-        # DE QUOI le post est fait : sans ça, un post dont tout le propos est dans
-        # l'image (texte = « 🧐 », 2 775 réactions) est inclassable — le type normalisé
-        # + l'intitulé gratuit (titre d'article, question de sondage) le rendent triable
-        # sans rapatrier le bloc `content` (~4 700 caractères, 93 % de tracking et de
-        # miniatures). `content_type` vaut toujours quelque chose (`text` = post nu).
+        # WHAT the post is made of: without this, a post whose whole point is in
+        # the image (text = "🧐", 2,775 reactions) is unclassifiable — the normalized type
+        # + the free label (article title, poll question) make it sortable
+        # without pulling in the `content` block (~4,700 characters, 93% tracking and
+        # thumbnails). `content_type` is always something (`text` = bare post).
         "content_type": content_type,
         "content_title": content_title,
         "post_url": post_url,
         "is_repost": bool(reshared),
         "original_author_name": _text_of(reshared_actor.get("name")) or None,
-        # Sur un repost, la substance est dans l'ORIGINAL : son texte et la nature de
-        # son contenu. None hors repost (le champ reste présent : le miroir aval
-        # projette des colonnes fixes).
+        # On a repost, the substance is in the ORIGINAL: its text and the nature of
+        # its content. None outside reposts (the field stays present: the downstream mirror
+        # projects fixed columns).
         "original_text": (_text_of(reshared_commentary.get("text"))
                           or _text_of(reshared_commentary) or None) if reshared else None,
         "original_content_type": (_content_facets(reshared.get("content"))[0]
@@ -393,11 +393,11 @@ def _map_feed_item(el: dict, included_by_urn: dict) -> dict:
 
 
 def _is_promo(el: dict) -> bool:
-    """True si l'update est un encart sponsorisé/promotionnel (pub LinkedIn,
-    « Hiring Pro », posts Promoted…) plutôt qu'un post organique — à exclure du
-    feed. Plusieurs repères Voyager, best-effort : urn `inAppPromotion`, un
-    `promoComponent` dans le contenu, `actionsPosition=PROMO_COMPONENT`, ou un
-    bloc `sponsoredTracking` dans les métadonnées de tracking."""
+    """True if the update is a sponsored/promotional insert (LinkedIn ad,
+    "Hiring Pro", Promoted posts…) rather than an organic post — to be excluded from the
+    feed. Several Voyager markers, best-effort: `inAppPromotion` urn, a
+    `promoComponent` in the content, `actionsPosition=PROMO_COMPONENT`, or a
+    `sponsoredTracking` block in the tracking metadata."""
     eu = el.get("entityUrn")
     if isinstance(eu, str) and "inAppPromotion" in eu:
         return True
@@ -411,21 +411,21 @@ def _is_promo(el: dict) -> bool:
 
 
 def parse_feed(resp: Any, count: int = 20, start: int = 0) -> dict:
-    """Mappe l'enveloppe Unipile raw data du feed → `{items, cursor, count}`.
+    """Map the Unipile raw data feed envelope → `{items, cursor, count}`.
 
-    Ne renvoie QUE des posts organiques normalisés : les encarts sponsorisés/promo
-    (`_is_promo`) sont écartés silencieusement, et un update au schéma inattendu est
-    **journalisé (warning) puis ignoré** (jamais de `_raw` verbeux dans la sortie).
-    Si la structure globale est inattendue (pas d'`elements`), on remonte
-    `{items: [], cursor: None, count: 0, _raw: resp}` + log error.
+    Returns ONLY normalized organic posts: sponsored/promo inserts
+    (`_is_promo`) are silently dropped, and an update with an unexpected schema is
+    **logged (warning) then ignored** (never a verbose `_raw` in the output).
+    If the overall structure is unexpected (no `elements`), we surface
+    `{items: [], cursor: None, count: 0, _raw: resp}` + an error log.
     """
-    # Enveloppe Unipile {object, data} → JSON Voyager {data, included}.
+    # Unipile envelope {object, data} → Voyager JSON {data, included}.
     voyager = resp.get("data") if isinstance(resp, dict) else None
     feed = _deep_get(voyager, "data", "feedDashMainFeedByMainFeed")
     elements = feed.get("elements") if isinstance(feed, dict) else None
     if not isinstance(elements, list):
         logger.error(
-            "unipile feed: structure inattendue (pas d'elements) — payload brut remonté"
+            "unipile feed: unexpected structure (no elements) — raw payload surfaced"
         )
         return {"items": [], "cursor": None, "count": 0, "_raw": resp}
 
@@ -439,12 +439,12 @@ def parse_feed(resp: Any, count: int = 20, start: int = 0) -> dict:
     items: list[dict] = []
     for el in elements:
         if not isinstance(el, dict) or _is_promo(el):
-            continue  # non-dict ou encart sponsorisé/promo → jamais renvoyé
+            continue  # non-dict or sponsored/promo insert → never returned
         try:
             items.append(_map_feed_item(el, included_by_urn))
-        except Exception:  # noqa: BLE001 — parsing défensif voulu
+        except Exception:  # noqa: BLE001 — defensive parsing intended
             logger.warning(
-                "unipile feed: mapping d'un item échoué, ignoré", exc_info=True
+                "unipile feed: mapping of an item failed, ignored", exc_info=True
             )
             continue
 

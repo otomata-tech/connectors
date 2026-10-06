@@ -1,16 +1,16 @@
 """n8n public REST API client — workflows + executions.
 
-n8n est une plateforme d'automatisation de workflows (open source, self-hostée
-OU n8n Cloud). L'**API publique** expose les workflows, leurs exécutions, les
-credentials et les tags.
+n8n is a workflow automation platform (open source, self-hosted
+OR n8n Cloud). The **public API** exposes workflows, their executions,
+credentials and tags.
 
-Auth = **API key** (en-tête `X-N8N-API-KEY`) + **base URL** de l'instance (le
-self-hosting impose une URL propre — n8n Cloud : `https://<sub>.app.n8n.cloud`).
-La clé se crée dans n8n : Settings → n8n API → Create an API key.
+Auth = **API key** (`X-N8N-API-KEY` header) + the instance's **base URL** (self-hosting
+requires its own URL — n8n Cloud: `https://<sub>.app.n8n.cloud`).
+The key is created in n8n: Settings → n8n API → Create an API key.
 
-Les deux passés au constructeur.
+Both passed to the constructor.
 
-Docs : https://docs.n8n.io/api/
+Docs: https://docs.n8n.io/api/
 
 Requires: requests
 """
@@ -24,20 +24,20 @@ from ..common.credentials import require
 
 
 class N8nClient:
-    """Client n8n — workflows, exécutions, tags (API publique v1)."""
+    """n8n client — workflows, executions, tags (public API v1)."""
 
     def __init__(self, api_key: Optional[str] = None,
                  base_url: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: n8n API key.
-            base_url: URL de l'instance, ex. `https://acme.app.n8n.cloud`.
-                Le suffixe `/api/v1` est ajouté.
+            base_url: instance URL, e.g. `https://acme.app.n8n.cloud`.
+                The `/api/v1` suffix is added.
         """
         self.api_key = require(api_key, "N8N_API_KEY")
         base = require(base_url, "N8N_BASE_URL").rstrip("/")
-        # Tolère qu'on passe déjà l'URL avec /api/v1.
+        # Tolerate being passed the URL already carrying /api/v1.
         if base.endswith("/api/v1"):
             base = base[: -len("/api/v1")]
         self.base_url = base
@@ -68,12 +68,12 @@ class N8nClient:
         tags: Optional[str] = None,
         cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les workflows (paginé via `nextCursor`).
+        """List workflows (paginated via `nextCursor`).
 
         Args:
-            active: ne garder que les workflows actifs/inactifs.
-            tags: liste de tags séparés par des virgules.
-            cursor: curseur de pagination (`nextCursor` de la page précédente).
+            active: keep only active/inactive workflows.
+            tags: comma-separated list of tags.
+            cursor: pagination cursor (`nextCursor` from the previous page).
         """
         params: Dict[str, Any] = {"limit": min(limit, 250)}
         if active is not None:
@@ -85,18 +85,18 @@ class N8nClient:
         return self._request("GET", "/workflows", params=params)
 
     def get_workflow(self, workflow_id: str) -> Dict[str, Any]:
-        """Récupère un workflow (nodes, connections, settings)."""
+        """Fetch a workflow (nodes, connections, settings)."""
         return self._request("GET", f"/workflows/{workflow_id}")
 
     def activate_workflow(self, workflow_id: str) -> Dict[str, Any]:
-        """Active un workflow (déclencheurs/cron mis en route)."""
+        """Activate a workflow (triggers/cron started)."""
         return self._request("POST", f"/workflows/{workflow_id}/activate")
 
     def deactivate_workflow(self, workflow_id: str) -> Dict[str, Any]:
-        """Désactive un workflow."""
+        """Deactivate a workflow."""
         return self._request("POST", f"/workflows/{workflow_id}/deactivate")
 
-    # --- Exécutions ---------------------------------------------------------
+    # --- Executions ---------------------------------------------------------
 
     def list_executions(
         self,
@@ -105,12 +105,12 @@ class N8nClient:
         status: Optional[str] = None,
         cursor: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les exécutions (paginé).
+        """List executions (paginated).
 
         Args:
-            workflow_id: filtre par workflow.
+            workflow_id: filter by workflow.
             status: `success` | `error` | `waiting`.
-            cursor: curseur de pagination.
+            cursor: pagination cursor.
         """
         params: Dict[str, Any] = {"limit": min(limit, 250)}
         if workflow_id:
@@ -123,8 +123,8 @@ class N8nClient:
 
     def get_execution(self, execution_id: int,
                       include_data: bool = False) -> Dict[str, Any]:
-        """Récupère une exécution. `include_data` inclut les données détaillées
-        des nodes (volumineux)."""
+        """Fetch an execution. `include_data` includes the detailed data
+        of the nodes (voluminous)."""
         params = {"includeData": "true"} if include_data else None
         return self._request("GET", f"/executions/{execution_id}", params=params)
 
@@ -132,7 +132,7 @@ class N8nClient:
 
     def list_tags(self, limit: int = 50,
                   cursor: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les tags."""
+        """List tags."""
         params: Dict[str, Any] = {"limit": min(limit, 250)}
         if cursor:
             params["cursor"] = cursor

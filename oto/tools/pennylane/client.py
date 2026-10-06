@@ -35,9 +35,9 @@ from .supplier_invoices import SupplierInvoicesMixin
 
 
 def _is_outstanding(transaction) -> bool:
-    """True si la transaction porte un `outstanding_balance` non nul (reste à
-    lettrer). Champ absent ou illisible → True (conservée : filtrer sur un champ
-    douteux ne doit pas faire disparaître de la donnée en silence)."""
+    """True if the transaction has a non-zero `outstanding_balance` (still to be
+    matched). Missing or unreadable field → True (kept: filtering on a doubtful
+    field must not silently make data disappear)."""
     if not isinstance(transaction, dict):
         return True
     value = transaction.get("outstanding_balance")
@@ -52,10 +52,10 @@ def _is_outstanding(transaction) -> bool:
 class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
     """Client for Pennylane API v2.
 
-    Le grand livre (écritures, journaux, lettrage de lignes) vit dans
-    `LedgerMixin` — même découpage que `brevo`, cf. `ledger.py` ; les devis dans
-    `QuotesMixin` (`quotes.py`) ; l'import, la correction et la validation des
-    factures d'achat dans `SupplierInvoicesMixin` (`supplier_invoices.py`).
+    The general ledger (entries, journals, line matching) lives in
+    `LedgerMixin` — same split as `brevo`, see `ledger.py`; quotes in
+    `QuotesMixin` (`quotes.py`); import, correction and validation of
+    supplier invoices in `SupplierInvoicesMixin` (`supplier_invoices.py`).
     """
 
     BASE_URL = "https://app.pennylane.com/api/external/v2"
@@ -83,19 +83,19 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
 
     def _appel(self, methode: str, endpoint: str, *, params: Optional[dict] = None,
                data: Optional[dict] = None, retries: int = 3) -> dict:
-        """UN appel à l'API, et le seul endroit qui traduit un refus.
+        """ONE call to the API, and the only place that translates a refusal.
 
-        Un refus amont est une **exception**, jamais une valeur de retour. Cette
-        règle était déjà écrite deux fois en aval — dans `fetch_all_pages` et
-        dans `_filter_eq` — parce que le transport ne la portait pas : chacun
-        rattrapait le dict pour son propre compte, et tout appelant qui n'y
-        pensait pas lisait un refus comme un résultat (oto-backend#223 pour la
-        première moitié, oto-core#77 pour celle-ci). Les deux copies sont
-        parties avec ce passage unique.
+        An upstream refusal is an **exception**, never a return value. This
+        rule was already written twice downstream — in `fetch_all_pages` and
+        in `_filter_eq` — because the transport did not carry it: each one
+        caught the dict on its own, and any caller that did not think of it
+        read a refusal as a result (oto-backend#223 for the first half,
+        oto-core#77 for this one). Both copies went away with this single
+        passage.
 
-        Le `try` ne couvre que l'aller-retour réseau : sans ça, il rattraperait
-        l'exception qu'on vient de lever et la transformerait à nouveau en
-        valeur — le défaut exact qu'on ferme.
+        The `try` only covers the network round trip: without that, it would
+        catch the exception we just raised and turn it back into a
+        value — the exact defect being closed.
         """
         url = f"{self.BASE_URL}/{endpoint}"
 
@@ -118,41 +118,41 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
                 charge = response.json()
             except ValueError as e:
                 raise RuntimeError(
-                    f"pennylane: {methode} {endpoint} a répondu "
-                    f"{response.status_code} sans JSON lisible — "
+                    f"pennylane: {methode} {endpoint} answered "
+                    f"{response.status_code} without readable JSON — "
                     f"{response.text[:200]!r}") from e
             return self.field_filter.apply(charge)
 
         raise RuntimeError(
-            f"pennylane: {methode} {endpoint} — débit limité (429) après "
-            f"{retries} tentatives.")
+            f"pennylane: {methode} {endpoint} — rate limited (429) after "
+            f"{retries} attempts.")
 
     def post(self, endpoint: str, data: dict, retries: int = 3) -> dict:
-        """POST sur l'API Pennylane. Lève sur refus amont."""
+        """POST on the Pennylane API. Raises on upstream refusal."""
         return self._appel("POST", endpoint, data=data, retries=retries)
 
     def put(self, endpoint: str, data: dict, retries: int = 3) -> dict:
-        """PUT sur l'API Pennylane. Lève sur refus amont."""
+        """PUT on the Pennylane API. Raises on upstream refusal."""
         return self._appel("PUT", endpoint, data=data, retries=retries)
 
     def delete(self, endpoint: str, data: Optional[dict] = None,
                retries: int = 3) -> dict:
-        """DELETE sur l'API Pennylane. Lève sur refus amont.
+        """DELETE on the Pennylane API. Raises on upstream refusal.
 
-        `data` : corps de requête. Inhabituel sur un DELETE, mais Pennylane en
-        exige un pour le délettrage (`DELETE /ledger_entry_lines/lettering` prend
-        les lignes à délettrer) — sans lui, ce geste n'est pas exprimable.
+        `data`: request body. Unusual on a DELETE, but Pennylane requires one
+        for unmatching (`DELETE /ledger_entry_lines/lettering` takes the lines
+        to unmatch) — without it, this action cannot be expressed.
         """
         return self._appel("DELETE", endpoint, data=data, retries=retries)
 
     def fetch(self, endpoint: str, params: Optional[dict] = None,
               retries: int = 3) -> dict:
-        """Lecture sur l'API Pennylane. Lève sur refus amont.
+        """Read on the Pennylane API. Raises on upstream refusal.
 
         Args:
-            endpoint: chemin (ex. "me", "trial_balance", "ledger_accounts")
-            params: paramètres de requête
-            retries: tentatives sur limitation de débit
+            endpoint: path (e.g. "me", "trial_balance", "ledger_accounts")
+            params: query parameters
+            retries: attempts on rate limiting
         """
         return self._appel("GET", endpoint, params=params, retries=retries)
 
@@ -166,11 +166,11 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
         """
         Fetch all pages of a paginated endpoint (cursor pagination).
 
-        API Pennylane 2026 : seule la pagination par **curseur** (`cursor` + `limit`)
-        est supportée ; les anciens `page`/`per_page` renvoient HTTP 400. La réponse
-        porte `items`, `has_more` et `next_cursor` — on repasse `next_cursor` dans
-        `cursor` pour la page suivante. `max_pages` borne le nombre d'itérations,
-        `per_page` est envoyé comme `limit` (max 100).
+        Pennylane API 2026: only **cursor** pagination (`cursor` + `limit`)
+        is supported; the old `page`/`per_page` return HTTP 400. The response
+        carries `items`, `has_more` and `next_cursor` — we pass `next_cursor` back in
+        `cursor` for the next page. `max_pages` bounds the number of iterations,
+        `per_page` is sent as `limit` (max 100).
         """
         all_data = []
         if params is None:
@@ -186,9 +186,9 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
             if cursor:
                 params['cursor'] = cursor
 
-            # `fetch` LÈVE sur refus amont : une erreur ne peut plus être avalée
-            # en liste vide, ce qui faisait confondre « erreur d'auth » et « aucun
-            # résultat » et recréer des avoirs en double (oto-backend#223).
+            # `fetch` RAISES on upstream refusal: an error can no longer be swallowed
+            # into an empty list, which used to confuse "auth error" with "no
+            # result" and recreate duplicate credit notes (oto-backend#223).
             data = self.fetch(endpoint, params)
             time.sleep(self.rate_limit_delay)
 
@@ -197,7 +197,7 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
                 has_more = data.get('has_more', False)
                 next_cursor = data.get('next_cursor')
             else:
-                # endpoint non paginé (renvoie une liste ou un objet brut)
+                # non-paginated endpoint (returns a list or a raw object)
                 return data if isinstance(data, list) else [data]
 
             if items:
@@ -252,20 +252,20 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
                          per_page: int = 100) -> list:
         """Get bank transactions, with optional source-side reduction levers.
 
-        Sans levier, l'endpoint renvoie TOUT l'historique (vécu : 307
-        transactions ≈ 247k chars — inexploitable par un agent). Les filtres
-        sont OPTIONNELS (le brut reste le défaut) :
+        Without a lever, the endpoint returns the WHOLE history (observed: 307
+        transactions ≈ 247k chars — unusable by an agent). The filters
+        are OPTIONAL (raw remains the default):
 
         Args:
-            max_pages: borne le nombre de pages ramenées.
-            period_start / period_end: bornes de date (YYYY-MM-DD), filtrées
-                CÔTÉ SERVEUR (param `filter` de l'API v2, opérateurs gteq/lteq
-                sur `date`) — le volume est réduit à la source.
-            only_outstanding: ne garde que les transactions non soldées
-                (`outstanding_balance` ≠ 0) — filtre côté client, appliqué aux
-                pages ramenées. Un montant absent/illisible est CONSERVÉ
-                (on ne perd pas de donnée sur un champ douteux).
-            per_page: taille de page (≤100) — affine la granularité de max_pages.
+            max_pages: bounds the number of pages fetched.
+            period_start / period_end: date bounds (YYYY-MM-DD), filtered
+                SERVER-SIDE (`filter` param of API v2, operators gteq/lteq
+                on `date`) — the volume is reduced at the source.
+            only_outstanding: keeps only unsettled transactions
+                (`outstanding_balance` ≠ 0) — client-side filter, applied to
+                the fetched pages. A missing/unreadable amount is KEPT
+                (no data is lost on a doubtful field).
+            per_page: page size (≤100) — refines the granularity of max_pages.
         """
         params: dict = {}
         filters = []
@@ -288,7 +288,7 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
         """Lettre (reconcile) a bank transaction with an invoice.
 
         Reversible accounting link, not a new entry. invoice_type is
-        "customer" (ventes) or "supplier" (achats).
+        "customer" (sales) or "supplier" (purchases).
         """
         endpoint = f"{invoice_type}_invoices/{invoice_id}/matched_transactions"
         return self.post(endpoint, {"transaction_id": transaction_id})
@@ -304,12 +304,12 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
 
     def upload_file_bytes(self, data: bytes, filename: str,
                           content_type: str = "application/pdf") -> dict:
-        """Upload des OCTETS (PDF) sur Pennylane sans passer par le disque.
+        """Upload BYTES (PDF) to Pennylane without going through disk.
 
-        Variante de `upload_file` pour un appelant qui détient déjà les octets
-        (fichier « côté oto » : Drive, pièce Gmail, URL — résolus en amont). Poste
-        en multipart sur `POST /file_attachments`. Renvoie `{id, filename, url}` et
-        LÈVE sur refus amont. L'`id` est le `file_attachment_id` à passer à
+        Variant of `upload_file` for a caller that already holds the bytes
+        ("oto-side" file: Drive, Gmail attachment, URL — resolved upstream). Posts
+        as multipart to `POST /file_attachments`. Returns `{id, filename, url}` and
+        RAISES on upstream refusal. The `id` is the `file_attachment_id` to pass to
         `import_supplier_invoice`.
         """
         url = f"{self.BASE_URL}/file_attachments"
@@ -320,9 +320,9 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
                 timeout=60,
             )
         except Exception as e:
-            raise RuntimeError(f"pennylane: dépôt de {filename} — {e}") from e
-        # Multipart : ne passe pas par `_appel`, mais suit la même règle — un
-        # refus est une exception, jamais une valeur.
+            raise RuntimeError(f"pennylane: upload of {filename} — {e}") from e
+        # Multipart: does not go through `_appel`, but follows the same rule — a
+        # refusal is an exception, never a value.
         raise_for_upstream(response, service="pennylane")
         return response.json()
 
@@ -336,12 +336,12 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
         return self.fetch_all_pages("customers", max_pages=max_pages)
 
     def _filter_eq(self, endpoint: str, field: str, value) -> list:
-        """Lecture par FILTRE SERVEUR natif (`filter=[{field,operator,value}]`).
+        """Read through the native SERVER-SIDE FILTER (`filter=[{field,operator,value}]`).
 
-        Une erreur amont ne doit jamais se lire comme « aucun résultat » : les deux
-        appelants sont des gardes ANTI-DOUBLON, pour qui un faux négatif crée une
-        écriture en trop. Même règle que `fetch_all_pages` (oto-backend#223), que ce
-        chemin en un appel court-circuitait.
+        An upstream error must never read as "no result": both callers
+        are ANTI-DUPLICATE guards, for which a false negative creates an
+        extra entry. Same rule as `fetch_all_pages` (oto-backend#223), which this
+        single-call path used to bypass.
         """
         import json as _json
         flt = _json.dumps([{"field": field, "operator": "eq", "value": str(value)}])
@@ -528,13 +528,13 @@ class PennylaneClient(LedgerMixin, QuotesMixin, SupplierInvoicesMixin):
         GoCardless payment id, check none already references it. Uses the NATIVE
         server-side filter (single call, EXHAUSTIVE), like customers.
 
-        C'était un scan client borné à 5 pages : au-delà, une facture existante
-        renvoyait `None` — indistinguable de « aucune », sur le geste dont le rôle
-        est précisément d'empêcher un doublon. Vécu sur AUT-70943, facture bien
-        présente (l'update sur son id répondait « archived invoice ») et pourtant
-        introuvable (signal #268). Le filtre serveur existe sur customer_invoices,
-        vérifié live le 2026-08-03 — la note « no documented server-side filter »
-        n'était plus vraie.
+        This used to be a client scan bounded to 5 pages: beyond that, an existing
+        invoice returned `None` — indistinguishable from "none", on the action whose
+        very role is to prevent a duplicate. Seen on AUT-70943, invoice really
+        present (the update on its id answered "archived invoice") and yet
+        not found (signal #268). The server filter exists on customer_invoices,
+        verified live on 2026-08-03 — the "no documented server-side filter" note
+        was no longer true.
         """
         items = self._filter_eq("customer_invoices", "external_reference", external_reference)
         return items[0] if items else None

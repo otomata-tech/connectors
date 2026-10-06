@@ -1,21 +1,21 @@
-"""Acquisition de l'autorisation — du clic de l'utilisatrice au jeton de 60 jours.
+"""Acquiring the authorization — from the user's click to the 60-day token.
 
-Trois étapes, dans cet ordre, et aucune n'est facultative :
+Three steps, in this order, and none is optional:
 
-1. le dialogue d'autorisation (`authorize_url`), que l'appelant ouvre dans un
-   navigateur ; Meta revient sur l'URL de retour avec un `code` ;
-2. `connect(app, code, redirect_uri)` — le code devient un jeton COURT (une heure),
-   que la même fonction échange aussitôt contre un jeton LONG (60 jours), puis
-   elle lit l'identité du compte.
+1. the authorization dialog (`authorize_url`), which the caller opens in a
+   browser; Meta comes back to the return URL with a `code`;
+2. `connect(app, code, redirect_uri)` — the code becomes a SHORT-lived token (one hour),
+   which the same function immediately exchanges for a LONG-lived token (60 days), then
+   it reads the account identity.
 
-Ce module est le seul du paquet à connaître l'`InstagramApp` : l'App ID et le
-secret ne servent qu'ici. Le client de données, lui, n'a besoin que du jeton.
+This module is the only one in the package that knows the `InstagramApp`: the App ID and
+secret are only used here. The data client only needs the token.
 
-⚠️ **L'état anti-rejeu (`state`) n'est PAS fabriqué ici.** Il est signé et vérifié
-par l'appelant, qui est le seul à savoir POUR QUI le consentement est demandé (un
-identifiant d'utilisateur, une organisation) et à disposer d'un secret de
-signature. Une lib qui en inventerait un le rendrait vérifiable par elle seule,
-donc inutile à celui qui en a besoin.
+⚠️ **The anti-replay state (`state`) is NOT fabricated here.** It is signed and verified
+by the caller, who alone knows FOR WHOM the consent is requested (a user
+identifier, an organization) and has a signing secret. A lib that
+invented one would make it verifiable by itself alone,
+hence useless to whoever needs it.
 """
 from __future__ import annotations
 
@@ -41,12 +41,12 @@ from .errors import InstagramAuthRefused
 
 @dataclass(frozen=True)
 class InstagramGrant:
-    """Ce qu'un consentement réussi produit, et qu'il faut ranger quelque part.
+    """What a successful consent produces, and which must be stored somewhere.
 
-    `expires_in` est en secondes, tel que Meta le rend — l'appelant en tire la
-    date d'échéance qu'il stockera. C'est cette date qui décidera ensuite du
-    renouvellement (`tokens.needs_refresh`) : sans elle, on ne peut que subir
-    l'expiration."""
+    `expires_in` is in seconds, as Meta returns it — the caller derives the
+    expiry date it will store. That date will then decide
+    renewal (`tokens.needs_refresh`): without it, we can only suffer
+    the expiry."""
 
     access_token: str
     user_id: str
@@ -55,22 +55,22 @@ class InstagramGrant:
 
 
 def authorize_url(app: InstagramApp, redirect_uri: str, state: str) -> str:
-    """L'URL du dialogue de consentement, pour CETTE application et CE retour.
+    """The consent dialog URL, for THIS application and THIS return.
 
-    `redirect_uri` doit être déclarée au byte près dans l'application Meta : c'est
-    la faute de configuration la plus fréquente de ce flux, et Meta la signale par
-    un écran d'erreur générique qui ne la nomme pas.
+    `redirect_uri` must be declared byte for byte in the Meta application: it is
+    the most frequent configuration mistake of this flow, and Meta flags it with
+    a generic error screen that doesn't name it.
 
-    ⚠️ Les permissions partent séparées par des VIRGULES. Un OAuth2 ordinaire les
-    sépare par des espaces, et une URL construite « comme d'habitude » obtient ici
-    un consentement pour une seule permission — donc un jeton qui lit le profil et
-    refuse les insights, beaucoup plus loin."""
+    ⚠️ Permissions are sent separated by COMMAS. Ordinary OAuth2 separates them
+    by spaces, and a URL built "as usual" gets here
+    a consent for a single permission — hence a token that reads the profile and
+    refuses insights, much further down the line."""
     if not redirect_uri:
-        raise ValueError("redirect_uri requise : Meta refuse un dialogue sans retour.")
+        raise ValueError("redirect_uri required: Meta refuses a dialog with no return.")
     if not state:
         raise ValueError(
-            "state requis : sans lui, un retour de consentement ne peut être rattaché "
-            "ni à une personne ni à une demande, et rien n'empêche un rejeu.")
+            "state required: without it, a consent return can be tied neither "
+            "to a person nor to a request, and nothing prevents a replay.")
     return AUTHORIZE_URL + "?" + urlencode({
         "client_id": app.app_id,
         "redirect_uri": redirect_uri,
@@ -81,44 +81,44 @@ def authorize_url(app: InstagramApp, redirect_uri: str, state: str) -> str:
 
 
 def parse_token_exchange(payload: Any) -> tuple[str, str]:
-    """`(access_token, user_id)` depuis la réponse d'échange du code.
+    """`(access_token, user_id)` from the code exchange response.
 
-    Deux formes circulent selon la version de l'API — plate, ou enveloppée dans
-    `data: [...]`. Les deux sont acceptées ; toute autre lève, plutôt que de
-    rendre un jeton vide qui échouerait au premier appel de données comme un
-    problème de droits."""
+    Two shapes circulate depending on the API version — flat, or wrapped in
+    `data: [...]`. Both are accepted; any other raises, rather than
+    returning an empty token that would fail on the first data call as a
+    permissions problem."""
     entree = payload
     if isinstance(payload, dict) and isinstance(payload.get("data"), list):
         if not payload["data"]:
             raise InstagramAuthRefused(
-                "Réponse d'échange vide : Instagram n'a rendu aucun jeton.")
+                "Empty exchange response: Instagram returned no token.")
         entree = payload["data"][0]
     if not isinstance(entree, dict):
         raise InstagramAuthRefused(
-            "Réponse d'échange inattendue : Instagram n'a pas rendu d'objet.")
+            "Unexpected exchange response: Instagram did not return an object.")
     jeton, user_id = entree.get("access_token"), entree.get("user_id")
     if not jeton or not user_id:
         manquants = ", ".join(n for n, v in (("access_token", jeton), ("user_id", user_id))
                               if not v)
         raise InstagramAuthRefused(
-            f"Réponse d'échange incomplète : {manquants} absent(s).")
+            f"Incomplete exchange response: {manquants} missing.")
     return str(jeton), str(user_id)
 
 
 def connect(app: InstagramApp, code: str, redirect_uri: str,
             *, session: Optional[requests.Session] = None) -> InstagramGrant:
-    """Le code de retour devient un jeton de 60 jours et l'identité du compte.
+    """The return code becomes a 60-day token and the account identity.
 
-    Les trois appels sont enchaînés ici parce qu'ils ne valent que groupés : un
-    jeton court seul dure une heure et ne sert à rien à stocker, et un jeton long
-    sans `user_id` ne permet aucun appel de données (tous les chemins de la Graph
-    API sont préfixés par l'identifiant du compte)."""
+    The three calls are chained here because they are only worth anything together: a
+    short-lived token alone lasts an hour and is useless to store, and a long-lived token
+    without `user_id` allows no data call (all Graph
+    API paths are prefixed by the account identifier)."""
     if not code:
-        raise ValueError("code requis : c'est ce que Meta renvoie sur l'URL de retour.")
+        raise ValueError("code required: it is what Meta sends back on the return URL.")
     http = session or requests
-    # Le code et le secret partent en CORPS form-encodé (RFC 6749 §2.3.1) : en
-    # query string ils entreraient dans l'URL, donc dans les journaux des deux
-    # côtés. Cette étape-ci le permet ; les deux suivantes non (cf. plus bas).
+    # The code and secret go in a form-encoded BODY (RFC 6749 §2.3.1): in the
+    # query string they would enter the URL, hence the logs on both
+    # sides. This step allows it; the next two don't (see below).
     r = http.post(TOKEN_URL, data={
         "client_id": app.app_id,
         "client_secret": app.app_secret,
@@ -127,46 +127,46 @@ def connect(app: InstagramApp, code: str, redirect_uri: str,
         "code": code,
     }, timeout=HTTP_TIMEOUT)
     if r.status_code != 200:
-        _transport.refus_de_consentement(r, "l'échange du code d'autorisation")
+        _transport.refus_de_consentement(r, "the authorization code exchange")
     jeton_court, _ = parse_token_exchange(r.json())
 
-    # ⚠️ **Le secret part en query string ici, et ce n'est pas un oubli.** Meta ne
-    # sert `ig_exchange_token` qu'en GET avec les paramètres dans l'URL — il n'y a
-    # pas de forme en corps à lui préférer. Ce que la règle protège vraiment, on le
-    # tient autrement : aucun `raise_for_status()` dans ce paquet (son message porte
-    # l'URL), et `_transport` ne laisse jamais sortir ni l'URL ni le corps brut.
+    # ⚠️ **The secret goes in the query string here, and that is no oversight.** Meta only
+    # serves `ig_exchange_token` via GET with the parameters in the URL — there is
+    # no body form to prefer. What the rule really protects, we uphold
+    # otherwise: no `raise_for_status()` in this package (its message carries
+    # the URL), and `_transport` never lets the URL or the raw body out.
     r = http.get(f"{GRAPH_ROOT}/access_token", params={
         "grant_type": "ig_exchange_token",
         "client_secret": app.app_secret,
         "access_token": jeton_court,
     }, timeout=HTTP_TIMEOUT)
     if r.status_code != 200:
-        _transport.refus_de_consentement(r, "le passage en autorisation longue durée")
+        _transport.refus_de_consentement(r, "the switch to a long-lived authorization")
     long = r.json()
     jeton_long = long.get("access_token")
     if not jeton_long:
         raise InstagramAuthRefused(
-            "Instagram n'a pas rendu d'autorisation longue durée : sans elle, la "
-            "connexion durerait une heure.")
+            "Instagram did not return a long-lived authorization: without it, the "
+            "connection would last an hour.")
     expires_in = int(long.get("expires_in") or LONG_LIVED_TTL_DAYS * 86_400)
 
-    # L'identité du compte. Elle ne sert pas qu'à afficher un nom : `user_id` est
-    # l'identifiant de compte professionnel Instagram, et c'est LUI qui préfixe
-    # tous les chemins de données. Il n'est pas interchangeable avec l'identifiant
-    # rendu à l'étape 1, qui est propre à l'application.
+    # The account identity. It isn't only used to display a name: `user_id` is
+    # the Instagram professional account identifier, and it is what prefixes
+    # all data paths. It is not interchangeable with the identifier
+    # returned at step 1, which is specific to the application.
     r = http.get(f"{GRAPH_API_BASE}/me",
                  params={"fields": "user_id,username", "access_token": jeton_long},
                  timeout=HTTP_TIMEOUT)
     if r.status_code != 200:
         _transport.refus_de_consentement(
-            r, "la lecture du compte autorisé — le compte Instagram est-il bien un "
-               "compte professionnel (Business ou Créateur) ?")
+            r, "reading the authorized account — is the Instagram account really a "
+               "professional account (Business or Creator)?")
     moi = r.json()
     user_id = str(moi.get("user_id") or moi.get("id") or "")
     if not user_id:
         raise InstagramAuthRefused(
-            "Instagram a rendu une autorisation mais aucun identifiant de compte "
-            "professionnel : rien ne pourrait être lu avec.")
+            "Instagram returned an authorization but no professional account "
+            "identifier: nothing could be read with it.")
     return InstagramGrant(access_token=jeton_long, user_id=user_id,
                           username=str(moi.get("username") or ""),
                           expires_in=expires_in)

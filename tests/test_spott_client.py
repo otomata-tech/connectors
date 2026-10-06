@@ -117,13 +117,13 @@ def test_move_application_omits_absent_status(monkeypatch):
 
 def test_pipeline_stages_rejects_unknown_entity(monkeypatch):
     c, _ = _client(monkeypatch)
-    with pytest.raises(ValueError, match="pipeline Spott inconnu"):
+    with pytest.raises(ValueError, match="unknown Spott pipeline"):
         c.pipeline_stages("candidates")
 
 
 def test_create_note_rejects_unknown_entity_type(monkeypatch):
     c, _ = _client(monkeypatch)
-    with pytest.raises(ValueError, match="entityType Spott inconnu"):
+    with pytest.raises(ValueError, match="unknown Spott entityType"):
         c.create_note("hello", links=[{"entityType": "job", "entityId": "v1"}])
 
 

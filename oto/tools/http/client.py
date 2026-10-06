@@ -1,16 +1,16 @@
-"""Client du connecteur `http` générique — appel HTTP multi-méthode, multi-auth.
+"""Client of the generic `http` connector — multi-method, multi-auth HTTP call.
 
-Un simple « nœud HTTP » (comme le nœud HTTP Request de n8n / une action Zapier) :
-injecte le mode d'auth configuré (bearer / clé en header ou query / basic /
-oauth2 client-credentials) et forwarde la méthode voulue (GET par défaut ; POST /
-PUT / PATCH / DELETE avec un corps JSON) vers l'API cible.
+A simple "HTTP node" (like n8n's HTTP Request node / a Zapier action):
+injects the configured auth mode (bearer / key in header or query / basic /
+oauth2 client-credentials) and forwards the requested method (GET by default; POST /
+PUT / PATCH / DELETE with a JSON body) to the target API.
 
-La protection SSRF ne vit PAS ici : comme dans les produits du marché (Zapier,
-Make, n8n, GPT Actions…), le trafic sortant initié par un tenant est filtré au
-niveau **réseau/egress** de la plateforme, pas par du code par-connecteur.
+SSRF protection does NOT live here: as in market products (Zapier,
+Make, n8n, GPT Actions…), outbound traffic initiated by a tenant is filtered at
+the platform's **network/egress** level, not by per-connector code.
 
-Pur (`requests` seul) — la résolution du credential et la traduction en erreurs
-MCP vivent dans l'adaptateur `oto_mcp/tools/http.py`.
+Pure (`requests` only) — credential resolution and translation into MCP errors
+live in the `oto_mcp/tools/http.py` adapter.
 """
 from __future__ import annotations
 
@@ -25,29 +25,29 @@ from requests.auth import HTTPBasicAuth
 AUTH_MODES = ("bearer", "header", "query", "basic", "oauth2", "none")
 
 
-# --- modes d'auth --------------------------------------------------------------
+# --- auth modes ----------------------------------------------------------------
 
 class UpstreamAuth(ABC):
-    """Interface d'injection d'auth dans les requêtes sortantes."""
+    """Interface for injecting auth into outbound requests."""
 
     def configure(self, session: requests.Session) -> None:  # noqa: B027
-        """Applique l'auth à une session fraîche. No-op par défaut."""
+        """Apply the auth to a fresh session. No-op by default."""
 
     def query_params(self) -> dict:
         return {}
 
     def refresh(self, session: requests.Session) -> None:  # noqa: B027
-        """Ré-authentifie après un 401. No-op par défaut (credential statique)."""
+        """Re-authenticate after a 401. No-op by default (static credential)."""
 
 
 class NoAuth(UpstreamAuth):
-    """Pas d'authentification (API publique)."""
+    """No authentication (public API)."""
 
 
 class StaticBearer(UpstreamAuth):
     def __init__(self, token: str):
         if not token:
-            raise ValueError("StaticBearer: token vide")
+            raise ValueError("StaticBearer: empty token")
         self._token = token
 
     def configure(self, session: requests.Session) -> None:
@@ -57,7 +57,7 @@ class StaticBearer(UpstreamAuth):
 class ApiKeyHeader(UpstreamAuth):
     def __init__(self, name: str, value: str):
         if not name or not value:
-            raise ValueError("ApiKeyHeader: name/value requis")
+            raise ValueError("ApiKeyHeader: name/value required")
         self._name, self._value = name, value
 
     def configure(self, session: requests.Session) -> None:
@@ -67,7 +67,7 @@ class ApiKeyHeader(UpstreamAuth):
 class ApiKeyQuery(UpstreamAuth):
     def __init__(self, param: str, value: str):
         if not param or not value:
-            raise ValueError("ApiKeyQuery: param/value requis")
+            raise ValueError("ApiKeyQuery: param/value required")
         self._param, self._value = param, value
 
     def query_params(self) -> dict:
@@ -77,7 +77,7 @@ class ApiKeyQuery(UpstreamAuth):
 class BasicAuth(UpstreamAuth):
     def __init__(self, username: str, password: str):
         if not username:
-            raise ValueError("BasicAuth: username requis")
+            raise ValueError("BasicAuth: username required")
         self._auth = HTTPBasicAuth(username, password)
 
     def configure(self, session: requests.Session) -> None:
@@ -85,12 +85,12 @@ class BasicAuth(UpstreamAuth):
 
 
 class OAuth2ClientCredentials(UpstreamAuth):
-    """OAuth2 client-credentials : fetch d'un access_token + cache TTL."""
+    """OAuth2 client-credentials: fetch an access_token + TTL cache."""
 
     def __init__(self, token_url: str, client_id: str, client_secret: str,
                  scope: str | None = None, timeout: int = 30, leeway: int = 30):
         if not token_url or not client_id or not client_secret:
-            raise ValueError("OAuth2ClientCredentials: token_url/client_id/client_secret requis")
+            raise ValueError("OAuth2ClientCredentials: token_url/client_id/client_secret required")
         self._token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
@@ -111,7 +111,7 @@ class OAuth2ClientCredentials(UpstreamAuth):
         payload = r.json()
         token = payload.get("access_token")
         if not token:
-            raise ValueError("OAuth2ClientCredentials: réponse sans access_token")
+            raise ValueError("OAuth2ClientCredentials: response without access_token")
         self._token = token
         self._expiry = time.monotonic() + int(payload.get("expires_in", 3600)) - self._leeway
         return token
@@ -132,10 +132,10 @@ class OAuth2ClientCredentials(UpstreamAuth):
 
 
 def build_auth(mode: str, fields: dict) -> UpstreamAuth:
-    """Construit l'`UpstreamAuth` d'un `auth_mode` + les champs de credential.
+    """Build the `UpstreamAuth` for an `auth_mode` + the credential fields.
 
-    Lève `ValueError` (message actionnable) si le mode est inconnu ou s'il manque
-    un champ requis."""
+    Raises `ValueError` (actionable message) if the mode is unknown or a
+    required field is missing."""
     mode = (mode or "").strip().lower()
 
     def val(key: str) -> str:
@@ -144,7 +144,7 @@ def build_auth(mode: str, fields: dict) -> UpstreamAuth:
     def need(*keys: str) -> None:
         missing = [k for k in keys if not val(k)]
         if missing:
-            raise ValueError(f"auth_mode={mode!r} exige : {', '.join(missing)}")
+            raise ValueError(f"auth_mode={mode!r} requires: {', '.join(missing)}")
 
     if mode == "bearer":
         need("token"); return StaticBearer(val("token"))
@@ -160,7 +160,7 @@ def build_auth(mode: str, fields: dict) -> UpstreamAuth:
                                        val("client_secret"), scope=val("scope") or None)
     if mode == "none":
         return NoAuth()
-    raise ValueError(f"auth_mode inconnu: {mode!r} (attendu: {'|'.join(AUTH_MODES)})")
+    raise ValueError(f"unknown auth_mode: {mode!r} (expected: {'|'.join(AUTH_MODES)})")
 
 
 # --- forward -------------------------------------------------------------------
@@ -169,20 +169,20 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
 class HttpConnectorClient:
-    """Nœud HTTP : (base_url, auth_mode, fields) → `.request(method, path, …)`.
+    """HTTP node: (base_url, auth_mode, fields) → `.request(method, path, …)`.
 
-    Injecte l'auth, forwarde la méthode (GET/POST/PUT/PATCH/DELETE), retry unique
-    après ré-auth sur 401. `.get()`/`.post()` = raccourcis. Lève `ValueError` sur
-    config invalide (schéma non http(s), mode/champ/méthode invalide).
+    Injects the auth, forwards the method (GET/POST/PUT/PATCH/DELETE), single retry
+    after re-auth on 401. `.get()`/`.post()` = shortcuts. Raises `ValueError` on
+    invalid config (non-http(s) scheme, invalid mode/field/method).
 
-    Comme le nœud HTTP de n8n/Make : les méthodes d'écriture sont transportées ;
-    la responsabilité de ce qu'elles font est celle de l'API cible (et, pour un
-    bridge en aval, de SA propre allowlist)."""
+    Like n8n/Make's HTTP node: write methods are carried through;
+    responsibility for what they do lies with the target API (and, for a
+    downstream bridge, with ITS own allowlist)."""
 
     def __init__(self, base_url: str, auth_mode: str, fields: dict, *, timeout: int = 45):
         base_url = (base_url or "").strip().rstrip("/")
         if urlsplit(base_url).scheme not in ("http", "https"):
-            raise ValueError("base_url doit être en http(s)")
+            raise ValueError("base_url must be http(s)")
         self._base_url = base_url
         self._auth = build_auth(auth_mode, fields)
         self._timeout = timeout
@@ -205,9 +205,9 @@ class HttpConnectorClient:
     ) -> dict:
         method = (method or "").strip().upper()
         if method not in METHODS:
-            raise ValueError(f"méthode invalide: {method!r} (attendu: {'|'.join(METHODS)})")
+            raise ValueError(f"invalid method: {method!r} (expected: {'|'.join(METHODS)})")
         if not path.startswith("/"):
-            raise ValueError("path doit commencer par / (relatif à base_url)")
+            raise ValueError("path must start with / (relative to base_url)")
         s = self._ready()
         url = self._base_url + path
 

@@ -1,32 +1,32 @@
-"""Recherche GitHub — dépôts, code, issues/PR, commits, comptes.
+"""GitHub search — repositories, code, issues/PRs, commits, accounts.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `GitHubClient`, qui
-fournit le transport (`_request`, `_get`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `GitHubClient`, which
+provides the transport (`_request`, `_get`, `_check_choice`).
 
-Quatre choses distinguent la recherche du reste de l'API, et chacune se paie
-comptant si on l'ignore :
+Four things set search apart from the rest of the API, and each one is paid
+in cash if ignored:
 
-- ⚠️ **1 000 résultats maximum, quoi qu'annonce `total_count`.** Au-delà de la
-  page qui atteint 1 000, GitHub répond **422**. `total_count` est une estimation
-  du corpus, PAS le nombre de lignes récupérables : lire « 12 000 résultats » et
-  boucler jusqu'au bout est le piège classique.
+- ⚠️ **1,000 results maximum, whatever `total_count` announces.** Beyond the
+  page that reaches 1,000, GitHub answers **422**. `total_count` is an estimate
+  of the corpus, NOT the number of retrievable rows: reading "12,000 results" and
+  looping to the end is the classic trap.
 
-- ⚠️ **Toutes les réponses sont des OBJETS** `{total_count, incomplete_results,
-  items: [...]}`. `incomplete_results: true` veut dire que GitHub a **abandonné
-  la recherche en cours de route** (délai dépassé) : la réponse est partielle et
-  ne le dit pas autrement.
+- ⚠️ **All responses are OBJECTS** `{total_count, incomplete_results,
+  items: [...]}`. `incomplete_results: true` means GitHub **gave up
+  the search midway** (timeout): the response is partial and
+  says so in no other way.
 
-- ⚠️ **Limite d'usage propre et basse** : 30 requêtes/minute avec un jeton (10
-  sans). C'est un ordre de grandeur en dessous du reste de l'API — une boucle de
-  recherche épuise le quota en quelques secondes.
+- ⚠️ **Its own, low usage limit**: 30 requests/minute with a token (10
+  without). That is an order of magnitude below the rest of the API — a search
+  loop exhausts the quota in a few seconds.
 
-- **La recherche de CODE a ses propres règles** : elle n'indexe que la branche
-  par défaut, ignore les fichiers de plus de 384 Ko, exige au moins un terme de
-  recherche (une qualification seule comme `repo:x` ne suffit pas), et — sur les
-  dépôts privés — demande un jeton qui y a accès.
+- **CODE search has its own rules**: it only indexes the default
+  branch, ignores files larger than 384 KB, requires at least one search
+  term (a qualifier alone like `repo:x` is not enough), and — on private
+  repositories — requires a token that has access to them.
 
-La syntaxe des qualificateurs (`repo:`, `org:`, `language:`, `is:`, `state:`…)
-appartient à GitHub et n'est pas réécrite ici : `q` part tel quel.
+The qualifier syntax (`repo:`, `org:`, `language:`, `is:`, `state:`…)
+belongs to GitHub and is not rewritten here: `q` goes out as-is.
 """
 from __future__ import annotations
 
@@ -37,21 +37,21 @@ from ..const import (SEARCH_CODE_SORTS, SEARCH_ISSUE_SORTS, SEARCH_MAX_RESULTS,
 
 
 class _SearchMixin:
-    """Recherche."""
+    """Search."""
 
     @staticmethod
     def _check_query(q: str) -> None:
-        """Une recherche sans terme est refusée ICI.
+        """A search without a term is refused HERE.
 
-        GitHub rendrait un 422 dont le message ne dit pas que le problème est
-        l'absence de `q` — et un `q` vide est presque toujours un bug d'appelant
-        (variable non substituée), pas une intention.
+        GitHub would return a 422 whose message does not say that the problem is
+        the absence of `q` — and an empty `q` is almost always a caller bug
+        (unsubstituted variable), not an intention.
         """
         if not q or not str(q).strip():
             raise ValueError(
-                "`q` requis : une recherche GitHub sans terme est refusée "
-                "(422). Les qualificateurs seuls — `repo:`, `org:`… — ne "
-                "suffisent pas pour la recherche de code.")
+                "`q` required: a GitHub search without a term is refused "
+                "(422). Qualifiers alone — `repo:`, `org:`… — are not "
+                "enough for code search.")
 
     def _search(self, path: str, q: str, sort: Optional[str],
                 order: Optional[str], per_page: Optional[int],
@@ -66,12 +66,12 @@ class _SearchMixin:
                             order: Optional[str] = None,
                             per_page: Optional[int] = None,
                             page: Optional[int] = None) -> Any:
-        """GET /search/repositories — cherche des dépôts.
+        """GET /search/repositories — search repositories.
 
-        `sort` : `stars`, `forks`, `help-wanted-issues`, `updated`. Sans `sort`,
-        GitHub classe par pertinence.
+        `sort`: `stars`, `forks`, `help-wanted-issues`, `updated`. Without `sort`,
+        GitHub ranks by relevance.
 
-        ⚠️ Plafond de 1 000 résultats (cf. en-tête de module).
+        ⚠️ Cap of 1,000 results (see module header).
         """
         self._check_choice("sort", sort, SEARCH_REPO_SORTS)
         return self._search("/search/repositories", q, sort, order,
@@ -81,16 +81,16 @@ class _SearchMixin:
                     order: Optional[str] = None,
                     per_page: Optional[int] = None,
                     page: Optional[int] = None) -> Any:
-        """GET /search/code — cherche DANS le code.
+        """GET /search/code — search INSIDE the code.
 
-        ⚠️ Trois limites propres à cet index, qui expliquent la plupart des
-        « pourquoi ne trouve-t-il pas ? » :
-        seule la **branche par défaut** est indexée ; les fichiers de plus de
-        **384 Ko** ne le sont pas ; et il faut au moins un terme réel, pas
-        seulement des qualificateurs.
+        ⚠️ Three limits specific to this index, which explain most of the
+        "why doesn't it find it?" questions:
+        only the **default branch** is indexed; files larger than
+        **384 KB** are not; and at least one real term is needed, not
+        only qualifiers.
 
-        ⚠️ La réponse ne porte PAS le contenu du fichier — seulement son chemin,
-        son dépôt et des extraits. Lire le fichier ensuite avec
+        ⚠️ The response does NOT carry the file's content — only its path,
+        its repository and snippets. Read the file afterwards with
         `read_text_file`.
         """
         self._check_choice("sort", sort, SEARCH_CODE_SORTS)
@@ -100,11 +100,11 @@ class _SearchMixin:
                       order: Optional[str] = None,
                       per_page: Optional[int] = None,
                       page: Optional[int] = None) -> Any:
-        """GET /search/issues — cherche des issues ET des pull requests.
+        """GET /search/issues — search issues AND pull requests.
 
-        Les deux partagent cet index : filtrer avec `is:issue` ou `is:pr` dans
-        `q`. C'est d'ailleurs le moyen le plus simple de compter les issues d'un
-        dépôt sans se faire piéger par les PR.
+        Both share this index: filter with `is:issue` or `is:pr` in
+        `q`. It is, moreover, the simplest way to count a repository's
+        issues without being trapped by PRs.
         """
         self._check_choice("sort", sort, SEARCH_ISSUE_SORTS)
         return self._search("/search/issues", q, sort, order, per_page, page)
@@ -113,9 +113,9 @@ class _SearchMixin:
                      order: Optional[str] = None,
                      per_page: Optional[int] = None,
                      page: Optional[int] = None) -> Any:
-        """GET /search/users — cherche des comptes et des organisations.
+        """GET /search/users — search accounts and organizations.
 
-        `type:user` / `type:org` dans `q` pour trancher entre les deux.
+        `type:user` / `type:org` in `q` to decide between the two.
         """
         return self._search("/search/users", q, sort, order, per_page, page)
 
@@ -123,17 +123,17 @@ class _SearchMixin:
                        order: Optional[str] = None,
                        per_page: Optional[int] = None,
                        page: Optional[int] = None) -> Any:
-        """GET /search/commits — cherche des commits."""
+        """GET /search/commits — search commits."""
         return self._search("/search/commits", q, sort, order, per_page, page)
 
     @staticmethod
     def search_is_truncated(payload: Any) -> bool:
-        """La réponse de recherche est-elle incomplète ou tronquée ?
+        """Is the search response incomplete or truncated?
 
-        Vrai si GitHub a abandonné en cours de route (`incomplete_results`) **ou**
-        si le corpus dépasse le plafond de 1 000 résultats récupérables. Écrit ici
-        pour que « j'ai tout » ne se déduise jamais d'un `total_count` lu de
-        travers — les deux causes sont invisibles sans cette lecture.
+        True if GitHub gave up midway (`incomplete_results`) **or**
+        if the corpus exceeds the 1,000 retrievable results cap. Written here
+        so that "I have everything" is never deduced from a misread `total_count` —
+        both causes are invisible without this reading.
         """
         if not isinstance(payload, dict):
             return False

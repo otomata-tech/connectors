@@ -1,6 +1,6 @@
-"""Familles d'appels Leexi, composées dans `LeexiClient`.
+"""Leexi call families, composed into `LeexiClient`.
 
-Un module par domaine d'API. Détail du contrat : `../client.py`.
+One module per API domain. Contract details: `../client.py`.
 """
 
 from .calls import _CallsMixin

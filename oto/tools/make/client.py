@@ -1,19 +1,19 @@
-"""Make (ex-Integromat) REST API v2 client — scénarios + exécutions.
+"""Make (ex-Integromat) REST API v2 client — scenarios + executions.
 
-Make est une plateforme d'automatisation de workflows (« scénarios »). L'API REST
-v2 expose les organisations, équipes, scénarios, leur exécution et leurs logs.
+Make is a workflow automation platform ("scenarios"). The REST API
+v2 exposes organizations, teams, scenarios, their execution and their logs.
 
-Auth = **API token** (en-tête `Authorization: Token <token>`) + **base URL** de la
-zone du compte (Make est régionalisé : `https://eu1.make.com`, `https://us1.make.com`,
-`https://eu2.make.com`…). Le token se crée dans Make : Profile → API/MCP access →
-Add token (scoper a minima `scenarios:read`/`scenarios:run`).
+Auth = **API token** (`Authorization: Token <token>` header) + **base URL** of the
+account's zone (Make is regionalized: `https://eu1.make.com`, `https://us1.make.com`,
+`https://eu2.make.com`…). The token is created in Make: Profile → API/MCP access →
+Add token (scope at least `scenarios:read`/`scenarios:run`).
 
-Les deux passés au constructeur.
+Both are passed to the constructor.
 
-⚠️ Lister les scénarios exige un `team_id` (les scénarios appartiennent à une équipe).
-`list_organizations` puis `list_teams(organization_id)` permettent de le découvrir.
+⚠️ Listing scenarios requires a `team_id` (scenarios belong to a team).
+`list_organizations` then `list_teams(organization_id)` let you discover it.
 
-Docs : https://developers.make.com/api-documentation
+Docs: https://developers.make.com/api-documentation
 
 Requires: requests
 """
@@ -28,15 +28,15 @@ from ..common import raise_for_upstream
 
 
 class MakeClient:
-    """Client Make — organisations, équipes, scénarios, exécutions (API v2)."""
+    """Make client — organizations, teams, scenarios, executions (API v2)."""
 
     def __init__(self, api_token: Optional[str] = None,
                  base_url: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_token: Make API token.
-            base_url: URL de la zone, ex. `https://eu1.make.com`. Le suffixe `/api/v2` est ajouté.
+            base_url: Zone URL, e.g. `https://eu1.make.com`. The `/api/v2` suffix is appended.
         """
         self.api_token = require(api_token, "MAKE_API_TOKEN")
         base = require(base_url, "MAKE_BASE_URL").rstrip("/")
@@ -56,18 +56,18 @@ class MakeClient:
         raise_for_upstream(resp, service="make")
         return resp.json() if resp.content else {}
 
-    # --- Découverte (organisations / équipes) -------------------------------
+    # --- Discovery (organizations / teams) ----------------------------------
 
     def list_organizations(self) -> Dict[str, Any]:
-        """Liste les organisations accessibles avec ce token."""
+        """List the organizations accessible with this token."""
         return self._request("GET", "/organizations")
 
     def list_teams(self, organization_id: int) -> Dict[str, Any]:
-        """Liste les équipes d'une organisation (porteuses des scénarios)."""
+        """List an organization's teams (which own the scenarios)."""
         return self._request("GET", "/teams",
                              params={"organizationId": organization_id})
 
-    # --- Scénarios ----------------------------------------------------------
+    # --- Scenarios ----------------------------------------------------------
 
     def list_scenarios(
         self,
@@ -75,10 +75,10 @@ class MakeClient:
         limit: int = 50,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Liste les scénarios d'une équipe (paginé).
+        """List a team's scenarios (paginated).
 
         Args:
-            team_id: identifiant de l'équipe (cf. `list_teams`).
+            team_id: team identifier (see `list_teams`).
         """
         params: Dict[str, Any] = {
             "teamId": team_id,
@@ -88,11 +88,11 @@ class MakeClient:
         return self._request("GET", "/scenarios", params=params)
 
     def get_scenario(self, scenario_id: int) -> Dict[str, Any]:
-        """Récupère un scénario (métadonnées, planning, état)."""
+        """Fetch a scenario (metadata, schedule, state)."""
         return self._request("GET", f"/scenarios/{scenario_id}")
 
     def get_scenario_blueprint(self, scenario_id: int) -> Dict[str, Any]:
-        """Récupère le blueprint (structure des modules) d'un scénario."""
+        """Fetch a scenario's blueprint (module structure)."""
         return self._request("GET", f"/scenarios/{scenario_id}/blueprint")
 
     def run_scenario(
@@ -101,19 +101,19 @@ class MakeClient:
         data: Optional[Dict[str, Any]] = None,
         responsive: bool = True,
     ) -> Dict[str, Any]:
-        """Déclenche l'exécution d'un scénario.
+        """Trigger a scenario's execution.
 
         Args:
-            data: payload d'entrée passé au scénario (selon ses modules).
-            responsive: attendre la fin de l'exécution (True) ou rendre la main
-                immédiatement (False).
+            data: input payload passed to the scenario (depending on its modules).
+            responsive: wait for the execution to finish (True) or return
+                immediately (False).
         """
         body: Dict[str, Any] = {"responsive": responsive}
         if data is not None:
             body["data"] = data
         return self._request("POST", f"/scenarios/{scenario_id}/run", json=body)
 
-    # --- Exécutions / logs --------------------------------------------------
+    # --- Executions / logs --------------------------------------------------
 
     def list_scenario_logs(
         self,
@@ -121,7 +121,7 @@ class MakeClient:
         limit: int = 50,
         offset: int = 0,
     ) -> Dict[str, Any]:
-        """Liste les logs d'exécution d'un scénario (paginé)."""
+        """List a scenario's execution logs (paginated)."""
         params: Dict[str, Any] = {
             "pg[limit]": min(limit, 100),
             "pg[offset]": offset,

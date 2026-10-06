@@ -55,7 +55,7 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 class ForagerClient:

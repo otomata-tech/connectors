@@ -246,7 +246,7 @@ def test_connect_refuse_un_compte_sans_identifiant_professionnel():
         _Resp({"access_token": "long", "expires_in": 100}),
         _Resp({"username": "compte-de-test"}),
     )
-    with pytest.raises(InstagramAuthRefused, match="identifiant de compte"):
+    with pytest.raises(InstagramAuthRefused, match="account identifier"):
         ig_oauth.connect(APP, "le-code", "https://exemple.test/retour", session=s)
 
 

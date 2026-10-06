@@ -1,13 +1,13 @@
-"""Entreprises Productlane — et leur jumelage avec les « customers » Linear.
+"""Productlane companies — and their pairing with Linear "customers".
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`).
 
-⚠️ **Le miroir Linear est ASYNCHRONE** : créer une entreprise provisionne un
-customer Linear une fois qu'un domaine est posé, une mise à jour d'identité s'y
-propage plus tard, et une suppression y supprime le customer après coup. Une
-lecture immédiate côté Linear peut donc ne rien montrer sans que rien n'ait
-échoué — c'est un délai, pas une panne.
+⚠️ **The Linear mirror is ASYNCHRONOUS**: creating a company provisions a Linear
+customer once a domain is set, an identity update propagates there
+later, and a deletion deletes the customer there afterwards. An immediate
+read on the Linear side may therefore show nothing without anything having
+failed — it is a delay, not an outage.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 
 class _CompaniesMixin:
-    """Entreprises."""
+    """Companies."""
 
     def list_companies(self, limit: Optional[int] = None,
                        cursor: Optional[str] = None,
@@ -32,10 +32,10 @@ class _CompaniesMixin:
                        created_before: Optional[str] = None,
                        updated_after: Optional[str] = None,
                        updated_before: Optional[str] = None) -> Any:
-        """GET /companies — entreprises de l'espace de travail. Scope `companies:read`.
+        """GET /companies — workspace companies. Scope `companies:read`.
 
-        `size_*` et `revenue_*` sont des bornes inclusives (`gte`/`lte`), et
-        `status_id`/`tier_id` renvoient aux options Linear (cf.
+        `size_*` and `revenue_*` are inclusive bounds (`gte`/`lte`), and
+        `status_id`/`tier_id` refer to Linear options (see
         `linear_customer_options`).
         """
         return self._list("/companies", limit, cursor, {
@@ -48,26 +48,26 @@ class _CompaniesMixin:
         })
 
     def get_company(self, company_id: str) -> Any:
-        """GET /companies/{id} — une entreprise. Scope `companies:read`."""
+        """GET /companies/{id} — one company. Scope `companies:read`."""
         return self._request("GET", f"/companies/{company_id}")
 
     def create_company(self, payload: Dict[str, Any]) -> Any:
-        """POST /companies — crée une entreprise. Scope `companies:write`.
+        """POST /companies — create a company. Scope `companies:write`.
 
-        Requis : `name`. Optionnels : `logo_url`, `domains`, `size`, `revenue`,
+        Required: `name`. Optional: `logo_url`, `domains`, `size`, `revenue`,
         `external_ids`, `status_id`, `tier_id`, `owner_id`.
 
-        Le customer Linear est provisionné **de façon asynchrone**, et seulement
-        une fois qu'un domaine est renseigné.
+        The Linear customer is provisioned **asynchronously**, and only
+        once a domain is set.
         """
         return self._request("POST", "/companies", json=dict(payload))
 
     def update_company(self, company_id: str, payload: Dict[str, Any]) -> Any:
-        """PATCH /companies/{id} — met à jour une entreprise. Scope `companies:write`.
+        """PATCH /companies/{id} — update a company. Scope `companies:write`.
 
-        Champs : `name`, `logo_url`, `domains`, `size`, `revenue`,
-        `external_ids`, `status_id`, `tier_id`, `owner_id`. Les champs d'identité
-        sont poussés vers Linear **de façon asynchrone**.
+        Fields: `name`, `logo_url`, `domains`, `size`, `revenue`,
+        `external_ids`, `status_id`, `tier_id`, `owner_id`. Identity fields
+        are pushed to Linear **asynchronously**.
         """
         return self._request("PATCH", f"/companies/{company_id}",
                              json=dict(payload))
@@ -75,38 +75,38 @@ class _CompaniesMixin:
     def delete_company(self, company_id: str) -> Any:
         """DELETE /companies/{id} — **soft-delete**. Scope `companies:write`.
 
-        Le customer Linear est supprimé de façon asynchrone, et les fils qui
-        perdent leur lien d'entreprise sont réindexés ensuite.
+        The Linear customer is deleted asynchronously, and threads that
+        lose their company link are reindexed afterwards.
         """
         return self._request("DELETE", f"/companies/{company_id}")
 
     def merge_company(self, company_id: str, source_id: str) -> Any:
-        """POST /companies/{id}/merge — fusionne `source_id` DANS `company_id`.
+        """POST /companies/{id}/merge — merge `source_id` INTO `company_id`.
 
         Scope `companies:write`.
 
-        ⚠️ **Irréversible, et le sens compte** : l'entreprise du CHEMIN survit,
-        celle de `source_id` est supprimée. Ses fils, contacts et votes sont
-        déplacés vers la survivante, dont les propriétés vides sont complétées
-        par celles de la source (les propriétés déjà remplies ne bougent pas).
-        Si les deux ont un customer Linear, ils sont fusionnés aussi.
+        ⚠️ **Irreversible, and direction matters**: the company in the PATH survives,
+        the one in `source_id` is deleted. Its threads, contacts and votes are
+        moved to the survivor, whose empty properties are filled in
+        from the source's (properties already filled do not change).
+        If both have a Linear customer, they are merged too.
         """
         if not source_id:
             raise ValueError(
-                "`source_id` requis : c'est l'entreprise ABSORBÉE (celle du "
-                "chemin survit).")
+                "`source_id` is required: it is the ABSORBED company (the one in "
+                "the path survives).")
         if source_id == company_id:
             raise ValueError(
-                "fusionner une entreprise avec elle-même : `source_id` doit "
-                "différer de l'entreprise du chemin.")
+                "cannot merge a company with itself: `source_id` must "
+                "differ from the path company.")
         return self._request("POST", f"/companies/{company_id}/merge",
                              json={"source_id": source_id})
 
     def linear_customer_options(self, team_id: Optional[str] = None) -> Any:
-        """GET /companies/linear-options — statuts et tiers Linear disponibles.
+        """GET /companies/linear-options — available Linear statuses and tiers.
 
-        Rend `null` si Linear n'est pas connecté — ce n'est donc pas une erreur,
-        mais la réponse à « ce workspace a-t-il Linear ? ». Sert à remplir
+        Returns `null` if Linear is not connected — so it is not an error,
+        but the answer to "does this workspace have Linear?". Used to fill
         `status_id` / `tier_id`.
         """
         return self._request("GET", "/companies/linear-options",

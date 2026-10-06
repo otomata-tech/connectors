@@ -26,16 +26,16 @@ from .rest_api import PlanityREST
 
 @dataclass
 class Employee:
-    """Un ENFANT d'agenda. Souvent une collaboratrice — pas toujours.
+    """A calendar CHILD. Often a staff member — not always.
 
-    `deleted_at` est renseigné quand l'enfant a été supprimé côté Planity : son
-    agenda reste lisible (les rendez-vous passés y sont), mais il ne compte plus
-    dans l'équipe. Le confondre avec un actif fait annoncer sept collaboratrices à
-    un salon qui en a trois.
+    `deleted_at` is set when the child was deleted on the Planity side: its
+    calendar remains readable (past appointments are in it), but it no longer
+    counts in the team. Mistaking it for an active one makes a salon with three
+    staff members announce seven.
 
-    `type` et `title` distinguent l'enfant qui n'est PAS une personne — une cabine,
-    un poste, une ressource. Ils sont rendus tels quels : ce sont les valeurs de
-    l'amont, et leur donner un sens ici en inventerait un."""
+    `type` and `title` distinguish a child that is NOT a person — a booth, a
+    workstation, a resource. They are returned as is: they are the upstream's
+    values, and giving them a meaning here would invent one."""
 
     id: str
     name: str
@@ -65,9 +65,9 @@ class SalonInfo:
 
 class PlanityClient:
     def __init__(self, email: str, password: str, endpoints: PlanityEndpoints):
-        # `endpoints` est OBLIGATOIRE et sans défaut : ce dépôt est public et ne
-        # porte aucune coordonnée de Planity (cf. `config.PlanityEndpoints`).
-        # Celui qui déploie le connecteur les pose, et répond de ce qu'il appelle.
+        # `endpoints` is REQUIRED and has no default: this repo is public and
+        # carries no Planity endpoints (see `config.PlanityEndpoints`).
+        # Whoever deploys the connector sets them, and answers for what they call.
         self._endpoints = endpoints
         self._http = httpx.AsyncClient(timeout=30.0)
         self.auth = PlanityAuth(email, password, endpoints, client=self._http)
@@ -125,10 +125,10 @@ class PlanityClient:
             return db
 
     async def _ensure_calendars_shard(self, child_id: str) -> FirebaseRTDB:
-        """La base `calendars-N` de cet enfant d'agenda, gardée ouverte.
+        """The `calendars-N` database of this calendar child, kept open.
 
-        Elle est indexée par un CALCUL sur l'identifiant, pas par une lecture — et
-        elle ne sert que les salons SANS shard métier (`_agenda_db`)."""
+        It is indexed by a COMPUTATION on the identifier, not by a lookup — and
+        it only serves salons WITHOUT a business shard (`_agenda_db`)."""
         cle = f"calendars-{calendar_shard_index(child_id)}"
         async with self._lock:
             tokens = await self.auth.get_tokens()
@@ -143,36 +143,35 @@ class PlanityClient:
             return db
 
     async def _agenda_db(self, salon: SalonInfo, child_id: str) -> FirebaseRTDB:
-        """Où vivent les rendez-vous de ce salon.
+        """Where this salon's appointments live.
 
-        Sur le **shard métier** dès qu'il en a un ; la base `calendars-N` ne les
-        sert qu'à défaut. Viser la mauvaise rend un nœud vide, jamais un refus :
-        l'agenda se lit alors comme un agenda sans rendez-vous."""
+        On the **business shard** as soon as it has one; the `calendars-N` database
+        only serves them by default. Targeting the wrong one returns an empty node,
+        never a refusal: the calendar then reads as a calendar with no appointments."""
         if salon.db_shard and salon.db_shard != "master":
             return await self._ensure_shard(salon.db_shard)
         return await self._ensure_calendars_shard(child_id)
 
     async def _enfants_dagenda(self, salon_id: str,
                                employee_id: Optional[str] = None) -> tuple[SalonInfo, list[str]]:
-        """Le salon et les enfants d'agenda à lire — tous, ou celui qu'on demande.
+        """The salon and the calendar children to read — all, or the one requested.
 
-        Les enfants SUPPRIMÉS sont lus comme les autres : leur agenda garde les
-        rendez-vous passés, et les écarter ferait disparaître de l'historique une
-        collaboratrice partie — un chiffre d'affaires en moins sans rien qui le
-        signale."""
+        DELETED children are read like the others: their calendar keeps the past
+        appointments, and discarding them would make a departed staff member
+        vanish from the history — less revenue with nothing to flag it."""
         salon = await self.get_salon(salon_id)
         ids = [e.id for e in salon.employees]
         if employee_id is None:
             return salon, ids
         if employee_id not in ids:
-            # Lire un enfant qui n'est pas de ce salon rendrait un agenda vide, et
-            # une faute de frappe se lirait comme « cette collaboratrice n'a rien ».
+            # Reading a child that does not belong to this salon would return an empty
+            # calendar, and a typo would read as "this staff member has nothing".
             raise ValueError(
-                f"{employee_id} n'est pas un agenda de ce salon — "
-                f"`list_employees` donne les identifiants qui en sont.")
+                f"{employee_id} is not a calendar of this salon — "
+                f"`list_employees` gives the identifiers that are.")
         return salon, [employee_id]
 
-    # ─── Référentiel ───
+    # ─── Reference data ───
 
     async def list_salons(self) -> list[SalonInfo]:
         tokens = await self.auth.get_tokens()
@@ -267,17 +266,16 @@ class PlanityClient:
 
     async def list_appointments(self, salon_id: str, day_from: str, day_to: str,
                                 employee_id: Optional[str] = None) -> list[dict]:
-        """Les rendez-vous du salon entre deux JOURS (`AAAA-MM-JJ`), bornes comprises.
+        """The salon's appointments between two DAYS (`YYYY-MM-DD`), bounds included.
 
-        La fenêtre est en jours et pas en horodatage : l'index de tri de Planity
-        porte `"AAAA-MM-JJ HH:MM"` en heure murale, sans décalage — le convertir en
-        millisecondes ferait perdre ou gagner une heure aux deux bouts selon la
-        saison, et un rendez-vous de plus ou de moins ne se remarque pas.
+        The window is in days and not timestamps: Planity's sort index holds
+        `"YYYY-MM-DD HH:MM"` in wall-clock time, with no offset — converting it to
+        milliseconds would gain or lose an hour at both ends depending on the
+        season, and one appointment more or less goes unnoticed.
 
-        Un rendez-vous ANNULÉ est rendu comme les autres, avec `cancelled=True` :
-        il n'y a pas de champ « statut » chez Planity, seulement une date de
-        suppression, et le filtrer d'office cacherait les annulations à qui les
-        cherche."""
+        A CANCELLED appointment is returned like the others, with `cancelled=True`:
+        there is no "status" field at Planity, only a deletion date, and filtering
+        it out by default would hide cancellations from whoever looks for them."""
         salon, enfants = await self._enfants_dagenda(salon_id, employee_id)
         sortie: list[dict] = []
         for child_id in enfants:
@@ -288,11 +286,11 @@ class PlanityClient:
 
     async def get_appointment(self, salon_id: str, vevent_id: str,
                               employee_id: Optional[str] = None) -> Optional[dict]:
-        """Un rendez-vous par son identifiant.
+        """An appointment by its identifier.
 
-        Sans `employee_id`, les agendas du salon sont parcourus jusqu'à le trouver :
-        un identifiant de rendez-vous ne dit pas de quel agenda il vient, et
-        l'appelant ne l'a pas toujours."""
+        Without `employee_id`, the salon's calendars are scanned until it is found:
+        an appointment identifier does not say which calendar it comes from, and
+        the caller does not always have that."""
         salon, enfants = await self._enfants_dagenda(salon_id, employee_id)
         for child_id in enfants:
             db = await self._agenda_db(salon, child_id)
@@ -304,7 +302,7 @@ class PlanityClient:
     async def list_recurring_appointments(self, salon_id: str,
                                           employee_id: Optional[str] = None,
                                           limit: int = 100) -> list[dict]:
-        """Les rendez-vous récurrents — invisibles à toute lecture par jour."""
+        """Recurring appointments — invisible to any per-day read."""
         salon, enfants = await self._enfants_dagenda(salon_id, employee_id)
         sortie: list[dict] = []
         for child_id in enfants:
@@ -312,24 +310,24 @@ class PlanityClient:
             sortie += await _rdv.lire_recurrents(db, child_id, limit)
         return sortie
 
-    # ─── Caisse ───
+    # ─── Till ───
 
     async def list_pos_periods(self, salon_id: str, gte_ms: int, lte_ms: int,
                                limit: Optional[int] = None) -> list[dict]:
-        """Les sessions de caisse de la fenêtre, sans leurs tickets."""
+        """The till sessions in the window, without their receipts."""
         salon = await self.get_salon(salon_id)
         db = await self._ensure_shard(salon.db_shard)
         return await _pos.lire_periodes(db, salon_id, gte_ms, lte_ms, limit)
 
     async def get_pos_period(self, salon_id: str, period_id: str) -> Optional[dict]:
-        """Une session de caisse AVEC ses tickets."""
+        """A till session WITH its receipts."""
         salon = await self.get_salon(salon_id)
         db = await self._ensure_shard(salon.db_shard)
         return await _pos.lire_periode(db, salon_id, period_id)
 
     async def get_receipt(self, salon_id: str, period_id: str,
                           receipt_id: str) -> Optional[dict]:
-        """Un ticket. Il vit sous sa période — il n'a pas d'adresse à lui."""
+        """A receipt. It lives under its period — it has no address of its own."""
         salon = await self.get_salon(salon_id)
         db = await self._ensure_shard(salon.db_shard)
         return await _pos.lire_ticket(db, salon_id, period_id, receipt_id)
@@ -343,7 +341,7 @@ class PlanityClient:
 
     async def list_stock_movements(self, salon_id: str, product_ids: list[str],
                                    gte_ms: int, lte_ms: int) -> list[dict]:
-        """Les mouvements de stock de ces produits, une lecture bornée par produit."""
+        """The stock movements of these products, one bounded read per product."""
         salon = await self.get_salon(salon_id)
         db = await self._ensure_shard(salon.db_shard)
         return await _stock.lire_mouvements(db, salon_id, product_ids, gte_ms, lte_ms)

@@ -44,8 +44,8 @@ _MAX_TOP = 500
 def _base_url(value: Optional[str]) -> str:
     parts = urlsplit(value or "")
     if parts.scheme != "https" or not parts.netloc or parts.path.strip("/"):
-        raise ValueError(f"base_url doit être l'adresse https du standard, "
-                         f"ex. https://exemple.3cx.fr — reçu {value!r}.")
+        raise ValueError(f"base_url must be the https address of the phone system, "
+                         f"e.g. https://example.3cx.fr — received {value!r}.")
     return f"https://{parts.netloc}"
 
 
@@ -60,8 +60,8 @@ def _instant(value: str, name: str) -> str:
                        value.replace("Z", "+00:00"))
         instant = datetime.fromisoformat(texte)
         return instant.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    raise ValueError(f"{name} doit être une date yyyy-MM-dd ou un instant ISO 8601 "
-                     f"avec fuseau — reçu {value!r}.")
+    raise ValueError(f"{name} must be a yyyy-MM-dd date or an ISO 8601 instant "
+                     f"with a timezone — received {value!r}.")
 
 
 def _filename(resp, rec_id: int) -> str:
@@ -144,9 +144,9 @@ class ThreeCXClient:
             on the last page.
         """
         if not 1 <= int(top) <= _MAX_TOP:
-            raise ValueError(f"top doit être entre 1 et {_MAX_TOP} — reçu {top!r}.")
+            raise ValueError(f"top must be between 1 and {_MAX_TOP} — received {top!r}.")
         if int(skip) < 0:
-            raise ValueError(f"skip doit être positif — reçu {skip!r}.")
+            raise ValueError(f"skip must be non-negative — received {skip!r}.")
         args = ",".join([
             f"periodFrom={_instant(date_from, 'date_from')}",
             f"periodTo={_instant(date_to, 'date_to')}",

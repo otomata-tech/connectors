@@ -117,7 +117,7 @@ def test_key_goes_in_body_and_raises_cap(api):
 
 
 def test_get_series_refuses_over_cap(api):
-    with pytest.raises(ValueError, match="plafond 25"):
+    with pytest.raises(ValueError, match="cap 25"):
         bls.BLSClient().get_series([f"S{i}" for i in range(26)])
     assert api["calls"] == []
 

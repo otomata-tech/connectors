@@ -223,14 +223,14 @@ class DriveClient:
             raise DriveClientError(f"Failed to download file {file_id}: {e}")
 
     def get_file_bytes(self, file_id: str) -> Dict:
-        """Récupère le CONTENU d'un fichier Drive en mémoire (octets bruts).
+        """Fetch the CONTENT of a Drive file in memory (raw bytes).
 
-        Retourne {filename, mimeType, size, data: bytes}. Identique à
-        `download_file` mais **n'écrit rien sur disque** — pour un consommateur
-        sans FS (serveur MCP) qui veut les octets (relai vers un autre connecteur,
-        lecture, URL signée). Fichiers binaires/uploadés (PDF, image…) via
-        `get_media`. Pour un Google Doc/Sheet natif, utiliser `export_file`
-        (get_media échoue sur les types Google natifs).
+        Returns {filename, mimeType, size, data: bytes}. Same as
+        `download_file` but **writes nothing to disk** — for a consumer
+        without a FS (MCP server) that wants the bytes (relay to another connector,
+        reading, signed URL). Binary/uploaded files (PDF, image…) via
+        `get_media`. For a native Google Doc/Sheet, use `export_file`
+        (get_media fails on native Google types).
         """
         try:
             metadata = self.service.files().get(
@@ -250,16 +250,16 @@ class DriveClient:
             raise DriveClientError(f"Failed to read file {file_id}: {e}")
 
     def export_file_bytes(self, file_id: str, mime_type: str = 'text/plain') -> Dict:
-        """Exporte un Google Doc/Sheet/Slide natif en MÉMOIRE (octets convertis).
+        """Export a native Google Doc/Sheet/Slide IN MEMORY (converted bytes).
 
-        Retourne {filename, mimeType (celui de la SOURCE), exportedMimeType, size,
-        data: bytes}. Pendant de `get_file_bytes` pour les types Google natifs, qui
-        n'ont pas de contenu binaire à télécharger (`get_media` échoue en 403 « Only
-        files with binary content can be downloaded ») : c'est `files.export` qui
-        rend leur contenu. Sans disque, donc utilisable par un consommateur sans FS
-        (serveur MCP) — l'export ne demande pas de fichier de sortie, seulement une
-        conversion. Formats courants : text/markdown et text/plain (Docs),
-        text/csv (Sheets, 1re feuille), application/pdf, text/html.
+        Returns {filename, mimeType (the SOURCE's), exportedMimeType, size,
+        data: bytes}. Counterpart of `get_file_bytes` for native Google types, which
+        have no binary content to download (`get_media` fails with 403 "Only
+        files with binary content can be downloaded"): `files.export` is what
+        returns their content. Diskless, so usable by a consumer without a FS
+        (MCP server) — the export needs no output file, only a
+        conversion. Common formats: text/markdown and text/plain (Docs),
+        text/csv (Sheets, first sheet), application/pdf, text/html.
         """
         try:
             metadata = self.service.files().get(

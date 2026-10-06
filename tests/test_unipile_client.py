@@ -415,7 +415,7 @@ def test_list_invitations_foreign_cursor_raises_locally():
     lit — transmis, il rendait le 400 « Unexpected parameters: type »."""
     rec = []
     c = _client(canned={"data": []}, recorder=rec)
-    with pytest.raises(UnipileError, match="curseur invalide"):
+    with pytest.raises(UnipileError, match="invalid cursor"):
         c.list_invitations(direction="sent", cursor="eyJvZmZzZXQiOjEwMH0=")
     assert rec == []                     # rien n'est parti en amont
 
@@ -425,7 +425,7 @@ def test_list_invitations_limit_bounds():
     le param ni la borne (observé 2026-09-10). On tranche localement."""
     rec = []
     c = _client(canned={"data": []}, recorder=rec)
-    with pytest.raises(UnipileError, match="entre 1 et 100"):
+    with pytest.raises(UnipileError, match="between 1 and 100"):
         c.list_invitations(direction="sent", limit=200)
     assert rec == []
     c.list_invitations(direction="sent", limit=100)   # la borne passe
@@ -719,7 +719,7 @@ def test_search_url_timeout_becomes_clean_error():
     c._request = _raise  # type: ignore[method-assign]
     with pytest.raises(UnipileError) as ei:
         c.search(url="https://www.linkedin.com/talent/search?x", api="recruiter")
-    assert "contexte de recherche" in str(ei.value)
+    assert "search context" in str(ei.value)
 
 
 def test_search_url_http_error_not_masked():
@@ -762,7 +762,7 @@ def test_network_error_mapped_and_account_sanitized():
     c.session.request = boom  # type: ignore[method-assign]
     with pytest.raises(UnipileError) as e:
         c.list_relations()
-    assert "erreur réseau" in str(e.value)
+    assert "network error" in str(e.value)
     assert "ERR_NAME_NOT_RESOLVED" not in str(e.value)   # pas de fuite scraper
 
 

@@ -5,35 +5,35 @@ identity-based enrichment.
 Synchronous REST API (developers.cognism.com). Auth = API key as Bearer token
 (`Authorization: Bearer <key>`). Base: https://app.cognism.com/api/search
 
-Endpoints couverts :
-- POST /contact/search   — recherche de contacts (preview, pas d'email/téléphone réel)
-- POST /account/search   — recherche de sociétés (preview)
-- POST /contact/redeem   — reveal complet par id/redeemId (consomme des crédits)
-- POST /account/redeem   — reveal société par id/redeemId
-- POST /contact/enrich   — retrouve UN contact depuis des critères d'identité
-- POST /account/enrich   — retrouve UNE société depuis des critères d'identité
-- GET  /entitlement/contactEntitlementSubscription — champs visibles par la clé (contact)
-- GET  /entitlement/accountEntitlementSubscription — champs visibles par la clé (account)
-- GET  /filter/{kind}    — valeurs autorisées pour les champs à liste dynamique
+Endpoints covered:
+- POST /contact/search   — contact search (preview, no real email/phone)
+- POST /account/search   — company search (preview)
+- POST /contact/redeem   — full reveal by id/redeemId (consumes credits)
+- POST /account/redeem   — company reveal by id/redeemId
+- POST /contact/enrich   — find ONE contact from identity criteria
+- POST /account/enrich   — find ONE company from identity criteria
+- GET  /entitlement/contactEntitlementSubscription — fields visible to the key (contact)
+- GET  /entitlement/accountEntitlementSubscription — fields visible to the key (account)
+- GET  /filter/{kind}    — allowed values for dynamic-list fields
   (regions, countries, states, industries, sic, isic, naics, skills,
   technologies, companySizes, companyTypes, jobFunctions, managementLevels,
   seniority)
 
-Pagination : curseur (`lastReturnedKey`), PAS un offset — Cognism ne permet
-pas de sauter une page (il faut paginer séquentiellement depuis le début).
+Pagination: cursor (`lastReturnedKey`), NOT an offset — Cognism does not allow
+skipping a page (you must paginate sequentially from the start).
 
-La DSL de filtre (`filters`) est volontairement un dict opaque passé tel quel
-(même forme que le JSON attendu par Cognism) plutôt que modélisée champ par
-champ : ~150 champs, nombreux niveaux d'imbrication (`account.*`,
+The filter DSL (`filters`) is deliberately an opaque dict passed as is
+(same shape as the JSON Cognism expects) rather than modeled field by
+field: ~150 fields, many nesting levels (`account.*`,
 `previousAccounts.*`, `account.hiringEvent.*`, `account.fundingEvent.*`,
 `locationMoveEvent.*`, `jobJoinEvent.*`, `jobLeaveEvent.*`,
-`searchOptions.*`) — la doc complète vit dans le guide `cognism-filters`
-côté oto-backend, pas ici. Les champs à valeurs FERMÉES (seniority,
+`searchOptions.*`) — the full docs live in the `cognism-filters` guide
+on the oto-backend side, not here. The CLOSED-value fields (seniority,
 jobFunctions, managementLevel, account.types, funding type/series, hiring
-department, sort_fields, les enums de accountSearchOptions) sont validés
-côté client (`enums.validate_enum_filters`) : une valeur hors liste lève une
-`ValueError` explicite plutôt que de laisser filer une requête qui répond 200
-avec une page vide (le mode d'échec silencieux le plus probable ici).
+department, sort_fields, the accountSearchOptions enums) are validated
+client-side (`enums.validate_enum_filters`): an out-of-list value raises an
+explicit `ValueError` rather than letting through a request that answers 200
+with an empty page (the most likely silent failure mode here).
 
 Requires: requests
 """
@@ -49,7 +49,7 @@ from .enums import validate_enum_filters
 
 
 class CognismClient:
-    """Client pour l'API Search de Cognism (Contacts & Accounts)."""
+    """Client for Cognism's Search API (Contacts & Accounts)."""
 
     BASE_URL = "https://app.cognism.com/api/search"
     TIMEOUT = 30
@@ -74,7 +74,7 @@ class CognismClient:
     def __init__(self, api_key: str | None = None):
         """
         Args:
-            api_key: clé Cognism (Bearer).
+            api_key: Cognism key (Bearer).
         """
         self.api_key = require(api_key, "COGNISM_API_KEY")
 
@@ -102,7 +102,7 @@ class CognismClient:
             return None
         return resp.json()
 
-    # ---- recherche (preview — pas d'email/téléphone réel) -------------------
+    # ---- search (preview — no real email/phone) -----------------------------
 
     def search_contacts(
         self,
@@ -111,21 +111,21 @@ class CognismClient:
         index_size: int = 25,
         last_returned_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Recherche de contacts (preview data). `filters` = dict au format
-        JSON exact attendu par Cognism (champs top-level type firstName/
-        jobTitles/seniority/…, plus `account`/`previousAccounts`/
-        `searchOptions`/`locationMoveEvent`/`jobJoinEvent`/`jobLeaveEvent`
-        imbriqués) — voir le guide `cognism-filters` pour le détail complet.
+        """Contact search (preview data). `filters` = dict in the exact
+        JSON format expected by Cognism (top-level fields like firstName/
+        jobTitles/seniority/…, plus nested `account`/`previousAccounts`/
+        `searchOptions`/`locationMoveEvent`/`jobJoinEvent`/`jobLeaveEvent`)
+        — see the `cognism-filters` guide for full detail.
 
-        Renvoie la page brute Cognism : `results[]` (contacts avec des flags
-        booléens `has*`, PAS d'email/téléphone réel — utiliser
-        `redeem_contacts` pour le reveal), `totalResults`, `lastReturnedKey`
-        (curseur pour la page suivante — pagination SÉQUENTIELLE uniquement,
-        impossible de sauter une page).
+        Returns the raw Cognism page: `results[]` (contacts with boolean
+        `has*` flags, NO real email/phone — use
+        `redeem_contacts` for the reveal), `totalResults`, `lastReturnedKey`
+        (cursor for the next page — SEQUENTIAL pagination only,
+        impossible to skip a page).
 
         Args:
-            index_size: taille de page, défaut 25, max 100.
-            last_returned_key: curseur de la page précédente. Vide = 1ère page.
+            index_size: page size, default 25, max 100.
+            last_returned_key: cursor of the previous page. Empty = 1st page.
         """
         validate_enum_filters(filters, scope="contact")
         return self._request(
@@ -141,17 +141,17 @@ class CognismClient:
         index_size: int = 100,
         last_returned_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Recherche de sociétés (preview data). `filters` = dict au format
-        JSON exact attendu par Cognism (names/domains/industries/headcount/
-        technologies/… + `accountSearchOptions`) — voir le guide
-        `cognism-filters`.
+        """Company search (preview data). `filters` = dict in the exact
+        JSON format expected by Cognism (names/domains/industries/headcount/
+        technologies/… + `accountSearchOptions`) — see the
+        `cognism-filters` guide.
 
-        Renvoie la page brute Cognism : `results[]` (flags `has*`),
-        `totalResults`, `lastReturnedKey` (curseur, pagination séquentielle).
+        Returns the raw Cognism page: `results[]` (`has*` flags),
+        `totalResults`, `lastReturnedKey` (cursor, sequential pagination).
 
         Args:
-            index_size: taille de page, défaut 100, max 100.
-            last_returned_key: curseur de la page précédente. Vide = 1ère page.
+            index_size: page size, default 100, max 100.
+            last_returned_key: cursor of the previous page. Empty = 1st page.
         """
         validate_enum_filters(filters, scope="account")
         return self._request(
@@ -160,7 +160,7 @@ class CognismClient:
             params={"indexSize": index_size, "lastReturnedKey": last_returned_key or ""},
         )
 
-    # ---- reveal (consomme des crédits) --------------------------------------
+    # ---- reveal (consumes credits) ------------------------------------------
 
     def redeem_contacts(
         self,
@@ -169,18 +169,18 @@ class CognismClient:
         redeem_ids: Optional[List[str]] = None,
         merge_phones_and_locations: bool = False,
     ) -> Dict[str, Any]:
-        """Reveal complet (email/téléphone réels) d'un lot de contacts par
-        `id` OU `redeemId` (issus d'un `search_contacts` précédent) — mix des
-        deux dans un même appel non supporté par Cognism. CONSOMME DES
-        CRÉDITS (contrairement à `search_contacts`).
+        """Full reveal (real email/phone) of a batch of contacts by
+        `id` OR `redeemId` (from a previous `search_contacts`) — mixing
+        the two in a single call is not supported by Cognism. CONSUMES
+        CREDITS (unlike `search_contacts`).
 
         Args:
-            ids: contact ids. OU…
-            redeem_ids: redeemIds (identifient contact+poste+société à un
-                instant donné — cf. doc Cognism sur la dérive de `redeemId`).
-                Exactement un des deux requis.
-            merge_phones_and_locations: fusionne les tableaux phones/locations
-                dans la réponse.
+            ids: contact ids. OR…
+            redeem_ids: redeemIds (identify contact+position+company at a
+                given moment — see the Cognism docs on `redeemId` drift).
+                Exactly one of the two required.
+            merge_phones_and_locations: merges the phones/locations arrays
+                in the response.
         """
         if bool(ids) == bool(redeem_ids):
             raise ValueError(
@@ -200,8 +200,8 @@ class CognismClient:
         redeem_ids: Optional[List[str]] = None,
         merge_phones_and_locations: bool = False,
     ) -> Dict[str, Any]:
-        """Reveal complet d'un lot de sociétés par `id` OU `redeemId`.
-        CONSOMME DES CRÉDITS. Voir `redeem_contacts` pour la sémantique.
+        """Full reveal of a batch of companies by `id` OR `redeemId`.
+        CONSUMES CREDITS. See `redeem_contacts` for the semantics.
         """
         if bool(ids) == bool(redeem_ids):
             raise ValueError(
@@ -214,7 +214,7 @@ class CognismClient:
             params={"mergePhonesAndLocations": str(merge_phones_and_locations).lower()},
         )
 
-    # ---- enrichissement (identité -> meilleur match, scoré) -----------------
+    # ---- enrichment (identity -> best match, scored) ------------------------
 
     def enrich_contact(
         self,
@@ -231,17 +231,17 @@ class CognismClient:
         anchor_fields: Optional[List[str]] = None,
         min_match_score: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Retrouve UN contact depuis des critères d'identité (best match,
-        scoré). Meilleure précision avec un identifiant unique (`email`/
-        `sha256`/`linkedin_url`), OU la combinaison `first_name`+`last_name`+
-        `job_title` avec `account_name`/`account_website`. Fournir le plus de
-        champs possible — Cognism renvoie le meilleur match trouvé.
+        """Find ONE contact from identity criteria (best match,
+        scored). Best precision with a unique identifier (`email`/
+        `sha256`/`linkedin_url`), OR the combination `first_name`+`last_name`+
+        `job_title` with `account_name`/`account_website`. Provide as many
+        fields as possible — Cognism returns the best match found.
 
-        `min_match_score` : score minimum pour renvoyer un résultat (défaut
-        Cognism = 30 ; <27 = match de faible qualité).
+        `min_match_score`: minimum score to return a result (Cognism
+        default = 30; <27 = low-quality match).
 
-        Lève `ValueError` si AUCUN champ d'identité n'est fourni (appel vide,
-        n'a pas de sens côté API).
+        Raises `ValueError` if NO identity field is provided (an empty call
+        makes no sense on the API side).
         """
         body: Dict[str, Any] = {}
         if first_name: body["firstName"] = first_name
@@ -271,12 +271,12 @@ class CognismClient:
         anchor_fields: Optional[List[str]] = None,
         min_match_score: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Retrouve UNE société depuis des critères d'identité (best match,
-        scoré). Meilleure précision avec un identifiant unique (`website`/
-        `domain`/`linkedin_url`), OU `name` combiné à `country`/`city` (HQ ou
-        bureau). Défaut Cognism `minMatchScore` = 40 (<35 = match de faible
-        qualité — seuil différent de `enrich_contact`, où le défaut est 30).
-        Lève `ValueError` si aucun champ n'est fourni.
+        """Find ONE company from identity criteria (best match,
+        scored). Best precision with a unique identifier (`website`/
+        `domain`/`linkedin_url`), OR `name` combined with `country`/`city` (HQ or
+        office). Cognism default `minMatchScore` = 40 (<35 = low-quality
+        match — different threshold from `enrich_contact`, where the default is 30).
+        Raises `ValueError` if no field is provided.
         """
         body: Dict[str, Any] = {}
         if name: body["name"] = name
@@ -291,24 +291,24 @@ class CognismClient:
             raise ValueError("enrich_account requires at least one identity field.")
         return self._request("POST", "account/enrich", json=body)
 
-    # ---- entitlement (quels champs cette clé peut voir) ---------------------
+    # ---- entitlement (which fields this key can see) ------------------------
 
     def contact_entitlement(self) -> Dict[str, Any]:
-        """Détail de l'entitlement Contact de la clé configurée (quels champs
-        sont visibles — email/téléphones/etc.)."""
+        """Detail of the configured key's Contact entitlement (which fields
+        are visible — email/phones/etc.)."""
         return self._request("GET", "entitlement/contactEntitlementSubscription")
 
     def account_entitlement(self) -> Dict[str, Any]:
-        """Détail de l'entitlement Account de la clé configurée."""
+        """Detail of the configured key's Account entitlement."""
         return self._request("GET", "entitlement/accountEntitlementSubscription")
 
     def verify_key(self) -> Dict[str, Any]:
-        """Valide la clé via un appel entitlement. Lève la HTTPError amont
-        (401 = clé invalide) si KO."""
+        """Validate the key via an entitlement call. Raises the upstream HTTPError
+        (401 = invalid key) on failure."""
         self.contact_entitlement()
         return {"valid": True}
 
-    # ---- filtres à liste dynamique (regions/countries/technologies/…) ------
+    # ---- dynamic-list filters (regions/countries/technologies/…) -----------
 
     def filter_values(
         self,
@@ -318,18 +318,18 @@ class CognismClient:
         index_size: int = 20,
         last_returned_key: Optional[str] = None,
     ) -> Any:
-        """Valeurs autorisées pour un champ de filtre à liste DYNAMIQUE
-        (PAS les champs à liste fermée déjà validés côté client — cf.
-        `enums.py` — ceux-là n'ont pas besoin d'un appel réseau).
+        """Allowed values for a DYNAMIC-list filter field
+        (NOT the closed-list fields already validated client-side — see
+        `enums.py` — those do not need a network call).
 
         Args:
-            kind: un de `technologies`, `managementLevels`, `companySizes`,
+            kind: one of `technologies`, `managementLevels`, `companySizes`,
                 `industries`, `jobFunctions`, `regions`, `countries`,
                 `states`, `sic`, `isic`, `naics`, `skills`, `companyTypes`,
                 `seniority`.
-            search, index_size, last_returned_key: uniquement pour
-                `kind="technologies"` (seule liste paginée/cherchable côté
-                Cognism — les autres renvoient la liste complète en un appel).
+            search, index_size, last_returned_key: only for
+                `kind="technologies"` (the only paginated/searchable list on
+                Cognism's side — the others return the full list in one call).
         """
         if kind not in self._FILTER_ENDPOINTS:
             raise ValueError(

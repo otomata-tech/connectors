@@ -11,49 +11,49 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
-# Kaspr veut le SLUG NU : une URL complète (ou un slash/query) fait un 500
-# (vérifié live : `john-doe` → 200, `https://.../in/john-doe/` → 500).
+# Kaspr wants the BARE SLUG: a full URL (or a slash/query) causes a 500
+# (verified live: `john-doe` → 200, `https://.../in/john-doe/` → 500).
 _LINKEDIN_IN = re.compile(r"/in/([^/?#]+)", re.IGNORECASE)
 
-# Les noms que Kaspr accepte dans `dataToGet` — l'enum de SON OpenAPI (`info.version`
-# 2.0, `items.enum` du corps de `POST /profile/linkedin`), pas notre souvenir.
-# Un nom hors enum ne rend pas un 400 lisible : le parser amont plante et l'appelant
-# reçoit un **500** (`TypeError: Cannot read properties of undefined (reading
-# 'push')`) — c'est-à-dire une panne, là où il a une faute de frappe. Reproduit le
-# 2026-09-01 sur un profil sentinelle, sans consommer de crédit :
+# The names Kaspr accepts in `dataToGet` — the enum from ITS OpenAPI (`info.version`
+# 2.0, `items.enum` of the `POST /profile/linkedin` body), not our recollection.
+# A name outside the enum does not return a readable 400: the upstream parser crashes and the caller
+# gets a **500** (`TypeError: Cannot read properties of undefined (reading
+# 'push')`) — i.e. an outage, where it has a typo. Reproduced on
+# 2026-09-01 on a sentinel profile, without consuming a credit:
 #   ["emails", "phones", "company"] → 500 ;  ["workEmail", "phone"] → 402 ;  [] → 200.
 #
-# Ces trois noms-là n'étaient pas un hasard, et c'est la leçon du lot : `emails`,
-# `phones` et `company` sont des noms de champs de la RÉPONSE Kaspr (`personalEmails`,
-# `phones`, `company`) — repris comme s'ils étaient des valeurs d'ENTRÉE, puis figés
-# dans la docstring du tool MCP `kaspr_enrich_linkedin` dès sa création (2026-05-22).
-# Un agent qui lit le schéma applique ce qu'il y lit. D'où le refus LOCAL ci-dessous,
-# qui NOMME les valeurs acceptées : un premier essai corrigeable au lieu d'une panne
-# qu'on croit amont — et qu'on réessaie donc en boucle.
+# Those three names were no accident, and that is the lesson of the batch: `emails`,
+# `phones` and `company` are field names of Kaspr's RESPONSE (`personalEmails`,
+# `phones`, `company`) — reused as if they were INPUT values, then frozen
+# in the docstring of the `kaspr_enrich_linkedin` MCP tool from its creation (2026-05-22).
+# An agent that reads the schema applies what it reads there. Hence the LOCAL refusal below,
+# which NAMES the accepted values: a correctable first attempt instead of an outage
+# that looks upstream — and so gets retried in a loop.
 DATA_TO_GET = ("workEmail", "directEmail", "phone")
 
-# ⚠️ `personalEmail` est TOLÉRÉ, pas documenté : il ne figure pas dans l'enum de Kaspr,
-# où le mail personnel s'appelle `directEmail`. Il traîne dans nos docstrings depuis la
-# création du client et n'a JAMAIS été mesuré — il a donc exactement la forme du défaut
-# qu'on corrige ici (`personalEmails` est, lui, un champ de la réponse). On l'accepte
-# quand même : le refuser casserait un appelant qui l'utilise peut-être avec succès, et
-# ce lot n'a pas à trancher par supposition ce qu'une sonde d'une seconde trancherait.
-# À mesurer sur l'id sentinelle (500 ⇒ le retirer d'ici et le traiter comme `emails`).
+# ⚠️ `personalEmail` is TOLERATED, not documented: it is not in Kaspr's enum,
+# where the personal email is called `directEmail`. It has lingered in our docstrings since the
+# client was created and has NEVER been measured — so it has exactly the shape of the defect
+# being fixed here (`personalEmails` is, by contrast, a response field). We accept it
+# anyway: refusing it would break a caller that may be using it successfully, and
+# this batch should not settle by guesswork what a one-second probe would settle.
+# To be measured on the sentinel id (500 ⇒ remove it from here and treat it like `emails`).
 DATA_TO_GET_TOLERES = ("personalEmail",)
 
 _ACCEPTES = DATA_TO_GET + DATA_TO_GET_TOLERES
 
-# Ce que Kaspr reçoit quand l'appelant de CE client ne demande rien. ⚠️ Ce n'est pas
-# le défaut de l'API : omis, Kaspr sélectionne « all allowed fields ». Mais le client
-# ne l'omet jamais — il substitue la liste ci-dessous. « Defaults to all » était donc
-# faux ici, quoi qu'en dise la doc du fournisseur.
+# What Kaspr receives when the caller of THIS client asks for nothing. ⚠️ This is not
+# the API's default: when omitted, Kaspr selects "all allowed fields". But the client
+# never omits it — it substitutes the list below. "Defaults to all" was therefore
+# wrong here, whatever the vendor's doc says.
 DATA_TO_GET_DEFAUT = ["workEmail", "phone"]
 
 
 def linkedin_slug(raw: str) -> str:
-    """Normalise un identifiant LinkedIn (slug nu OU URL profil) → slug nu."""
+    """Normalizes a LinkedIn identifier (bare slug OR profile URL) → bare slug."""
     raw = (raw or "").strip()
     m = _LINKEDIN_IN.search(raw)
     if m:
@@ -69,10 +69,10 @@ class KasprClient:
     """
 
     BASE_URL = "https://api.developers.kaspr.io"
-    # (connect, read) — Kaspr répond <1s en nominal ; sans read-timeout un blip
-    # amont laisse l'appel suspendu POUR TOUJOURS (thread perdu, jamais loggé —
-    # vécu 2026-07-22, signal #252 : appel invisible du calllog, client MCP parti
-    # à 60s, serveur pendu). Un timeout transforme le blip en erreur actionnable.
+    # (connect, read) — Kaspr answers in <1s nominally; without a read timeout an upstream
+    # blip leaves the call hanging FOREVER (lost thread, never logged —
+    # seen 2026-07-22, signal #252: call invisible in the calllog, MCP client gone
+    # at 60s, server hung). A timeout turns the blip into an actionable error.
     TIMEOUT = (10, 50)
 
     def __init__(self, api_key: str = None):
@@ -102,13 +102,13 @@ class KasprClient:
         """
         Validate the API key.
 
-        Kaspr v2.0 n'expose pas d'endpoint `/user` ou `/me` — on vérifie
-        l'auth via un POST sentinel sur `/profile/linkedin` avec un id
-        manifestement introuvable. L'API authentifie avant de chercher le
-        profil donc on obtient 401 si la clé est mauvaise, 200 + body
-        vide sinon (vérifié live 22/05).
+        Kaspr v2.0 exposes no `/user` or `/me` endpoint — we check
+        auth via a sentinel POST on `/profile/linkedin` with an id
+        that is obviously not found. The API authenticates before looking up the
+        profile so we get 401 if the key is bad, 200 + empty body
+        otherwise (verified live 22/05).
 
-        Returns: `{"valid": True}` si clé OK, sinon lève la HTTPError.
+        Returns: `{"valid": True}` if the key is OK, otherwise raises the HTTPError.
         """
         self._request(
             "POST", "profile/linkedin",
@@ -152,11 +152,11 @@ class KasprClient:
             inconnus = [str(d) for d in data_to_get if d not in _ACCEPTES]
             if inconnus:
                 raise ValueError(
-                    "Kaspr n'accepte dans `dataToGet` que "
+                    "Kaspr only accepts the following in `dataToGet`: "
                     + ", ".join(DATA_TO_GET)
-                    + " — reçu : " + ", ".join(inconnus)
-                    + ". (Un nom inconnu ne fait pas un refus chez Kaspr : "
-                      "il fait une erreur serveur 500.)")
+                    + " — received: " + ", ".join(inconnus)
+                    + ". (An unknown name is not a clean refusal at Kaspr: "
+                      "it causes a 500 server error.)")
         slug = linkedin_slug(linkedin_id)
         data = {"id": slug, "name": name or slug}
         if is_phone_required:

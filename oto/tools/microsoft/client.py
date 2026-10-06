@@ -97,7 +97,7 @@ class GraphClient:
                ) -> List[Dict[str, Any]]:
         """Follows `@odata.nextLink` until `limit` items are collected."""
         if limit < 1:
-            raise ValueError("limit doit être ≥ 1")
+            raise ValueError("limit must be ≥ 1")
         items: List[Dict[str, Any]] = []
         page = self._json("GET", path, params={**(params or {}), "$top": min(limit, 200)})
         while True:
@@ -111,7 +111,7 @@ class GraphClient:
     def _item_path(drive_id: str, item_id: Optional[str], path: Optional[str]) -> str:
         """`/drives/{d}/items/{id}`, `/drives/{d}/root:/{path}:` or `/drives/{d}/root`."""
         if item_id and path:
-            raise ValueError("item_id et path s'excluent : un seul des deux")
+            raise ValueError("item_id and path are mutually exclusive: use only one")
         base = f"/drives/{require(drive_id, 'drive_id')}"
         if item_id:
             return f"{base}/items/{item_id}"
@@ -218,7 +218,7 @@ class GraphClient:
             raise ValueError(f"conflict doit valoir {', '.join(CONFLICT_BEHAVIORS)}")
         name = (filename or "").strip()
         if not name or "/" in name:
-            raise ValueError("filename est un nom de fichier, sans « / »")
+            raise ValueError("filename is a file name, without '/'")
         parent = self._item_path(drive_id, parent_id, parent_path)
         # `root:/a/b:` → `root:/a/b/name:` ; `root` ou `items/{id}` → `…:/name:`
         target = (f"{parent[:-1]}/{quote(name)}:" if parent.endswith(":")

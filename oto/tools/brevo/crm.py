@@ -1,16 +1,16 @@
-"""Brevo — CRM natif : deals, companies, tasks, notes, pipelines.
+"""Brevo — native CRM: deals, companies, tasks, notes, pipelines.
 
-Surface **générique** (`entity` en paramètre) plutôt que 4×4 méthodes : les
-quatre objets partagent list/get/create/update. Trois asymétries de l'API sont
-absorbées ici, elles ne remontent pas à l'appelant :
+**Generic** surface (`entity` as a parameter) rather than 4×4 methods: the
+four objects share list/get/create/update. Three API asymmetries are
+absorbed here and do not leak to the caller:
 
-- le chemin : `companies` vit à `/companies`, les trois autres sous `/crm/…` ;
-- la pagination : `companies` pagine par `page` (1-based), les autres par `offset` ;
-- le préfixe de filtre : `filters[…]` pour deals/companies, `filter[…]` pour tasks,
-  paramètres plats pour notes.
+- the path: `companies` lives at `/companies`, the other three under `/crm/…`;
+- pagination: `companies` paginates by `page` (1-based), the others by `offset`;
+- the filter prefix: `filters[…]` for deals/companies, `filter[…]` for tasks,
+  flat parameters for notes.
 
-Les corps de création diffèrent trop pour être uniformisés : `payload` est passé
-brut à l'API (clés camelCase Brevo), avec les champs requis documentés ci-dessous.
+Creation bodies differ too much to be uniformized: `payload` is passed
+as-is to the API (Brevo camelCase keys), with the required fields documented below.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from ._base import _BrevoBase
 
-# entity → (chemin de collection, préfixe de filtre, pagine par page ?)
+# entity → (collection path, filter prefix, paginates by page?)
 _ENTITIES: Dict[str, tuple] = {
     "deals": ("/crm/deals", "filters", False),
     "companies": ("/companies", "filters", True),
@@ -26,7 +26,7 @@ _ENTITIES: Dict[str, tuple] = {
     "notes": ("/crm/notes", None, False),
 }
 
-# entity → champs requis à la création (pour un message d'erreur utile côté agent)
+# entity → fields required at creation (for a useful error message on the agent side)
 REQUIRED_FIELDS: Dict[str, tuple] = {
     "deals": ("name",),
     "companies": ("name",),
@@ -43,7 +43,7 @@ class CrmMixin(_BrevoBase):
             return _ENTITIES[entity]
         except KeyError:
             raise ValueError(
-                f"entity inconnue {entity!r} — attendu : {', '.join(_ENTITIES)}")
+                f"unknown entity {entity!r} — expected: {', '.join(_ENTITIES)}")
 
     def crm_list(
         self,
@@ -56,17 +56,17 @@ class CrmMixin(_BrevoBase):
         modified_since: Optional[str] = None,
         created_since: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste des objets CRM.
+        """List CRM objects.
 
         Args:
             entity: `deals` | `companies` | `tasks` | `notes`.
-            filters: clés de filtre BRUTES de l'entité, sans le préfixe. Ex.
-                deals → `{"attributes.deal_name": "Acme", "linkedContactsIds": "12"}` ;
-                companies → `{"attributes.name": "Acme"}` ;
-                tasks → `{"type": "call", "status": "done", "contacts": "12"}` ;
-                notes → `{"entity": "deals", "entityIds": "abc123"}` (params plats).
-            offset: converti en `page` pour `companies` (l'API y pagine par page).
-            sort_by: champ de tri (`deals`/`companies`/`tasks`).
+            filters: RAW filter keys of the entity, without the prefix. E.g.
+                deals → `{"attributes.deal_name": "Acme", "linkedContactsIds": "12"}`;
+                companies → `{"attributes.name": "Acme"}`;
+                tasks → `{"type": "call", "status": "done", "contacts": "12"}`;
+                notes → `{"entity": "deals", "entityIds": "abc123"}` (flat params).
+            offset: converted to `page` for `companies` (the API paginates by page there).
+            sort_by: sort field (`deals`/`companies`/`tasks`).
         """
         path, prefix, by_page = self._entity(entity)
         params: Dict[str, Any] = {"limit": limit, "sort": sort, "sortBy": sort_by,
@@ -81,33 +81,33 @@ class CrmMixin(_BrevoBase):
         return self._request("GET", path, params=self._clean(params))
 
     def crm_get(self, entity: str, object_id: str) -> Dict[str, Any]:
-        """Récupère un objet CRM par id."""
+        """Fetch a CRM object by id."""
         path, _, _ = self._entity(entity)
         return self._request("GET", f"{path}/{object_id}")
 
     def crm_create(self, entity: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Crée un objet CRM. Renvoie `{"id": …}`.
+        """Create a CRM object. Returns `{"id": …}`.
 
-        `payload` en camelCase Brevo. Champs requis :
-        - **deals** : `name` (+ `attributes`, `linkedContactsIds`, `linkedCompaniesIds`)
-        - **companies** : `name` (+ `attributes`, `countryCode`, `linkedContactsIds`)
-        - **tasks** : `name`, `taskTypeId` (cf. `task_types`), `date` (ISO 8601)
+        `payload` in Brevo camelCase. Required fields:
+        - **deals**: `name` (+ `attributes`, `linkedContactsIds`, `linkedCompaniesIds`)
+        - **companies**: `name` (+ `attributes`, `countryCode`, `linkedContactsIds`)
+        - **tasks**: `name`, `taskTypeId` (see `task_types`), `date` (ISO 8601)
           (+ `contactsIds`, `dealsIds`, `companiesIds`, `assignToId`, `notes`, `done`)
-        - **notes** : `text` (+ `contactIds`, `dealIds`, `companyIds`)
+        - **notes**: `text` (+ `contactIds`, `dealIds`, `companyIds`)
         """
         path, _, _ = self._entity(entity)
         missing = [f for f in REQUIRED_FIELDS[entity] if not payload.get(f)]
         if missing:
             raise ValueError(
-                f"champs requis manquants pour {entity} : {', '.join(missing)}")
+                f"missing required fields for {entity}: {', '.join(missing)}")
         return self._request("POST", path, json=payload)
 
     def crm_update(self, entity: str, object_id: str,
                    payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Met à jour (PATCH) un objet CRM — champs fournis seulement.
+        """Update (PATCH) a CRM object — provided fields only.
 
-        Pour rattacher/détacher des objets liés, utiliser `crm_link` (endpoint dédié
-        sur deals et companies).
+        To attach/detach linked objects, use `crm_link` (dedicated endpoint
+        on deals and companies).
         """
         path, _, _ = self._entity(entity)
         return self._request("PATCH", f"{path}/{object_id}", json=payload)
@@ -121,13 +121,13 @@ class CrmMixin(_BrevoBase):
         link_ids: Optional[List[str]] = None,
         unlink_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Rattache/détache des objets liés — `deals` et `companies` uniquement.
+        """Attach/detach linked objects — `deals` and `companies` only.
 
-        `link_ids`/`unlink_ids` visent l'objet complémentaire : les **companies**
-        d'un deal, les **deals** d'une company.
+        `link_ids`/`unlink_ids` target the complementary object: the **companies**
+        of a deal, the **deals** of a company.
         """
         if entity not in ("deals", "companies"):
-            raise ValueError("crm_link ne s'applique qu'à deals et companies.")
+            raise ValueError("crm_link only applies to deals and companies.")
         path, _, _ = self._entity(entity)
         if entity == "deals":
             body = self._clean({
@@ -141,18 +141,18 @@ class CrmMixin(_BrevoBase):
                 "linkDealsIds": link_ids, "unlinkDealsIds": unlink_ids})
         return self._request("PATCH", f"{path}/link-unlink/{object_id}", json=body)
 
-    # --- Métadonnées ----------------------------------------------------------
+    # --- Metadata -------------------------------------------------------------
 
     def pipelines(self) -> Dict[str, Any]:
-        """Tous les pipelines de deals et leurs étapes (`id` d'étape pour `deal_stage`)."""
+        """All deal pipelines and their stages (stage `id` for `deal_stage`)."""
         return self._request("GET", "/crm/pipeline/details/all")
 
     def task_types(self) -> Dict[str, Any]:
-        """Types de tâche du compte (leur `id` est requis pour créer une tâche)."""
+        """The account's task types (their `id` is required to create a task)."""
         return self._request("GET", "/crm/tasktypes")
 
     def crm_attributes(self, entity: str) -> Dict[str, Any]:
-        """Attributs personnalisés déclarés sur `deals` ou `companies`."""
+        """Custom attributes declared on `deals` or `companies`."""
         if entity not in ("deals", "companies"):
-            raise ValueError("crm_attributes ne s'applique qu'à deals et companies.")
+            raise ValueError("crm_attributes only applies to deals and companies.")
         return self._request("GET", f"/crm/attributes/{entity}")

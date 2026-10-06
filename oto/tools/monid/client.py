@@ -1,59 +1,59 @@
-"""Monid — passerelle payante vers les endpoints de données de nombreux fournisseurs.
+"""Monid — paid gateway to the data endpoints of many providers.
 
-Monid (monid.ai) place derrière UNE clé d'API quelque 2 000 endpoints d'environ 70
-fournisseurs (recherche web, scraping, enrichissement de contacts, réseaux
-sociaux…), **facturés à l'appel sur un portefeuille prépayé** du workspace. Auth
-`Authorization: Bearer <clé>` ; la clé est liée à son workspace.
+Monid (monid.ai) puts roughly 2,000 endpoints from about 70 providers (web search,
+scraping, contact enrichment, social networks…) behind ONE API key, **billed per call
+against a prepaid wallet** of the workspace. Auth is
+`Authorization: Bearer <key>`; the key is bound to its workspace.
 
-**Écrit sur le contrat OpenAPI `0.1.0`** publié par Monid (`https://api.monid.ai`),
-**pas encore sondé contre un vrai compte** : ce qui suit se lit dans le contrat.
+**Written against the OpenAPI contract `0.1.0`** published by Monid (`https://api.monid.ai`),
+**not yet probed against a real account**: what follows is read from the contract.
 
-Le parcours : `discover(q)` (recherche sémantique, fiches `{items, total}`) →
-`inspect(provider, endpoint)` (seul endroit où se lisent le **schéma d'entrée** et
-le **prix courant**) → `run(…)` (lance, et débite) → `get_run` / `wait_for_run` /
-`list_runs` / `stop_run`. `wallet_balance()` dit ce qui reste.
+The flow: `discover(q)` (semantic search, cards `{items, total}`) →
+`inspect(provider, endpoint)` (the only place where the **input schema** and the
+**current price** can be read) → `run(…)` (launches, and debits) → `get_run` / `wait_for_run` /
+`list_runs` / `stop_run`. `wallet_balance()` says what is left.
 
-⚠️ **`POST /v1/run` ne se lit pas au code HTTP.** Son statut REFLÈTE celui du
-fournisseur : un run `COMPLETED` dont le fournisseur a répondu 404 revient en 404,
-un délai dépassé en 408 (`TIMED_OUT`), le 402 d'un fournisseur en 502 — chaque fois
-avec le run ENTIER dans le corps. C'est la FORME du corps qui tranche : `runId` +
-`status` = un run, rendu tel quel ; l'enveloppe `{code, message}` = un refus de
-Monid, levé en `MonidHTTPError`. Un 402 de Monid parle TOUJOURS du portefeuille.
+⚠️ **`POST /v1/run` cannot be read from the HTTP code.** Its status MIRRORS the
+provider's: a `COMPLETED` run whose provider answered 404 comes back as 404,
+a timeout as 408 (`TIMED_OUT`), a provider's 402 as 502 — each time
+with the WHOLE run in the body. The SHAPE of the body decides: `runId` +
+`status` = a run, returned as is; the `{code, message}` envelope = a refusal from
+Monid, raised as `MonidHTTPError`. A 402 from Monid ALWAYS concerns the wallet.
 
-⚠️ **Statut du run ≠ statut du fournisseur.** `COMPLETED` = « le fournisseur a
-répondu », quoi qu'il ait répondu (`providerResponse.httpStatus`) ; `FAILED` = panne
-côté Monid ; `BLOCKED` (rendu en 200) = un plafond du workspace (budget, nombre de
-runs) a refusé le run avant exécution. Terminaux : `COMPLETED`, `FAILED`, `BLOCKED`,
-`STOPPED`, `TIMED_OUT` — sans les deux derniers, une attente tournerait jusqu'à sa borne.
+⚠️ **Run status ≠ provider status.** `COMPLETED` = "the provider
+answered", whatever it answered (`providerResponse.httpStatus`); `FAILED` = failure
+on Monid's side; `BLOCKED` (returned as 200) = a workspace cap (budget, number of
+runs) refused the run before execution. Terminal states: `COMPLETED`, `FAILED`, `BLOCKED`,
+`STOPPED`, `TIMED_OUT` — without the last two, a wait would run until its bound.
 
-⚠️ **Un run n'est JAMAIS re-tenté**, un arrêt non plus : pas de clé d'idempotence,
-et rejouer un lancement perdu en vol peut payer deux fois. Quand la requête a pu
-partir sans réponse exploitable (délai de lecture, connexion rompue ou jamais
-établie, corps illisible, 5xx), l'issue est INCONNUE : l'erreur porte
-`may_have_run=True`, et c'est la liste des runs qu'il faut relire avant toute
-nouvelle tentative. Seules les lectures (`GET`) sont re-tentées, sur 429/5xx ; un
-`Retry-After` de plus de 15 s n'est pas dormi, il remonte dans `retry_after` ; un
-503 du portefeuille SANS `Retry-After` (en échec, ou pas encore créé) remonte aussitôt.
+⚠️ **A run is NEVER retried**, nor is a stop: no idempotency key,
+and replaying a launch lost in flight can pay twice. When the request may
+have gone out without a usable response (read timeout, connection broken or never
+established, unreadable body, 5xx), the outcome is UNKNOWN: the error carries
+`may_have_run=True`, and the list of runs must be re-read before any
+new attempt. Only reads (`GET`) are retried, on 429/5xx; a
+`Retry-After` over 15 s is not slept on, it surfaces in `retry_after`; a
+wallet 503 WITHOUT `Retry-After` (failed, or not yet created) surfaces immediately.
 
-⚠️ **L'entrée d'un run a trois parties** — `body`, `queryParams`, `pathParams` —
-là où le schéma d'`inspect` les place, jamais à plat. `endpoint` (qui commence par
-`/`) et `provider` (qui peut porter des points) passent tels que `discover` les rend.
+⚠️ **A run's input has three parts** — `body`, `queryParams`, `pathParams` —
+where the `inspect` schema places them, never flattened. `endpoint` (which starts with
+`/`) and `provider` (which may contain dots) pass as `discover` returns them.
 
-**Ce qui est facturé se LIT, jamais ne se recalcule** (`run_cost_usd`) : `cost.value`
-en dollars sur un run relu, `billing.reportedCost` en unités entières sur la réponse
-du lancement, absent tant que le run n'est pas réglé ; `price` = le prix catalogue.
+**What is billed is READ, never recomputed** (`run_cost_usd`): `cost.value`
+in dollars on a re-read run, `billing.reportedCost` in whole units on the launch
+response, absent until the run is settled; `price` = the catalog price.
 
-**Attendre est borné** : `wait_for_run` s'arrête à `max_wait_s` (plafond 300 s) et
-rend le DERNIER état lu, terminal ou non — jamais de sommeil au-delà de l'échéance.
-**Redirections jamais suivies** : une 3xx emporterait l'en-tête d'authentification ;
-elle est refusée, sauf au lancement quand son corps est un run (statut recopié).
+**Waiting is bounded**: `wait_for_run` stops at `max_wait_s` (cap 300 s) and
+returns the LAST state read, terminal or not — never sleeping past the deadline.
+**Redirects are never followed**: a 3xx would carry the authentication header away;
+it is refused, except at launch when its body is a run (status copied).
 
-**Délibérément absents** : budgets et plafonds de runs, ressources, gestion des clés
-d'API, recharge et historique du portefeuille, la route dépréciée `/v1/discover`, le
-registre public `/public/v1/*`, l'en-tête de workspace (inutile avec une clé), et
-`X-Monid-Client`, non envoyé : le contrat rend les `hints` selon le client déclaré
-(commande pour cli/api/mcp, cible structurée pour web, omis si inconnu) ; sans cet
-en-tête, la doc Monid les montre en commande curl — non vérifié, le client ne s'y fie pas.
+**Deliberately absent**: budgets and run caps, resources, API key management,
+wallet top-up and history, the deprecated route `/v1/discover`, the public
+registry `/public/v1/*`, the workspace header (useless with a key), and
+`X-Monid-Client`, not sent: the contract renders `hints` according to the declared client
+(command for cli/api/mcp, structured target for web, omitted if unknown); without this
+header, the Monid doc shows them as a curl command — unverified, the client does not rely on it.
 
 Requires: requests
 """
@@ -72,18 +72,18 @@ from ..common import UpstreamHTTPError
 
 SERVICE = "monid"
 DEFAULT_BASE_URL = "https://api.monid.ai"
-_HTTP_TIMEOUT = (10, 30)  # (connexion, lecture) — aucune attente illimitée
-RUN_READ_TIMEOUT = 60  # lecture du lancement : un fournisseur synchrone garde la connexion
+_HTTP_TIMEOUT = (10, 30)  # (connect, read) — no unbounded wait
+RUN_READ_TIMEOUT = 60  # launch read: a synchronous provider holds the connection
 RUN_STATUSES = ("READY", "RUNNING", "STOPPING", "COMPLETED", "FAILED", "BLOCKED",
                 "STOPPED", "TIMED_OUT")
 TERMINAL_STATUSES = frozenset({"COMPLETED", "FAILED", "BLOCKED", "STOPPED", "TIMED_OUT"})
-_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})  # lectures seulement
+_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})  # reads only
 _MAX_ATTEMPTS = 3
-_RETRY_AFTER_MAX = 15  # au-delà, le délai remonte à l'appelant au lieu d'être dormi
-_MAX_WAIT_S = 300      # plafond de `wait_for_run`, quoi que demande l'appelant
+_RETRY_AFTER_MAX = 15  # beyond this, the delay goes back to the caller instead of being slept
+_MAX_WAIT_S = 300      # cap on `wait_for_run`, whatever the caller asks
 
-_CATEGORY_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # en `fullmatch` : `$` admet un `\n` final
-_ERROR_CODES = frozenset({  # registre `ApiErrorCode` du contrat 0.1.0 ; hors registre = absent
+_CATEGORY_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # used with `fullmatch`: `$` allows a trailing `\n`
+_ERROR_CODES = frozenset({  # `ApiErrorCode` registry of contract 0.1.0; outside the registry = absent
     "X402_WORKSPACE_RESOURCES", "X402_ACCRUING_COST", "X402_EXCEEDS_SETTLEMENT_WINDOW",
     "X402_VALIDITY_WINDOW_TOO_SHORT"})
 _COST_DIVISORS = {"MICRO_DOLLAR": 1_000_000, "CENT": 100, "DOLLAR": 1}
@@ -91,12 +91,12 @@ _NOT_JSON = object()
 
 
 class MonidHTTPError(UpstreamHTTPError):
-    """Refus de Monid. Garde `.status_code` / `.body` (enveloppe parsée ou texte).
+    """Refusal from Monid. Keeps `.status_code` / `.body` (parsed envelope or text).
 
-    `request_id` = l'en-tête `x-request-id` ; `retry_after` = le `Retry-After` en
-    secondes (429 ; 503 d'un portefeuille en création — sans lui, un 503 de portefeuille
-    en échec ou inexistant remonte sans nouvelle tentative). `may_have_run` n'est vrai
-    que sur un 5xx du lancement d'un run : rien ne dit que le run n'a pas été créé.
+    `request_id` = the `x-request-id` header; `retry_after` = the `Retry-After` in
+    seconds (429; 503 of a wallet being created — without it, a 503 from a failed
+    or nonexistent wallet surfaces without a new attempt). `may_have_run` is true
+    only on a 5xx from a run launch: nothing says the run was not created.
     """
 
     may_have_run: bool = False
@@ -109,19 +109,19 @@ class MonidHTTPError(UpstreamHTTPError):
         detail = self.upstream_message
         if detail is None:
             detail = body if isinstance(body, (dict, list)) else _excerpt(body)
-        # Le message du parent recopie le corps entier, page HTML d'intermédiaire comprise.
+        # The parent's message copies the whole body, intermediary HTML page included.
         self.args = (f"{SERVICE} HTTP {status_code}: {detail}",)
 
     @property
     def error_code(self) -> Optional[str]:
-        """`errorCode` de l'enveloppe s'il est au registre du contrat ; une valeur hors
-        registre vaut absence (le contrat l'exige) et reste lisible dans `.body`."""
+        """`errorCode` of the envelope if it is in the contract registry; a value outside the
+        registry counts as absent (the contract requires it) and stays readable in `.body`."""
         code = self.body.get("errorCode") if isinstance(self.body, dict) else None
         return code if isinstance(code, str) and code in _ERROR_CODES else None
 
     @property
     def upstream_message(self) -> Optional[str]:
-        """Le message humain de Monid : `message`, sinon `error.message`."""
+        """Monid's human-readable message: `message`, otherwise `error.message`."""
         if not isinstance(self.body, dict):
             return None
         message = self.body.get("message")
@@ -132,10 +132,10 @@ class MonidHTTPError(UpstreamHTTPError):
 
 
 class MonidProtocolError(RuntimeError):
-    """Réponse inexploitable (redirection, 2xx non JSON, lecture perdue sur un run…).
+    """Unusable response (redirect, non-JSON 2xx, read lost on a run…).
 
-    Défaut de transport ou de configuration, pas un refus métier. `may_have_run` : la
-    requête d'un run a pu partir sans résultat lisible — le run peut exister, et être facturé.
+    A transport or configuration fault, not a business refusal. `may_have_run`: a run's
+    request may have gone out without a readable result — the run may exist, and be billed.
     """
 
     def __init__(self, message: str, *, request_id: Optional[str] = None,
@@ -146,17 +146,17 @@ class MonidProtocolError(RuntimeError):
 
 
 def is_terminal(run: dict) -> bool:
-    """Le run est-il dans un état final ? Comparaison sensible à la casse ; un
-    `status` qui n'est pas une chaîne n'est pas final (et ne lève pas)."""
+    """Is the run in a final state? Case-sensitive comparison; a
+    `status` that is not a string is not final (and does not raise)."""
     status = run.get("status") if isinstance(run, dict) else None
     return isinstance(status, str) and status in TERMINAL_STATUSES
 
 
 def run_cost_usd(run: dict) -> Optional[float]:
-    """Ce que le run a coûté, en dollars — LU dans la réponse, jamais recalculé.
+    """What the run cost, in dollars — READ from the response, never recomputed.
 
-    `cost.value` (dollars, run relu), sinon `billing.reportedCost` converti selon
-    son unité (réponse du lancement), sinon `None` : pas encore réglé.
+    `cost.value` (dollars, re-read run), otherwise `billing.reportedCost` converted by
+    its unit (launch response), otherwise `None`: not yet settled.
     """
     if not isinstance(run, dict):
         return None
@@ -184,22 +184,22 @@ def _excerpt(value: Any) -> str:
 
 
 def _non_empty_str(value: Any, name: str) -> str:
-    """Rendu TEL QUEL : un endpoint ou un provider ne se réécrit pas."""
+    """Returned AS IS: an endpoint or a provider is never rewritten."""
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"`{name}` doit être une chaîne non vide (reçu {value!r}).")
+        raise ValueError(f"`{name}` must be a non-empty string (got {value!r}).")
     return value
 
 
 def _run_path(run_id: Any) -> str:
-    """Un identifiant de run entre dans le CHEMIN : échappé, `/` compris. `quote` laisse
-    le point, et `.`/`..` deviendraient des segments résolus vers une autre route."""
+    """A run identifier goes into the PATH: escaped, `/` included. `quote` leaves
+    the dot alone, and `.`/`..` would become segments resolved to another route."""
     if _non_empty_str(run_id, "run_id") in (".", ".."):
-        raise ValueError(f"`run_id` ne peut pas être le segment de chemin {run_id!r}.")
+        raise ValueError(f"`run_id` cannot be the path segment {run_id!r}.")
     return f"/v1/runs/{quote(run_id, safe='')}"
 
 
 def _retry_after(resp: Any) -> Optional[float]:
-    """`Retry-After` en secondes ; `None` s'il manque ou ne se lit pas en nombre."""
+    """`Retry-After` in seconds; `None` if missing or not readable as a number."""
     try:
         value = float(resp.headers.get("Retry-After"))
     except (TypeError, ValueError):
@@ -208,8 +208,8 @@ def _retry_after(resp: Any) -> Optional[float]:
 
 
 def _parse(resp: Any) -> Any:
-    """Le JSON du corps, ou `_NOT_JSON` — jamais un `ValueError`, qui se confondrait
-    en aval avec un refus de validation des arguments."""
+    """The body's JSON, or `_NOT_JSON` — never a `ValueError`, which would be confused
+    downstream with an argument validation refusal."""
     if not resp.content:
         return _NOT_JSON
     try:
@@ -219,28 +219,28 @@ def _parse(resp: Any) -> Any:
 
 
 def _is_wallet_unavailable(resp: Any) -> bool:
-    """Un 503 `WalletUnavailableError` : `walletStatus` PRÉSENT, `null` compris (pas créé)."""
+    """A 503 `WalletUnavailableError`: `walletStatus` PRESENT, `null` included (not created)."""
     data = _parse(resp) if resp.status_code == 503 else None
     return isinstance(data, dict) and "walletStatus" in data
 
 
 def _unknown_outcome(why: str) -> str:
-    return (f"Issue inconnue du lancement : {why}. Le run peut exister et être "
-            "facturé — relire la liste des runs avant toute nouvelle tentative, "
-            "relancer peut payer deux fois.")
+    return (f"Unknown outcome of the launch: {why}. The run may exist and be "
+            "billed — re-read the list of runs before any new attempt, "
+            "relaunching may pay twice.")
 
 
 class MonidClient:
-    """Client de l'API Monid `/v1`, auth Bearer par clé d'API de workspace."""
+    """Client of the Monid `/v1` API, Bearer auth by workspace API key."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """`api_key` : clé d'API Monid ;
-        `base_url` : racine de l'API (défaut `https://api.monid.ai`)."""
+        """`api_key`: Monid API key;
+        `base_url`: API root (default `https://api.monid.ai`)."""
         self.api_key = require(api_key, "MONID_API_KEY")
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         self.session = requests.Session()
-        # Clé en EN-TÊTE uniquement : en query string elle entrerait dans l'URL,
-        # donc dans le message de toute exception et dans les journaux d'accès.
+        # Key in a HEADER only: in the query string it would enter the URL,
+        # hence the message of any exception and the access logs.
         self.session.headers.update({"Authorization": f"Bearer {self.api_key}",
                                      "Accept": "application/json"})
 
@@ -260,7 +260,7 @@ class MonidClient:
             wait = _retry_after(resp)
             if wait is None:
                 if resp.headers.get("Retry-After") is None and _is_wallet_unavailable(resp):
-                    break  # portefeuille FAILED ou inexistant : re-tenter ne répare rien
+                    break  # wallet FAILED or nonexistent: retrying fixes nothing
                 wait = float(2 ** attempt)
             elif wait > _RETRY_AFTER_MAX:
                 break
@@ -269,15 +269,15 @@ class MonidClient:
 
     def _redirect_error(self, resp: Any, method: str, path: str) -> MonidProtocolError:
         return MonidProtocolError(
-            f"Monid a répondu par une redirection (HTTP {resp.status_code}) sur "
-            f"{method} {path}, qui n'est pas suivie : l'adresse de base "
-            f"{self.base_url!r} ne pointe pas sur l'API.",
+            f"Monid answered with a redirect (HTTP {resp.status_code}) on "
+            f"{method} {path}, which is not followed: the base address "
+            f"{self.base_url!r} does not point to the API.",
             request_id=resp.headers.get("x-request-id"))
 
     def _request(self, method: str, path: str, *,
                  params: Optional[Dict[str, Any]] = None, body: Any = None,
                  timeout: Any = _HTTP_TIMEOUT, retry: Optional[bool] = None) -> Any:
-        """Transport commun. `retry` vaut par défaut « lecture seulement » (GET)."""
+        """Common transport. `retry` defaults to "reads only" (GET)."""
         if retry is None:
             retry = method == "GET"
         resp = self._send(method, path, params=params, body=body, timeout=timeout, retry=retry)
@@ -292,67 +292,67 @@ class MonidClient:
             return {}
         if data is _NOT_JSON:
             raise MonidProtocolError(
-                f"Monid a répondu {status} sans corps JSON (Content-Type "
-                f"{resp.headers.get('Content-Type')!r}) sur {method} {path}.",
+                f"Monid answered {status} without a JSON body (Content-Type "
+                f"{resp.headers.get('Content-Type')!r}) on {method} {path}.",
                 request_id=request_id)
         return data
 
-    # --- identité, portefeuille ---------------------------------------------
+    # --- identity, wallet ---------------------------------------------------
 
     def whoami(self) -> dict:
-        """GET /v1/auth/whoami — `{user, workspace?}`, gratuit : la sonde de clé.
-        **401** = clé absente, mal formée ou révoquée ; **403** = aucun workspace."""
+        """GET /v1/auth/whoami — `{user, workspace?}`, free: the key probe.
+        **401** = key missing, malformed or revoked; **403** = no workspace."""
         return self._request("GET", "/v1/auth/whoami")
 
     def wallet_balance(self) -> dict:
-        """GET /v1/wallet/balance — `{balance, held}`, montants en dollars.
+        """GET /v1/wallet/balance — `{balance, held}`, amounts in dollars.
 
-        `balance` est le DÉPENSABLE (vivant moins réservé), négatif possible ; `held` est
-        réservé aux runs en cours. **503** avec `Retry-After` = portefeuille en création,
-        re-tenté dans la borne ; SANS = en échec ou pas encore créé, levé aussitôt.
+        `balance` is the SPENDABLE amount (live minus held), may be negative; `held` is
+        reserved for running runs. **503** with `Retry-After` = wallet being created,
+        retried within the bound; WITHOUT = failed or not yet created, raised immediately.
         """
         return self._request("GET", "/v1/wallet/balance")
 
-    # --- catalogue ----------------------------------------------------------
+    # --- catalog ------------------------------------------------------------
 
     def discover(self, q: str, *, limit: Optional[int] = None,
                  category: Optional[str] = None,
                  min_score: Optional[float] = None) -> dict:
-        """POST /v1/discover/endpoints — recherche sémantique d'endpoints.
+        """POST /v1/discover/endpoints — semantic search of endpoints.
 
-        Rend `{items, total}` : chaque fiche porte `provider`, `endpoint`,
-        `displayName`, `displayDescription`, `price`, `tags`, `categories` ; `total`
-        compte les résultats au-dessus du plancher AVANT `limit`, pas de curseur.
-        `category` = identifiant de catégorie ; `min_score` = plancher de
-        pertinence (0 à 2). Le prix qui fait foi est celui d'`inspect`.
+        Returns `{items, total}`: each card carries `provider`, `endpoint`,
+        `displayName`, `displayDescription`, `price`, `tags`, `categories`; `total`
+        counts the results above the floor BEFORE `limit`, no cursor.
+        `category` = category identifier; `min_score` = relevance
+        floor (0 to 2). The price that counts is the one from `inspect`.
         """
         if not isinstance(q, str) or not 1 <= len(q.strip()) <= 1000:
-            raise ValueError("`q` doit être un texte de 1 à 1000 caractères.")
+            raise ValueError("`q` must be a text of 1 to 1000 characters.")
         body: Dict[str, Any] = {"q": q.strip()}
         if limit is not None:
             if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-                raise ValueError(f"`limit` doit être un entier ≥ 1 (reçu {limit!r}).")
+                raise ValueError(f"`limit` must be an integer ≥ 1 (got {limit!r}).")
             body["limit"] = limit
         if category is not None:
             if (not isinstance(category, str) or len(category) > 60
                     or not _CATEGORY_RE.fullmatch(category)):
-                raise ValueError("`category` doit être un identifiant en minuscules, chiffres "
-                                 f"et tirets, 60 caractères au plus (reçu {category!r}).")
+                raise ValueError("`category` must be an identifier in lowercase letters, digits "
+                                 f"and hyphens, 60 characters at most (got {category!r}).")
             body["category"] = category
         if min_score is not None:
             if not _is_number(min_score) or not 0 <= min_score <= 2:
-                raise ValueError("`min_score` doit être un nombre entre 0 et 2 "
-                                 f"(reçu {min_score!r}).")
+                raise ValueError("`min_score` must be a number between 0 and 2 "
+                                 f"(got {min_score!r}).")
             body["minScore"] = min_score
         return self._request("POST", "/v1/discover/endpoints", body=body)
 
     def inspect(self, provider: str, endpoint: str) -> dict:
-        """POST /v1/inspect — la fiche complète d'un endpoint.
+        """POST /v1/inspect — the full card of an endpoint.
 
-        Le seul endroit où se lisent le schéma d'entrée (`input` : `pathParams`,
-        `queryParams`, `body` en JSON Schema, et `bodyType`) et le prix courant (`price`,
-        parfois absent), avec `notes`, `metrics`, `docUrl`. `provider` et `endpoint`
-        passent TELS QUE `discover` les a rendus. **404** = endpoint inconnu de ce fournisseur.
+        The only place where the input schema (`input`: `pathParams`,
+        `queryParams`, `body` as JSON Schema, and `bodyType`) and the current price (`price`,
+        sometimes absent) can be read, with `notes`, `metrics`, `docUrl`. `provider` and `endpoint`
+        pass AS `discover` returned them. **404** = endpoint unknown to this provider.
         """
         return self._request("POST", "/v1/inspect", body={
             "provider": _non_empty_str(provider, "provider"),
@@ -363,22 +363,22 @@ class MonidClient:
     def run(self, provider: str, endpoint: str, *, body: Optional[dict] = None,
             query_params: Optional[dict] = None, path_params: Optional[dict] = None,
             timeout: float = RUN_READ_TIMEOUT) -> dict:
-        """POST /v1/run — lance un endpoint et DÉBITE le portefeuille. Jamais re-tenté.
+        """POST /v1/run — launches an endpoint and DEBITS the wallet. Never retried.
 
-        L'entrée part en trois parties (`input.body`, `input.queryParams`,
-        `input.pathParams`), seulement celles qui ne sont pas vides ; `input` est
-        omis quand les trois le sont. `timeout` = budget de LECTURE en secondes.
+        The input goes out in three parts (`input.body`, `input.queryParams`,
+        `input.pathParams`), only those that are not empty; `input` is
+        omitted when all three are. `timeout` = READ budget in seconds.
 
-        Rend le run tel que Monid le renvoie dès que le corps en est un (`runId` +
-        `status`), QUEL QUE SOIT le code HTTP : 200 (`COMPLETED`, `BLOCKED`), 202
-        (accepté, à suivre), 408 (`TIMED_OUT`), 502 (le fournisseur a répondu 402),
-        ou le code du fournisseur recopié, 3xx compris (redirection non suivie).
+        Returns the run as Monid sends it back as soon as the body is one (`runId` +
+        `status`), WHATEVER the HTTP code: 200 (`COMPLETED`, `BLOCKED`), 202
+        (accepted, to follow), 408 (`TIMED_OUT`), 502 (the provider answered 402),
+        or the provider's code copied, 3xx included (redirect not followed).
 
-        Lève `MonidHTTPError` sur l'enveloppe d'erreur de Monid (402 = portefeuille
-        insuffisant ; `may_have_run` vrai sur un 5xx) ; `MonidProtocolError` sur une 3xx
-        sans run, et avec `may_have_run=True` quand la requête a pu partir sans réponse
-        exploitable (lecture perdue, connexion rompue ou jamais établie, corps illisible).
-        Un délai de CONNEXION remonte tel quel : rien n'est parti.
+        Raises `MonidHTTPError` on Monid's error envelope (402 = insufficient
+        wallet; `may_have_run` true on a 5xx); `MonidProtocolError` on a 3xx
+        without a run, and with `may_have_run=True` when the request may have gone out without
+        a usable response (read lost, connection broken or never established, unreadable body).
+        A CONNECT timeout surfaces as is: nothing went out.
         """
         payload: Dict[str, Any] = {"provider": _non_empty_str(provider, "provider"),
                                    "endpoint": _non_empty_str(endpoint, "endpoint")}
@@ -387,13 +387,13 @@ class MonidClient:
                                  ("queryParams", "query_params", query_params),
                                  ("pathParams", "path_params", path_params)):
             if value is not None and not isinstance(value, dict):
-                raise ValueError(f"`{name}` doit être un objet (reçu {type(value).__name__}).")
+                raise ValueError(f"`{name}` must be an object (got {type(value).__name__}).")
             if value:
                 parts[key] = value
         if parts:
             payload["input"] = parts
         if not _is_number(timeout) or timeout <= 0:
-            raise ValueError(f"`timeout` doit être un nombre de secondes > 0 (reçu {timeout!r}).")
+            raise ValueError(f"`timeout` must be a number of seconds > 0 (got {timeout!r}).")
         try:
             resp = self._send("POST", "/v1/run", params=None, body=payload,
                               timeout=(10, timeout), retry=False)
@@ -402,15 +402,15 @@ class MonidClient:
         except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError,
                 requests.exceptions.ChunkedEncodingError,
                 requests.exceptions.ContentDecodingError) as exc:
-            # un refus de connexion n'est pas un `ConnectTimeout` : « a pu partir »
+            # a refused connection is not a `ConnectTimeout`: "may have gone out"
             raise MonidProtocolError(_unknown_outcome(
-                f"aucune réponse exploitable ({type(exc).__name__}), la requête a pu "
-                "partir"), may_have_run=True) from exc
+                f"no usable response ({type(exc).__name__}), the request may have "
+                "gone out"), may_have_run=True) from exc
         status, request_id = resp.status_code, resp.headers.get("x-request-id")
         data = _parse(resp)
         if isinstance(data, dict) and all(isinstance(data.get(k), str) and data[k]
                                           for k in ("runId", "status")):
-            return data  # avant la 3xx : un statut de fournisseur recopié reste un run
+            return data  # before the 3xx: a copied provider status is still a run
         if 300 <= status < 400:
             raise self._redirect_error(resp, "POST", "/v1/run")
         if data is not _NOT_JSON and status >= 400:
@@ -418,34 +418,34 @@ class MonidClient:
                                  retry_after=_retry_after(resp))
             err.may_have_run = status >= 500
             raise err
-        why = (f"HTTP {status} sans identifiant de run" if data is not _NOT_JSON else
-               f"HTTP {status} sans corps JSON (Content-Type "
+        why = (f"HTTP {status} without a run identifier" if data is not _NOT_JSON else
+               f"HTTP {status} without a JSON body (Content-Type "
                f"{resp.headers.get('Content-Type')!r})")
         raise MonidProtocolError(_unknown_outcome(why), request_id=request_id,
                                  may_have_run=True)
 
     def get_run(self, run_id: str) -> dict:
-        """GET /v1/runs/{runId} — l'état du run, `input` et `output` compris : `cost.value`
-        (dollars) une fois réglé, `stoppable` tant qu'il tourne, `reason`/`controls` sur un
-        `BLOCKED`. **403** = run d'un autre workspace ; **404** = run inconnu."""
+        """GET /v1/runs/{runId} — the run's state, `input` and `output` included: `cost.value`
+        (dollars) once settled, `stoppable` while it runs, `reason`/`controls` on a
+        `BLOCKED`. **403** = run of another workspace; **404** = unknown run."""
         return self._request("GET", _run_path(run_id))
 
     def wait_for_run(self, run_id: str, *, max_wait_s: float, poll_initial: float = 1.0,
                      poll_max: float = 5.0) -> dict:
-        """Relit le run jusqu'à un état final ou jusqu'à `max_wait_s`, le premier atteint.
+        """Re-reads the run until a final state or until `max_wait_s`, whichever comes first.
 
-        Rend le DERNIER état lu, terminal ou non : un run encore en cours à l'échéance
-        n'est pas une erreur. Première lecture immédiate, puis un intervalle parti de
-        `poll_initial`, ×1,5 à chaque tour jusqu'à `poll_max`, jamais au-delà de
-        l'échéance. Sans re-tentative (la boucle en tient lieu) : une erreur HTTP remonte.
+        Returns the LAST state read, terminal or not: a run still going at the deadline
+        is not an error. First read immediate, then an interval starting at
+        `poll_initial`, ×1.5 each round up to `poll_max`, never beyond
+        the deadline. No retry (the loop serves as one): an HTTP error surfaces.
         """
         path = _run_path(run_id)
         if not _is_number(max_wait_s) or not 0 <= max_wait_s <= _MAX_WAIT_S:
-            raise ValueError(f"`max_wait_s` doit être entre 0 et {_MAX_WAIT_S} "
-                             f"secondes (reçu {max_wait_s!r}).")
+            raise ValueError(f"`max_wait_s` must be between 0 and {_MAX_WAIT_S} "
+                             f"seconds (got {max_wait_s!r}).")
         if (not _is_number(poll_initial) or not _is_number(poll_max)
                 or not 0 < poll_initial <= poll_max):
-            raise ValueError("il faut 0 < `poll_initial` ≤ `poll_max` (reçu "
+            raise ValueError("it requires 0 < `poll_initial` ≤ `poll_max` (got "
                              f"{poll_initial!r}, {poll_max!r}).")
         deadline = time.monotonic() + max_wait_s
         interval = float(poll_initial)
@@ -461,33 +461,33 @@ class MonidClient:
 
     def list_runs(self, *, limit: Optional[int] = None, cursor: Optional[str] = None,
                   status: Optional[str] = None) -> dict:
-        """GET /v1/runs — les runs du workspace, du plus récent au plus ancien.
+        """GET /v1/runs — the workspace's runs, newest to oldest.
 
-        Rend `{items, cursor?}`, `cursor` absent sur la dernière page. `limit` de 1 à 100 ;
-        `status` en toute casse, envoyé en majuscules. Les lignes ne portent ni `input` ni
-        `output` : c'est `get_run` qui les rend.
+        Returns `{items, cursor?}`, `cursor` absent on the last page. `limit` from 1 to 100;
+        `status` in any case, sent in uppercase. Rows carry neither `input` nor
+        `output`: `get_run` returns them.
         """
         if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)
                                   or not 1 <= limit <= 100):
-            raise ValueError(f"`limit` doit être un entier de 1 à 100 (reçu {limit!r}).")
+            raise ValueError(f"`limit` must be an integer from 1 to 100 (got {limit!r}).")
         if cursor is not None and not isinstance(cursor, str):
-            raise ValueError("`cursor` doit être la chaîne rendue par la page "
-                             f"précédente (reçu {cursor!r}).")
+            raise ValueError("`cursor` must be the string returned by the previous "
+                             f"page (got {cursor!r}).")
         if status is not None:
             wanted = status.strip().upper() if isinstance(status, str) else None
             if wanted not in RUN_STATUSES:
-                raise ValueError(f"`status` invalide : {status!r}. Valeurs acceptées : "
+                raise ValueError(f"Invalid `status`: {status!r}. Accepted values: "
                                  + ", ".join(RUN_STATUSES))
             status = wanted
         return self._request("GET", "/v1/runs", params={
             "limit": limit, "cursor": cursor or None, "status": status})
 
     def stop_run(self, run_id: str) -> dict:
-        """POST /v1/runs/{runId}/stop — demande l'arrêt. Jamais re-tenté.
+        """POST /v1/runs/{runId}/stop — requests a stop. Never retried.
 
-        **202** `{runId, status: "STOPPING", message}` : l'arrêt est ASYNCHRONE, le run
-        passe ensuite `STOPPED` — ou `COMPLETED` pour un endpoint facturé à l'usage, qui
-        règle ce qu'il a consommé. **409** = run déjà terminé ou non arrêtable.
+        **202** `{runId, status: "STOPPING", message}`: the stop is ASYNCHRONOUS, the run
+        then goes `STOPPED` — or `COMPLETED` for a usage-billed endpoint, which
+        settles what it consumed. **409** = run already finished or not stoppable.
         """
         return self._request("POST", f"{_run_path(run_id)}/stop", retry=False)
 

@@ -55,23 +55,23 @@ from ..common import UpstreamHTTPError
 _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 _BASE_URL = "https://api.stripe.com"
 
-# Les sept ressources qui portent `/v1/<resource>/search` (docs.stripe.com/search).
-# Toute autre valeur est une erreur d'appelant, pas un 404 amont à décoder.
+# The seven resources that carry `/v1/<resource>/search` (docs.stripe.com/search).
+# Any other value is a caller error, not an upstream 404 to decode.
 SEARCHABLE = ("charges", "customers", "invoices", "payment_intents",
               "subscriptions", "prices", "products")
 
 
 def _encode(value: Any, prefix: str = "") -> List[Tuple[str, Any]]:
-    """Aplatit une valeur Python en paires clé/valeur au format bracket de Stripe.
+    """Flatten a Python value into key/value pairs in Stripe's bracket format.
 
     `{"created": {"gte": 1}}` → `[("created[gte]", 1)]` ;
     `{"expand": ["customer"]}` → `[("expand[]", "customer")]` ;
     `{"line_items": [{"price": "p"}]}` → `[("line_items[0][price]", "p")]`.
 
-    Les `None` sont ABANDONNÉS (un kwarg omis ne doit pas devenir la chaîne
-    "None"), et les booléens rendus "true"/"false" — Python enverrait "True",
-    que Stripe lit comme une chaîne non vide, donc comme vrai : `active=False`
-    filtrerait alors sur les objets ACTIFS, silencieusement.
+    `None` values are DROPPED (an omitted kwarg must not become the string
+    "None"), and booleans are rendered "true"/"false" — Python would send "True",
+    which Stripe reads as a non-empty string, hence as true: `active=False`
+    would then silently filter on ACTIVE objects.
     """
     if value is None:
         return []
@@ -83,7 +83,7 @@ def _encode(value: Any, prefix: str = "") -> List[Tuple[str, Any]]:
     if isinstance(value, (list, tuple)):
         out = []
         for i, v in enumerate(value):
-            # Un scalaire va dans `clé[]` (répété), un objet dans `clé[i][champ]`.
+            # A scalar goes in `key[]` (repeated), an object in `key[i][field]`.
             out.extend(_encode(v, f"{prefix}[{i}]" if isinstance(v, (dict, list, tuple))
                                else f"{prefix}[]"))
         return out
@@ -122,9 +122,9 @@ class StripeClient:
         self.api_key = require(api_key, "STRIPE_API_KEY")
         if self.api_key.startswith("pk_"):
             raise ValueError(
-                "Clé Stripe PUBLIABLE (`pk_…`) : elle est destinée au navigateur et ne "
-                "peut lire aucune donnée de compte. Utilise une clé restreinte "
-                "(`rk_…`, recommandée) ou secrète (`sk_…`) — Stripe Dashboard → "
+                "PUBLISHABLE Stripe key (`pk_…`): it is meant for the browser and "
+                "cannot read any account data. Use a restricted key "
+                "(`rk_…`, recommended) or a secret key (`sk_…`) — Stripe Dashboard → "
                 "Developers → API keys.")
         self.session = requests.Session()
         self.session.headers["Authorization"] = f"Bearer {self.api_key}"
@@ -146,8 +146,8 @@ class StripeClient:
             data=_encode(body or {}) or None,
             headers=headers, timeout=_HTTP_TIMEOUT)
         if resp.status_code >= 400:
-            # Le `Request-Id` est ce que le support Stripe demande en premier ;
-            # sans lui l'utilisateur doit retrouver l'appel à la main dans les logs.
+            # The `Request-Id` is the first thing Stripe support asks for;
+            # without it the user has to dig the call out of the logs by hand.
             request_id = resp.headers.get("Request-Id")
             try:
                 payload = resp.json()
@@ -166,54 +166,54 @@ class StripeClient:
         return self._request("POST", path, body=body, idempotency_key=idempotency_key)
 
     # ================================================================
-    # Search — les SEPT ressources qui la portent
+    # Search — the SEVEN resources that support it
     # ================================================================
 
     def search(self, resource: str, query: str, **params: Any) -> Any:
-        """GET /v1/{resource}/search — Stripe Query Language sur l'une des sept
-        ressources cherchables.
+        """GET /v1/{resource}/search — Stripe Query Language on one of the seven
+        searchable resources.
 
         Args:
-            resource: l'une de `SEARCHABLE` — charges, customers, invoices,
+            resource: one of `SEARCHABLE` — charges, customers, invoices,
                 payment_intents, subscriptions, prices, products.
-            query: la requête SQL-like de Stripe, ex.
+            query: Stripe's SQL-like query, e.g.
                 `status:"active" AND created>1704067200`,
                 `email~"acme.com"`, `metadata["order_id"]:"6735"`.
-                Opérateurs : `:` (égal), `~` (contient / commence par selon le
-                champ), `>` `<` `>=` `<=` sur les numériques et dates, `AND`/`OR`,
-                `-` (négation). Les champs cherchables diffèrent PAR ressource.
-            **params: `limit` (1-100, défaut 10), `page` (jeton opaque
-                `next_page` rendu par l'appel précédent — PAS `starting_after`),
+                Operators: `:` (equals), `~` (contains / starts with depending on
+                the field), `>` `<` `>=` `<=` on numbers and dates, `AND`/`OR`,
+                `-` (negation). Searchable fields differ PER resource.
+            **params: `limit` (1-100, default 10), `page` (opaque
+                `next_page` token returned by the previous call — NOT `starting_after`),
                 `expand`.
 
-        Note: la recherche est en cohérence à terme — un objet créé à l'instant
-        peut n'apparaître qu'au bout d'une minute. Pour lire un objet qu'on vient
-        d'écrire, passer par son id.
+        Note: search is eventually consistent — an object created just now
+        may take up to a minute to appear. To read an object you have just
+        written, go through its id.
         """
         if resource not in SEARCHABLE:
             raise ValueError(
-                f"Stripe ne sait chercher que dans {', '.join(SEARCHABLE)} "
-                f"(reçu {resource!r}). Les autres ressources se listent avec des "
-                "filtres, pas avec une requête.")
+                f"Stripe can only search in {', '.join(SEARCHABLE)} "
+                f"(got {resource!r}). Other resources are listed with "
+                "filters, not with a query.")
         return self._get(f"/v1/{resource}/search", query=query, **params)
 
     # ================================================================
-    # Solde, écritures de solde, virements — « combien avons-nous »
+    # Balance, balance transactions, payouts — "how much do we have"
     # ================================================================
 
     def balance(self) -> Any:
-        """GET /v1/balance — solde `available` et `pending` par devise. Sans
-        paramètre, une seule petite réponse : c'est aussi la sonde d'auth."""
+        """GET /v1/balance — `available` and `pending` balance per currency. No
+        parameters, a single small response: it is also the auth probe."""
         return self._get("/v1/balance")
 
     def list_balance_transactions(self, **params: Any) -> Any:
-        """GET /v1/balance_transactions — chaque mouvement DU solde, avec son
-        `fee` et son `net`. C'est la bonne source pour « combien avons-nous
-        réellement encaissé » (le facturé, lui, vit sur les factures).
+        """GET /v1/balance_transactions — every movement OF the balance, with its
+        `fee` and `net`. This is the right source for "how much have we
+        actually collected" (what was invoiced lives on the invoices).
 
         Args:
-            **params: `created` (dict `gte`/`gt`/`lte`/`lt`, timestamps Unix),
-                `currency`, `payout` (le contenu d'un virement précis), `source`,
+            **params: `created` (dict `gte`/`gt`/`lte`/`lt`, Unix timestamps),
+                `currency`, `payout` (the contents of a specific payout), `source`,
                 `type`, `limit`, `starting_after`, `ending_before`, `expand`.
         """
         return self._get("/v1/balance_transactions", **params)
@@ -223,50 +223,50 @@ class StripeClient:
         return self._get(f"/v1/balance_transactions/{txn_id}")
 
     def list_payouts(self, **params: Any) -> Any:
-        """GET /v1/payouts — les virements vers le compte bancaire : « quand
-        arrive le prochain dépôt, et de combien ».
+        """GET /v1/payouts — transfers to the bank account: "when
+        does the next deposit arrive, and for how much".
 
         Args:
-            **params: `status`, `arrival_date` (dict d'opérateurs), `created`,
+            **params: `status`, `arrival_date` (dict of operators), `created`,
                 `destination`, `limit`, `starting_after`, `ending_before`.
         """
         return self._get("/v1/payouts", **params)
 
     def get_payout(self, payout_id: str) -> Any:
-        """GET /v1/payouts/{id}. Le DÉTAIL d'un virement se lit avec
+        """GET /v1/payouts/{id}. The DETAIL of a payout is read with
         `list_balance_transactions(payout=payout_id)`."""
         return self._get(f"/v1/payouts/{payout_id}")
 
     # ================================================================
-    # Clients
+    # Customers
     # ================================================================
 
     def list_customers(self, **params: Any) -> Any:
-        """GET /v1/customers — filtres `email` (égalité EXACTE), `created`,
-        `limit`, `starting_after`, `ending_before`, `expand`. Pour une
-        correspondance partielle, `search("customers", 'email~"acme.com"')`."""
+        """GET /v1/customers — filters `email` (EXACT equality), `created`,
+        `limit`, `starting_after`, `ending_before`, `expand`. For a partial
+        match, `search("customers", 'email~"acme.com"')`."""
         return self._get("/v1/customers", **params)
 
     def get_customer(self, customer_id: str, **params: Any) -> Any:
-        """GET /v1/customers/{id}. `expand` accepte notamment
+        """GET /v1/customers/{id}. `expand` accepts in particular
         `subscriptions`, `default_source`, `tax`."""
         return self._get(f"/v1/customers/{customer_id}", **params)
 
     def create_customer(self, **body: Any) -> Any:
         """POST /v1/customers — `email`, `name`, `phone`, `description`,
-        `address`, `metadata`, `preferred_locales`. Aucun champ n'est requis
-        par Stripe, mais un client sans `email` est introuvable ensuite."""
+        `address`, `metadata`, `preferred_locales`. No field is required
+        by Stripe, but a customer without an `email` cannot be found afterwards."""
         return self._post("/v1/customers", body)
 
     def update_customer(self, customer_id: str, **body: Any) -> Any:
-        """POST /v1/customers/{id} — mêmes champs que la création. Seuls les
-        champs fournis changent."""
+        """POST /v1/customers/{id} — same fields as creation. Only the
+        fields provided change."""
         return self._post(f"/v1/customers/{customer_id}", body)
 
     def list_customer_payment_methods(self, customer_id: str, **params: Any) -> Any:
-        """GET /v1/customers/{id}/payment_methods — les moyens de paiement
-        enregistrés. `card.exp_month`/`exp_year` expliquent la plupart des
-        impayés involontaires (carte expirée) ; une liste VIDE explique le reste.
+        """GET /v1/customers/{id}/payment_methods — the saved payment
+        methods. `card.exp_month`/`exp_year` explain most involuntary
+        unpaid invoices (expired card); an EMPTY list explains the rest.
 
         Args:
             **params: `type` (card, sepa_debit…), `limit`.
@@ -274,7 +274,7 @@ class StripeClient:
         return self._get(f"/v1/customers/{customer_id}/payment_methods", **params)
 
     # ================================================================
-    # Abonnements
+    # Subscriptions
     # ================================================================
 
     def list_subscriptions(self, **params: Any) -> Any:
@@ -283,9 +283,9 @@ class StripeClient:
         Args:
             **params: `customer`, `price`, `status` (incomplete,
                 incomplete_expired, trialing, active, past_due, canceled,
-                unpaid, paused, ended, ou `all` — SANS `status`, Stripe ne rend
-                que les abonnements actifs et en essai, ce qui fait
-                silencieusement disparaître les résiliés), `collection_method`,
+                unpaid, paused, ended, or `all` — WITHOUT `status`, Stripe returns
+                only active and trialing subscriptions, which silently
+                hides the canceled ones), `collection_method`,
                 `created`, `current_period_end`, `current_period_start`,
                 `limit`, `starting_after`, `ending_before`, `expand`.
         """
@@ -296,12 +296,12 @@ class StripeClient:
         return self._get(f"/v1/subscriptions/{subscription_id}", **params)
 
     def list_subscription_items(self, subscription: str, **params: Any) -> Any:
-        """GET /v1/subscription_items?subscription=… — les lignes d'un
-        abonnement, où vivent réellement le prix et la quantité (sièges)."""
+        """GET /v1/subscription_items?subscription=… — the lines of a
+        subscription, where the price and the quantity (seats) actually live."""
         return self._get("/v1/subscription_items", subscription=subscription, **params)
 
     # ================================================================
-    # Factures
+    # Invoices
     # ================================================================
 
     def list_invoices(self, **params: Any) -> Any:
@@ -319,72 +319,72 @@ class StripeClient:
         return self._get(f"/v1/invoices/{invoice_id}", **params)
 
     def get_invoice_lines(self, invoice_id: str, **params: Any) -> Any:
-        """GET /v1/invoices/{id}/lines — le détail ligne à ligne."""
+        """GET /v1/invoices/{id}/lines — the line-by-line detail."""
         return self._get(f"/v1/invoices/{invoice_id}/lines", **params)
 
     def create_invoice(self, **body: Any) -> Any:
-        """POST /v1/invoices — crée une facture au BROUILLON. Elle n'est ni
-        finalisée ni envoyée ni encaissée par cet appel : rien ne part au client
-        et rien n'est débité (`finalize`/`pay` ne sont pas implémentés ici).
+        """POST /v1/invoices — creates a DRAFT invoice. It is neither
+        finalized nor sent nor collected by this call: nothing goes to the customer
+        and nothing is charged (`finalize`/`pay` are not implemented here).
 
         Args:
-            **body: `customer` (requis en pratique), `auto_advance` (laisser
-                False pour garder la main), `collection_method`, `description`,
+            **body: `customer` (required in practice), `auto_advance` (leave
+                False to stay in control), `collection_method`, `description`,
                 `days_until_due`, `metadata`, `currency`.
         """
         return self._post("/v1/invoices", body)
 
     def update_invoice(self, invoice_id: str, **body: Any) -> Any:
-        """POST /v1/invoices/{id} — modifie une facture. Une fois FINALISÉE,
-        Stripe n'accepte plus que `metadata`, `description` et quelques champs
-        annexes ; le reste est refusé côté API."""
+        """POST /v1/invoices/{id} — edits an invoice. Once FINALIZED,
+        Stripe only accepts `metadata`, `description` and a few ancillary
+        fields; the rest is rejected on the API side."""
         return self._post(f"/v1/invoices/{invoice_id}", body)
 
     def list_invoice_items(self, **params: Any) -> Any:
-        """GET /v1/invoiceitems — filtres `customer`, `invoice`, `pending`,
+        """GET /v1/invoiceitems — filters `customer`, `invoice`, `pending`,
         `created`."""
         return self._get("/v1/invoiceitems", **params)
 
     def create_invoice_item(self, **body: Any) -> Any:
-        """POST /v1/invoiceitems — pose un montant ponctuel sur la PROCHAINE
-        facture d'un client (ou sur une facture brouillon nommée). Un `amount`
-        négatif est un geste commercial (avoir).
+        """POST /v1/invoiceitems — adds a one-off amount to a customer's NEXT
+        invoice (or to a named draft invoice). A negative `amount`
+        is a commercial gesture (credit).
 
         Args:
-            **body: `customer` (requis), `amount` (en plus petite unité —
-                centimes) + `currency`, ou `price`/`quantity` ; `invoice` pour
-                viser un brouillon précis, `description`, `metadata`.
+            **body: `customer` (required), `amount` (in the smallest unit —
+                cents) + `currency`, or `price`/`quantity`; `invoice` to
+                target a specific draft, `description`, `metadata`.
         """
         return self._post("/v1/invoiceitems", body)
 
     # ================================================================
-    # Paiements — intentions, encaissements, remboursements, litiges
+    # Payments — intents, charges, refunds, disputes
     # ================================================================
 
     def list_payment_intents(self, **params: Any) -> Any:
-        """GET /v1/payment_intents — filtres `customer`, `created`, `limit`,
+        """GET /v1/payment_intents — filters `customer`, `created`, `limit`,
         `starting_after`, `ending_before`, `expand`."""
         return self._get("/v1/payment_intents", **params)
 
     def get_payment_intent(self, payment_intent_id: str, **params: Any) -> Any:
-        """GET /v1/payment_intents/{id}. `last_payment_error` porte la raison
-        d'échec faisant autorité (`code`, `decline_code`, `message`)."""
+        """GET /v1/payment_intents/{id}. `last_payment_error` carries the
+        authoritative failure reason (`code`, `decline_code`, `message`)."""
         return self._get(f"/v1/payment_intents/{payment_intent_id}", **params)
 
     def list_charges(self, **params: Any) -> Any:
-        """GET /v1/charges — filtres `customer`, `created`, `payment_intent`,
+        """GET /v1/charges — filters `customer`, `created`, `payment_intent`,
         `limit`, `starting_after`, `ending_before`, `expand`."""
         return self._get("/v1/charges", **params)
 
     def get_charge(self, charge_id: str, **params: Any) -> Any:
-        """GET /v1/charges/{id}. En échec, `failure_code`/`failure_message` et
-        surtout `outcome.seller_message`, rédigé pour le marchand."""
+        """GET /v1/charges/{id}. On failure, `failure_code`/`failure_message` and
+        above all `outcome.seller_message`, written for the merchant."""
         return self._get(f"/v1/charges/{charge_id}", **params)
 
     def list_refunds(self, **params: Any) -> Any:
-        """GET /v1/refunds — LECTURE des remboursements déjà émis (filtres
-        `charge`, `payment_intent`, `created`). En émettre un n'est pas
-        possible depuis ce client, par construction."""
+        """GET /v1/refunds — READ the refunds already issued (filters
+        `charge`, `payment_intent`, `created`). Issuing one is not
+        possible from this client, by construction."""
         return self._get("/v1/refunds", **params)
 
     def get_refund(self, refund_id: str, **params: Any) -> Any:
@@ -392,9 +392,9 @@ class StripeClient:
         return self._get(f"/v1/refunds/{refund_id}", **params)
 
     def list_disputes(self, **params: Any) -> Any:
-        """GET /v1/disputes — filtres `charge`, `payment_intent`, `created`.
-        `evidence_details.due_by` est une échéance dure : au-delà, le litige est
-        perdu par défaut, et l'argent est déjà retiré du solde pendant ce temps."""
+        """GET /v1/disputes — filters `charge`, `payment_intent`, `created`.
+        `evidence_details.due_by` is a hard deadline: past it, the dispute is
+        lost by default, and the money has already been withdrawn from the balance in the meantime."""
         return self._get("/v1/disputes", **params)
 
     def get_dispute(self, dispute_id: str, **params: Any) -> Any:
@@ -402,11 +402,11 @@ class StripeClient:
         return self._get(f"/v1/disputes/{dispute_id}", **params)
 
     # ================================================================
-    # Catalogue — produits, prix, liens de paiement, réductions
+    # Catalog — products, prices, payment links, discounts
     # ================================================================
 
     def list_products(self, **params: Any) -> Any:
-        """GET /v1/products — filtres `active`, `ids`, `shippable`, `url`,
+        """GET /v1/products — filters `active`, `ids`, `shippable`, `url`,
         `created`, `limit`, `starting_after`, `ending_before`."""
         return self._get("/v1/products", **params)
 
@@ -415,18 +415,18 @@ class StripeClient:
         return self._get(f"/v1/products/{product_id}", **params)
 
     def create_product(self, **body: Any) -> Any:
-        """POST /v1/products — `name` (requis), `description`, `active`,
+        """POST /v1/products — `name` (required), `description`, `active`,
         `metadata`, `images`, `url`, `default_price_data`."""
         return self._post("/v1/products", body)
 
     def update_product(self, product_id: str, **body: Any) -> Any:
-        """POST /v1/products/{id} — mêmes champs. `active=False` retire le
-        produit de la vente sans rien supprimer."""
+        """POST /v1/products/{id} — same fields. `active=False` takes the
+        product off sale without deleting anything."""
         return self._post(f"/v1/products/{product_id}", body)
 
     def list_prices(self, **params: Any) -> Any:
-        """GET /v1/prices — filtres `product`, `active`, `currency`, `type`
-        (one_time | recurring), `lookup_keys`, `recurring` (dict, ex.
+        """GET /v1/prices — filters `product`, `active`, `currency`, `type`
+        (one_time | recurring), `lookup_keys`, `recurring` (dict, e.g.
         `{"interval": "month"}`), `created`, `limit`, `expand`."""
         return self._get("/v1/prices", **params)
 
@@ -435,24 +435,24 @@ class StripeClient:
         return self._get(f"/v1/prices/{price_id}", **params)
 
     def create_price(self, **body: Any) -> Any:
-        """POST /v1/prices — `currency` + `product` requis, plus `unit_amount`
-        (centimes) ou `custom_unit_amount`. `recurring` (dict `interval`,
-        `interval_count`) en fait un prix d'abonnement.
+        """POST /v1/prices — `currency` + `product` required, plus `unit_amount`
+        (cents) or `custom_unit_amount`. `recurring` (dict `interval`,
+        `interval_count`) makes it a subscription price.
 
-        ⚠️ Un prix Stripe est **immuable** sur son montant : « changer le prix »
-        se fait en créant un nouveau prix et en désactivant l'ancien
-        (`update_price(active=False)`), jamais en modifiant celui-ci.
+        ⚠️ A Stripe price is **immutable** on its amount: "changing the price"
+        is done by creating a new price and deactivating the old one
+        (`update_price(active=False)`), never by modifying this one.
         """
         return self._post("/v1/prices", body)
 
     def update_price(self, price_id: str, **body: Any) -> Any:
-        """POST /v1/prices/{id} — seuls `active`, `metadata`, `nickname`,
-        `lookup_key` et les options de tarification sont modifiables ; le
-        montant ne l'est pas (cf. `create_price`)."""
+        """POST /v1/prices/{id} — only `active`, `metadata`, `nickname`,
+        `lookup_key` and the pricing options are modifiable; the
+        amount is not (see `create_price`)."""
         return self._post(f"/v1/prices/{price_id}", body)
 
     def list_payment_links(self, **params: Any) -> Any:
-        """GET /v1/payment_links — filtre `active`, `limit`, `starting_after`."""
+        """GET /v1/payment_links — filter `active`, `limit`, `starting_after`."""
         return self._get("/v1/payment_links", **params)
 
     def get_payment_link(self, payment_link_id: str, **params: Any) -> Any:
@@ -460,30 +460,30 @@ class StripeClient:
         return self._get(f"/v1/payment_links/{payment_link_id}", **params)
 
     def get_payment_link_line_items(self, payment_link_id: str, **params: Any) -> Any:
-        """GET /v1/payment_links/{id}/line_items — ce que le lien fait payer."""
+        """GET /v1/payment_links/{id}/line_items — what the link charges for."""
         return self._get(f"/v1/payment_links/{payment_link_id}/line_items", **params)
 
     def create_payment_link(self, line_items: List[Dict[str, Any]], **body: Any) -> Any:
-        """POST /v1/payment_links — une URL réutilisable qui ouvre une page de
-        paiement HÉBERGÉE PAR STRIPE. C'est la façon la plus sûre de faire
-        encaisser quelque chose : aucun numéro de carte ne traverse oto, et le
-        lien ne débite personne tant qu'un humain ne l'ouvre pas.
+        """POST /v1/payment_links — a reusable URL that opens a payment page
+        HOSTED BY STRIPE. It is the safest way to get
+        something paid: no card number passes through oto, and the
+        link charges nobody until a human opens it.
 
         Args:
-            line_items: liste de `{"price": "price_…", "quantity": n}` (requis).
+            line_items: list of `{"price": "price_…", "quantity": n}` (required).
             **body: `after_completion`, `allow_promotion_codes`,
                 `currency`, `metadata`, `customer_creation`.
         """
         return self._post("/v1/payment_links", {"line_items": line_items, **body})
 
     def update_payment_link(self, payment_link_id: str, **body: Any) -> Any:
-        """POST /v1/payment_links/{id} — notamment `active=False` pour
-        désactiver un lien sans le supprimer."""
+        """POST /v1/payment_links/{id} — notably `active=False` to
+        deactivate a link without deleting it."""
         return self._post(f"/v1/payment_links/{payment_link_id}", body)
 
     def list_coupons(self, **params: Any) -> Any:
-        """GET /v1/coupons — la RÈGLE de remise (percent_off/amount_off,
-        duration). Le code que tape un client est une `promotion_code`."""
+        """GET /v1/coupons — the discount RULE (percent_off/amount_off,
+        duration). The code a customer types is a `promotion_code`."""
         return self._get("/v1/coupons", **params)
 
     def get_coupon(self, coupon_id: str, **params: Any) -> Any:
@@ -491,26 +491,26 @@ class StripeClient:
         return self._get(f"/v1/coupons/{coupon_id}", **params)
 
     def create_coupon(self, **body: Any) -> Any:
-        """POST /v1/coupons — `duration` (once | repeating | forever) requis,
-        plus `percent_off` OU `amount_off`+`currency` (Stripe refuse les deux
-        à la fois). `duration_in_months` requis si `duration="repeating"`.
-        `id` fixe l'identifiant (sinon Stripe en génère un) ; `name` est ce
-        qu'un client voit sur sa facture. `max_redemptions`/`redeem_by`
-        bornent l'usage dans le temps/en volume."""
+        """POST /v1/coupons — `duration` (once | repeating | forever) required,
+        plus `percent_off` OR `amount_off`+`currency` (Stripe rejects both
+        at once). `duration_in_months` required if `duration="repeating"`.
+        `id` sets the identifier (otherwise Stripe generates one); `name` is what
+        a customer sees on their invoice. `max_redemptions`/`redeem_by`
+        bound usage in time/in volume."""
         return self._post("/v1/coupons", body)
 
     def update_coupon(self, coupon_id: str, **body: Any) -> Any:
-        """POST /v1/coupons/{id} — un Coupon Stripe n'a QUE `name` et
-        `metadata` de modifiables après création (montant/durée/
-        redemptions sont figés, comme le montant d'un `Price`) ; ni
-        suppression ni désactivation n'existent dans ce client (cf. le
-        docstring de tête du module) — un coupon dont on ne veut plus se
-        retire en révoquant ses `promotion_code`s (`update_promotion_code`,
-        `active=False`), pas en le touchant lui."""
+        """POST /v1/coupons/{id} — a Stripe Coupon has ONLY `name` and
+        `metadata` modifiable after creation (amount/duration/
+        redemptions are frozen, like the amount of a `Price`); neither
+        deletion nor deactivation exists in this client (see the
+        module's top docstring) — a coupon you no longer want is
+        retired by revoking its `promotion_code`s (`update_promotion_code`,
+        `active=False`), not by touching it."""
         return self._post(f"/v1/coupons/{coupon_id}", body)
 
     def list_promotion_codes(self, **params: Any) -> Any:
-        """GET /v1/promotion_codes — filtres `code`, `coupon`, `active`,
+        """GET /v1/promotion_codes — filters `code`, `coupon`, `active`,
         `customer`, `created`."""
         return self._get("/v1/promotion_codes", **params)
 
@@ -519,33 +519,33 @@ class StripeClient:
         return self._get(f"/v1/promotion_codes/{promotion_code_id}", **params)
 
     def create_promotion_code(self, **body: Any) -> Any:
-        """POST /v1/promotion_codes — `coupon` (requis) est la règle de
-        remise ; ce que ce endpoint ajoute est le CODE qu'un client tape
-        réellement au paiement. `code` fixe le texte (majuscules/chiffres —
-        Stripe le génère sinon), `customer` restreint le code à un seul
-        client, `max_redemptions`/`expires_at` bornent l'usage,
-        `restrictions` (dict, ex. `{"minimum_amount": 5000,
-        "minimum_amount_currency": "eur"}` ou
-        `{"first_time_transaction": True}`) borne QUAND il s'applique.
+        """POST /v1/promotion_codes — `coupon` (required) is the discount
+        rule; what this endpoint adds is the CODE a customer actually types
+        at payment. `code` sets the text (uppercase/digits —
+        Stripe generates one otherwise), `customer` restricts the code to a single
+        customer, `max_redemptions`/`expires_at` bound usage,
+        `restrictions` (dict, e.g. `{"minimum_amount": 5000,
+        "minimum_amount_currency": "eur"}` or
+        `{"first_time_transaction": True}`) bounds WHEN it applies.
 
-        ⚠️ **Vérifié en LIVE le 2026-08-23** contre un vrai compte test (API
-        version de compte `2026-07-29.dahlia`, la version par défaut d'un
-        compte neuf) : un `coupon=<id>` À PLAT est REJETÉ (`400
-        parameter_unknown: coupon`) — cette version d'API a remplacé le champ
-        par un objet imbriqué `promotion` (`promotion[type]=coupon`,
-        `promotion[coupon]=<id>`), miroir de la forme de RÉPONSE que rendent
-        déjà `list_promotion_codes`/`get_promotion_code` sur cette même
-        version (`promotion: {coupon, type}`, plus de `coupon` à plat non
-        plus en lecture). Tous les autres champs (`code`, `customer`,
+        ⚠️ **Verified LIVE on 2026-08-23** against a real test account (account
+        API version `2026-07-29.dahlia`, the default version of a
+        new account): a FLAT `coupon=<id>` is REJECTED (`400
+        parameter_unknown: coupon`) — this API version replaced the field
+        with a nested `promotion` object (`promotion[type]=coupon`,
+        `promotion[coupon]=<id>`), mirroring the RESPONSE shape that
+        `list_promotion_codes`/`get_promotion_code` already return on this same
+        version (`promotion: {coupon, type}`, no flat `coupon` either
+        on read). All the other fields (`code`, `customer`,
         `max_redemptions`, `expires_at`, `restrictions`, `metadata`)
-        continuent de fonctionner tels quels à côté. La signature de CETTE
-        méthode reste `coupon=<id>` côté appelant (rien ne change pour
-        `oto_mcp/tools/stripe.py`) — c'est ICI, au moment d'émettre la
-        requête, que `coupon` est transformé en `promotion`. Un compte
-        épinglé sur une version d'API ANTÉRIEURE à ce changement (via le
-        champ credential `api_version`) pourrait attendre l'ancienne forme à
-        plat à la place — non vérifié faute d'un tel compte disponible ;
-        cf. le docstring de tête du module sur ce risque."""
+        keep working as-is alongside it. The signature of THIS
+        method stays `coupon=<id>` on the caller side (nothing changes for
+        `oto_mcp/tools/stripe.py`) — it is HERE, when emitting the
+        request, that `coupon` is turned into `promotion`. An account
+        pinned to an API version PRIOR to this change (via the
+        `api_version` credential field) might expect the old flat form
+        instead — not verified for lack of such an account;
+        see the module's top docstring on this risk."""
         body = dict(body)
         coupon = body.pop("coupon", None)
         if coupon is not None:
@@ -553,21 +553,21 @@ class StripeClient:
         return self._post("/v1/promotion_codes", body)
 
     def update_promotion_code(self, promotion_code_id: str, **body: Any) -> Any:
-        """POST /v1/promotion_codes/{id} — seuls `active` et `metadata`
-        sont modifiables après création (le code, le coupon lié et les
-        restrictions sont figés). `active=False` est la façon de RÉVOQUER
-        un code sans le supprimer (aucune suppression n'existe dans ce
-        client) — les redemptions déjà faites ne sont pas affectées."""
+        """POST /v1/promotion_codes/{id} — only `active` and `metadata`
+        are modifiable after creation (the code, the linked coupon and the
+        restrictions are frozen). `active=False` is the way to REVOKE
+        a code without deleting it (no deletion exists in this
+        client) — redemptions already made are not affected."""
         return self._post(f"/v1/promotion_codes/{promotion_code_id}", body)
 
     # ================================================================
-    # Checkout — sessions hébergées
+    # Checkout — hosted sessions
     # ================================================================
 
     def list_checkout_sessions(self, **params: Any) -> Any:
-        """GET /v1/checkout/sessions — filtres `customer`, `payment_intent`,
+        """GET /v1/checkout/sessions — filters `customer`, `payment_intent`,
         `subscription`, `status` (open | complete | expired), `created`.
-        `status=open` = paniers abandonnés encore ouverts."""
+        `status=open` = abandoned carts still open."""
         return self._get("/v1/checkout/sessions", **params)
 
     def get_checkout_session(self, session_id: str, **params: Any) -> Any:
@@ -579,17 +579,17 @@ class StripeClient:
         return self._get(f"/v1/checkout/sessions/{session_id}/line_items", **params)
 
     # ================================================================
-    # Événements — le fil d'activité du compte
+    # Events — the account's activity feed
     # ================================================================
 
     def list_events(self, **params: Any) -> Any:
-        """GET /v1/events — tout changement d'état du compte, le plus récent
-        d'abord, l'objet concerné inclus dans `data.object`. Rétention Stripe :
-        30 jours.
+        """GET /v1/events — every state change on the account, most recent
+        first, the object concerned included in `data.object`. Stripe retention:
+        30 days.
 
         Args:
-            **params: `type` (accepte le joker, ex. `invoice.*`), `types`
-                (liste), `created`, `limit`, `starting_after`, `ending_before`.
+            **params: `type` (accepts the wildcard, e.g. `invoice.*`), `types`
+                (list), `created`, `limit`, `starting_after`, `ending_before`.
         """
         return self._get("/v1/events", **params)
 
@@ -598,12 +598,12 @@ class StripeClient:
         return self._get(f"/v1/events/{event_id}", **params)
 
     # ================================================================
-    # Webhooks — LECTURE seule (diagnostic d'intégration)
+    # Webhooks — READ only (integration diagnostics)
     # ================================================================
 
     def list_webhook_endpoints(self, **params: Any) -> Any:
-        """GET /v1/webhook_endpoints — quelles intégrations écoutent ce compte.
-        En créer, modifier ou supprimer n'est pas implémenté : c'est de la
-        configuration d'infrastructure, et une suppression casse en silence
-        l'automatisation qui en dépendait (relances, provisioning)."""
+        """GET /v1/webhook_endpoints — which integrations listen to this account.
+        Creating, modifying or deleting them is not implemented: it is
+        infrastructure configuration, and a deletion silently breaks the
+        automation that depended on it (dunning, provisioning)."""
         return self._get("/v1/webhook_endpoints", **params)

@@ -1,9 +1,9 @@
-"""Lire une réponse de la Graph API, et traduire un refus dans le vocabulaire d'`errors`.
+"""Read a Graph API response, and translate a refusal into the `errors` vocabulary.
 
-⚠️ Le corps brut et l'URL ne traversent jamais cette frontière : le jeton part en
-en-tête, mais un corps d'erreur peut faire écho à la requête. On rend le statut,
-les codes Graph et `error.message` (rédigé par Meta pour un humain) — d'où aucun
-`raise_for_status()` dans ce paquet.
+⚠️ The raw body and the URL never cross this boundary: the token travels in a
+header, but an error body can echo the request. We return the status,
+the Graph codes and `error.message` (written by Meta for a human) — hence no
+`raise_for_status()` in this package.
 """
 from __future__ import annotations
 
@@ -16,15 +16,15 @@ from .errors import (
     MetaAdsThrottled,
 )
 
-#: « Ce jeton ne vaut plus rien » : 190 = expiré/révoqué, 102 = session invalidée.
+#: "This token is worthless": 190 = expired/revoked, 102 = session invalidated.
 _CODES_JETON_MORT = (190, 102)
 
-#: Limites de débit : 4 = app, 17 = utilisateur, 32 = page, 613 = appels/temps,
-#: 80000-80014 = limites « business use case » de la Marketing API.
+#: Rate limits: 4 = app, 17 = user, 32 = page, 613 = calls/time,
+#: 80000-80014 = Marketing API "business use case" limits.
 _CODES_DEBIT = frozenset({4, 17, 32, 613}) | frozenset(range(80000, 80015))
 
-#: Sous-code « trop de données par appel » (code 100) : réduire la fenêtre ou
-#: passer par un rapport asynchrone — ce n'est pas un paramètre faux.
+#: Subcode "too much data per call" (code 100): narrow the window or
+#: use an async report — it is not a wrong parameter.
 _SOUS_CODE_TROP_DE_DONNEES = 1487534
 
 
@@ -42,7 +42,7 @@ def _entier(valeur: Any) -> Optional[int]:
 
 
 def corps(reponse) -> Any:
-    """Le JSON d'une réponse, ou `None`."""
+    """A response's JSON, or `None`."""
     try:
         return reponse.json()
     except ValueError:
@@ -56,7 +56,7 @@ def jeton_mort(status: int, payload: Any) -> bool:
 
 
 def lire(reponse, geste: str) -> dict:
-    """Le corps JSON d'une réponse OK, ou l'erreur d'`errors` qui convient."""
+    """The JSON body of an OK response, or the fitting `errors` error."""
     payload = corps(reponse)
     if reponse.status_code == 200:
         if not isinstance(payload, dict):
@@ -87,8 +87,8 @@ def lire(reponse, geste: str) -> dict:
 
 
 def refus_de_consentement(reponse, geste: str) -> None:
-    """Comme `lire`, pour l'ACQUISITION du jeton : il n'y a pas encore de jeton à
-    déclarer mort — c'est le consentement lui-même que Meta refuse."""
+    """Like `lire`, for token ACQUISITION: there is no token yet to
+    declare dead — it is the consent itself that Meta refuses."""
     bloc = _erreur(corps(reponse))
     dit = str(bloc.get("message") or "").strip()
     raise MetaAdsAuthRefused(

@@ -1,8 +1,8 @@
-"""Cycle de vie d'une présentation et de son fichier Drive.
+"""Lifecycle of a presentation and its Drive file.
 
-Extrait de `slides_client.py` (découpage par famille d'opérations, surface
-publique figée) : les corps sont inchangés. Ce mixin n'est jamais instancié
-seul — il est composé dans `SlidesClient`, qui construit `slides_service` et
+Extracted from `slides_client.py` (split by operation family, public surface
+frozen): the bodies are unchanged. This mixin is never instantiated on its
+own — it is composed into `SlidesClient`, which builds `slides_service` and
 `drive_service`.
 """
 
@@ -13,7 +13,7 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 
 class _PresentationsMixin:
-    """Cycle de vie d'une présentation et de son fichier Drive."""
+    """Lifecycle of a presentation and its Drive file."""
 
     def create_presentation(self, title, folder_id=None, template_id=None):
         """
@@ -161,9 +161,9 @@ class _PresentationsMixin:
         """
         Convert a .pptx file already in Drive into a native Google Slides file.
 
-        `drive.files().copy()` ne convertit pas le mimeType, donc on télécharge
-        puis on ré-upload en spécifiant `mimeType=application/vnd.google-apps.presentation`
-        — Drive fait la conversion à l'upload.
+        `drive.files().copy()` does not convert the mimeType, so we download
+        then re-upload specifying `mimeType=application/vnd.google-apps.presentation`
+        — Drive does the conversion on upload.
 
         Args:
             pptx_id: Drive file ID of the source .pptx
@@ -201,7 +201,7 @@ class _PresentationsMixin:
         return f['id']
 
     def export_pdf(self, presentation_id, output_path):
-        """Exporte la présentation en PDF localement (via Drive export)."""
+        """Export the presentation to a local PDF (via Drive export)."""
         data = self.drive_service.files().export(
             fileId=presentation_id, mimeType='application/pdf'
         ).execute()

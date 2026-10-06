@@ -1,22 +1,22 @@
-"""Le renouvellement de l'autorisation — quand, et comment.
+"""Renewing the authorization — when, and how.
 
-**La propriété qui gouverne tout ce module : ce jeton ne se renouvelle que tant
-qu'il vit.** Il n'y a pas de `refresh_token` chez Meta sur ce produit ; on
-échange le jeton courant contre un jeton neuf de 60 jours, et si le courant est
-mort, il n'y a rien à échanger. Une connexion qui n'est pas renouvelée à temps
-n'est pas dégradée : elle est perdue, et seule l'utilisatrice peut la refaire.
+**The property that governs this whole module: this token only renews while
+it lives.** There is no `refresh_token` at Meta on this product; we
+exchange the current token for a fresh 60-day token, and if the current one is
+dead, there is nothing to exchange. A connection that is not renewed in time
+is not degraded: it is lost, and only the user can redo it.
 
-Deux conséquences, portées par le code plutôt que par un commentaire :
+Two consequences, carried by the code rather than by a comment:
 
-- **`is_expired` se demande AVANT `needs_refresh`**. Sur un jeton mort,
-  `needs_refresh` rend `False` — non pas parce qu'il va bien, mais parce que le
-  renouvellement ne peut plus rien : c'est un nouveau consentement qu'il faut, et
-  appeler Meta pour se l'entendre dire ne fait qu'ajouter un aller-retour à
-  chaque appel d'une connexion cassée ;
-- **le seuil est large** (`RENEW_WHEN_REMAINING_DAYS`, 53 jours sur 60). Un seuil
-  serré économiserait des appels et ferait dépendre la survie de la connexion du
-  hasard d'un usage dans la dernière ligne droite. Le calcul se fait dans l'autre
-  sens : ce qu'on veut, c'est qu'un usage — même très espacé — suffise à tenir.
+- **`is_expired` is asked BEFORE `needs_refresh`**. On a dead token,
+  `needs_refresh` returns `False` — not because it is fine, but because
+  renewal can no longer do anything: a new consent is needed, and
+  calling Meta to be told so only adds a round trip to
+  every call of a broken connection;
+- **the threshold is wide** (`RENEW_WHEN_REMAINING_DAYS`, 53 days out of 60). A tight
+  threshold would save calls and make the connection's survival depend on the
+  luck of a use in the final stretch. The calculation works the other
+  way around: what we want is for a use — even very sporadic — to be enough to hold.
 """
 from __future__ import annotations
 
@@ -41,16 +41,16 @@ def utcnow() -> datetime:
 
 
 def iso(dt: datetime) -> str:
-    """Horodatage UTC, seconde entière, suffixe `Z` — la forme qu'on stocke."""
+    """UTC timestamp, whole seconds, `Z` suffix — the form we store."""
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_ts(value: Optional[str]) -> Optional[datetime]:
-    """Un horodatage ISO 8601 en datetime AWARE, ou `None` s'il est absent/illisible.
+    """An ISO 8601 timestamp as an AWARE datetime, or `None` if absent/unreadable.
 
-    Une valeur naïve est lue en UTC : c'est ce que ce paquet écrit, et supposer
-    l'heure locale ferait dériver l'échéance de plusieurs heures selon la machine
-    qui relit — assez pour renouveler trop tard un jour de bascule."""
+    A naive value is read as UTC: that is what this package writes, and assuming
+    local time would shift the expiry by several hours depending on the machine
+    reading it back — enough to renew too late on a changeover day."""
     if not value:
         return None
     try:
@@ -62,11 +62,11 @@ def parse_ts(value: Optional[str]) -> Optional[datetime]:
 
 def expiry(expires_at: Optional[str] = None,
            issued_at: Optional[str] = None) -> Optional[datetime]:
-    """L'échéance connue : `expires_at`, sinon `issued_at` + 60 jours, sinon `None`.
+    """The known expiry: `expires_at`, else `issued_at` + 60 days, else `None`.
 
-    `None` veut dire « on ne sait pas », pas « c'est bon » : sans repère, on ne
-    renouvelle pas à l'aveugle — c'est le refus de Meta qui tranchera. Ce cas ne
-    devrait pas exister chez un appelant qui stocke ce que `connect` lui a rendu."""
+    `None` means "we don't know", not "it's fine": without a reference, we don't
+    renew blindly — Meta's refusal will settle it. This case should
+    not exist for a caller that stores what `connect` returned to it."""
     exp = parse_ts(expires_at)
     if exp:
         return exp
@@ -76,19 +76,19 @@ def expiry(expires_at: Optional[str] = None,
 
 def is_expired(expires_at: Optional[str] = None, issued_at: Optional[str] = None,
                now: Optional[datetime] = None) -> bool:
-    """L'autorisation est-elle déjà morte ? Échéance inconnue ⟹ `False`."""
+    """Is the authorization already dead? Unknown expiry ⟹ `False`."""
     exp = expiry(expires_at, issued_at)
     return bool(exp and exp <= (now or utcnow()))
 
 
 def needs_refresh(expires_at: Optional[str] = None, issued_at: Optional[str] = None,
                   now: Optional[datetime] = None) -> bool:
-    """Faut-il renouveler MAINTENANT ? Cf. le contrat en tête de module.
+    """Must we renew NOW? See the contract at the top of the module.
 
-    Trois `False` qui ne veulent pas dire la même chose, et qu'il vaut mieux lire
-    ici que déduire : échéance inconnue (rien à calculer), jeton trop JEUNE (Meta
-    refuse de renouveler avant 24 h — renouveler tout de suite ferait un refus en
-    boucle), et jeton déjà mort (`is_expired` est la question à poser)."""
+    Three `False` values that don't mean the same thing, and which are better read
+    here than deduced: unknown expiry (nothing to compute), token too YOUNG (Meta
+    refuses to renew before 24 h — renewing immediately would cause a refusal
+    loop), and token already dead (`is_expired` is the question to ask)."""
     maintenant = now or utcnow()
     exp = expiry(expires_at, issued_at)
     if exp is None or exp <= maintenant:
@@ -102,35 +102,35 @@ def needs_refresh(expires_at: Optional[str] = None, issued_at: Optional[str] = N
 def refresh_long_lived(access_token: str, *,
                        expires_at: Optional[str] = None,
                        session: Optional[requests.Session] = None) -> dict:
-    """Échange le jeton courant contre un jeton neuf de 60 jours.
+    """Exchanges the current token for a fresh 60-day token.
 
-    Rend `{"access_token": …, "expires_in": …}` — l'appelant en tire la nouvelle
-    échéance et la range là où il range le jeton. Lève `InstagramAuthExpired` si
-    Meta refuse : à ce stade, le seul geste possible est un nouveau consentement,
-    et `expires_at` (quand l'appelant le connaît) voyage avec l'erreur pour qu'il
-    puisse dire la DATE plutôt qu'un « ça ne marche plus ».
+    Returns `{"access_token": …, "expires_in": …}` — the caller derives the new
+    expiry from it and stores it wherever it stores the token. Raises `InstagramAuthExpired` if
+    Meta refuses: at that point, the only possible gesture is a new consent,
+    and `expires_at` (when the caller knows it) travels with the error so that it
+    can state the DATE rather than a "it no longer works".
 
-    ⚠️ Ce renouvellement ne prend PAS le secret de l'application — le jeton se
-    renouvelle tout seul. C'est aussi ce qui rend ce chemin jouable depuis un
-    travail périodique qui n'a pas besoin des coordonnées de l'application."""
+    ⚠️ This renewal does NOT take the application secret — the token
+    renews itself. That is also what makes this path workable from a
+    periodic job that doesn't need the application's coordinates."""
     if not access_token:
         raise InstagramAuthExpired(
-            "Aucune autorisation Instagram à renouveler : le compte n'est pas connecté.",
+            "No Instagram authorization to renew: the account is not connected.",
             expires_at)
     http = session or requests
-    # Même remarque que dans `oauth.connect` : Meta ne sert cet endpoint qu'en GET,
-    # paramètres dans l'URL. Ce que la règle protège est tenu autrement — pas de
-    # `raise_for_status()`, et `_transport` ne rend ni l'URL ni le corps brut.
+    # Same remark as in `oauth.connect`: Meta only serves this endpoint via GET,
+    # parameters in the URL. What the rule protects is upheld otherwise — no
+    # `raise_for_status()`, and `_transport` returns neither the URL nor the raw body.
     r = http.get(f"{GRAPH_ROOT}/refresh_access_token", params={
         "grant_type": "ig_refresh_token",
         "access_token": access_token,
     }, timeout=HTTP_TIMEOUT)
-    charge = _transport.lire(r, "le renouvellement de l'autorisation",
+    charge = _transport.lire(r, "renewing the authorization",
                              expires_at=expires_at)
     jeton = charge.get("access_token")
     if not jeton:
         raise InstagramAuthExpired(
-            "Instagram a répondu au renouvellement sans rendre d'autorisation neuve.",
+            "Instagram answered the renewal without returning a new authorization.",
             expires_at)
     return {"access_token": str(jeton),
             "expires_in": int(charge.get("expires_in") or LONG_LIVED_TTL_DAYS * 86_400)}

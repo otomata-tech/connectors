@@ -1,67 +1,67 @@
-"""Lightfield API client — CRM agent-native (comptes, contacts, opportunités).
+"""Lightfield API client — agent-native CRM (accounts, contacts, opportunities).
 
-API v1 (`https://api.lightfield.app/v1`, doc https://docs.lightfield.app), auth
-**Bearer** `sk_lf_…` + en-tête de version **obligatoire** `Lightfield-Version`. Une
-méthode = un endpoint ; corps et réponses passent tels quels, le client n'invente
-aucune sémantique. Chemins, verbes et scopes relevés page par page dans la référence
-éditeur le 18/08/2026.
+API v1 (`https://api.lightfield.app/v1`, docs https://docs.lightfield.app), auth
+**Bearer** `sk_lf_…` + **mandatory** version header `Lightfield-Version`. One
+method = one endpoint; bodies and responses pass through as-is, the client invents
+no semantics. Paths, verbs and scopes were taken page by page from the vendor
+reference on 2026-08-18.
 
-⚠️ **L'API est en BETA** (annoncé sur le quickstart) : « methods, parameters, and
-response schemas may change ». D'où deux partis pris : les corps ne sont pas re-typés
-(l'appelant compose le dict, la doc éditeur fait foi) et les réponses ressortent
-brutes — un champ ajouté en amont arrive jusqu'à l'appelant au lieu d'être filtré ici.
+⚠️ **The API is in BETA** (stated on the quickstart): "methods, parameters, and
+response schemas may change". Hence two design choices: bodies are not re-typed
+(the caller composes the dict, the vendor docs are authoritative) and responses come
+back raw — a field added upstream reaches the caller instead of being filtered here.
 
-Conventions à connaître (elles conditionnent l'appelant) :
+Conventions to know (they condition the caller):
 
-- **Modèle de champs PAR WORKSPACE.** Un enregistrement porte
+- **Field model PER WORKSPACE.** A record carries
   `{id, createdAt, fields: {slug: {value, valueType}}, relationships: {...}, httpLink}`.
-  Les slugs ne sont PAS universels : ils se découvrent aux endpoints `…/definitions`.
-  Un slug inconnu → 400 `code: "unknown_field"` (idem `unknown_relationship`). Ne
-  jamais coder un slug en dur : le workspace d'un client n'a pas ceux d'un autre.
+  Slugs are NOT universal: they are discovered at the `…/definitions` endpoints.
+  An unknown slug → 400 `code: "unknown_field"` (same for `unknown_relationship`). Never
+  hard-code a slug: one customer's workspace does not have another's.
 
-- **Pagination `limit`/`offset`, et `limit` PLAFONNE À 25** (minimum 1). C'est bas :
-  toute collecte réelle boucle. `_check_limit` refuse localement hors bornes plutôt
-  que de laisser partir un 400.
+- **`limit`/`offset` pagination, and `limit` CAPS AT 25** (minimum 1). That is low:
+  any real collection loops. `_check_limit` refuses out-of-bounds values locally rather
+  than letting a 400 go out.
 
-- ⚠️ **Les listes lisent un INDEX DE RECHERCHE qui peut être en retard.** Doc, mot
-  pour mot : « Information fetched from list methods is served out of a search index
+- ⚠️ **Lists read a SEARCH INDEX that may lag behind.** Docs, word
+  for word: "Information fetched from list methods is served out of a search index
   that may not have recent changes. If getting the latest version of a record is a
-  requirement, you will need to use the individual Retrieve methods. » Donc `list_*`
-  et `get_*` ne sont PAS interchangeables : après une écriture, relire par `get_*`.
+  requirement, you will need to use the individual Retrieve methods." So `list_*`
+  and `get_*` are NOT interchangeable: after a write, re-read through `get_*`.
 
-- **Erreurs** : `{type, code?, param?}` — `code` sur certains 400/422
+- **Errors**: `{type, code?, param?}` — `code` on some 400/422
   (`unknown_field`, `unknown_relationship`, `relationship_write_limit_exceeded`…),
-  remontées telles quelles dans `UpstreamHTTPError.body`. 429 porte `Retry-After`.
+  surfaced as-is in `UpstreamHTTPError.body`. 429 carries `Retry-After`.
 
-- **Idempotence** : en-tête `Idempotency-Key` (≤255 c.) sur les POST. Clé valable
-  24 h, scopée à l'organisation ET au type d'opération ; un rejeu renvoie la réponse
-  mise en cache. ⚠️ Si l'appel d'origine a ÉCHOUÉ, rejouer la clé re-tente l'opération
-  au lieu de resservir l'erreur — une clé ne « fige » donc que les succès.
+- **Idempotency**: `Idempotency-Key` header (≤255 chars) on POSTs. Key valid for
+  24 h, scoped to the organization AND the operation type; a replay returns the cached
+  response. ⚠️ If the original call FAILED, replaying the key retries the operation
+  instead of re-serving the error — a key therefore only "freezes" successes.
 
-- ⚠️ **`scopes: []` sur `/auth/validate` veut dire ACCÈS COMPLET, pas « aucun droit »**
-  (doc : « Empty when the key has full access »). L'inversion est un piège de sécurité
-  à l'envers : lue naïvement, une clé toute-puissante passerait pour une clé morte, et
-  on refuserait le connecteur au client qui a le mieux configuré sa clé. C'est pourquoi
-  la lecture passe par `scope_granted()` ci-dessous, jamais par un `in` à la main.
+- ⚠️ **`scopes: []` on `/auth/validate` means FULL ACCESS, not "no rights"**
+  (docs: "Empty when the key has full access"). The inversion is a security trap
+  in reverse: read naively, an all-powerful key would pass for a dead key, and
+  we would refuse the connector to the customer who configured their key best. That is why
+  reading goes through `scope_granted()` below, never through a hand-written `in`.
 
-Écritures : `POST` partout, y compris les mises à jour (`POST /v1/accounts/{id}` —
-il n'y a ni PUT ni PATCH). Ce client N'EST PAS en lecture seule.
+Writes: `POST` everywhere, including updates (`POST /v1/accounts/{id}` —
+there is neither PUT nor PATCH). This client is NOT read-only.
 
-**Envoi d'email** : autorisé (arbitrage mainteneur du 19/08/2026), aux mêmes deux
-verrous que l'écriture Origami — le connecteur n'existe que si une organisation pose
-SA clé, et l'envoi part d'une boîte que le propriétaire de cette clé a lui-même
-connectée. La doc éditeur le dit : « The `from` value must be a bare email address
-for a connected mail account owned by the API key user. » Sans boîte connectée,
-l'amont refuse et rien ne part. ⚠️ Réponses et transferts ne sont PAS supportés par
-l'API (« replies and forwards are not supported yet ») : `send_email` crée toujours
-un message NEUF, même si l'appelant croit répondre à un fil.
+**Sending email**: allowed (maintainer decision of 2026-08-19), under the same two
+locks as the Origami write — the connector only exists if an organization sets
+ITS key, and the send goes out from a mailbox that the owner of that key has
+connected themselves. The vendor docs say so: "The `from` value must be a bare email address
+for a connected mail account owned by the API key user." Without a connected mailbox,
+upstream refuses and nothing goes out. ⚠️ Replies and forwards are NOT supported by
+the API ("replies and forwards are not supported yet"): `send_email` always creates
+a NEW message, even if the caller thinks it is replying to a thread.
 
-**Délibérément absent** (hors périmètre du connecteur oto, à ne pas « compléter » sans
-décision) : toutes les suppressions, les fusions, les sessions d'upload de fichiers,
-messages et canaux, l'état des exécutions de workflow, l'historique de champs, et le
-CRUD des types d'objets personnalisés. ⚠️ Conséquence directe : les pièces jointes
-d'un envoi sont des identifiants issus du cycle d'upload, qui n'est pas exposé —
-`attachments` passe donc, mais il n'y a aujourd'hui aucun moyen de fabriquer l'id.
+**Deliberately absent** (out of scope of the oto connector, not to be "completed" without
+a decision): all deletions, merges, file upload sessions,
+messages and channels, workflow run state, field history, and the
+CRUD of custom object types. ⚠️ Direct consequence: the attachments
+of a send are identifiers coming from the upload cycle, which is not exposed —
+`attachments` therefore goes through, but there is currently no way to produce the id.
 
 Requires: requests
 """
@@ -76,29 +76,29 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-# (connexion, lecture) — aucune attente illimitée.
+# (connect, read) — no unbounded wait.
 _HTTP_TIMEOUT = (10, 60)
 
-# Version d'API envoyée à CHAQUE requête. Épinglée ici, jamais recopiée sur un site
-# d'appel : une API en beta bougera, et il doit y avoir UN endroit à changer.
+# API version sent on EVERY request. Pinned here, never copied to a call
+# site: a beta API will move, and there must be ONE place to change.
 DEFAULT_API_VERSION = "2026-03-01"
 
-# Bornes de pagination imposées par l'API (doc « List methods »).
+# Pagination bounds imposed by the API (docs "List methods").
 MIN_LIMIT, MAX_LIMIT = 1, 25
 
-# Statuts que l'on retente : rate limit et indisponibilités passagères. Un 4xx de
-# validation n'est jamais retenté (il serait rejeté à l'identique).
+# Statuses we retry: rate limit and transient unavailability. A validation 4xx is
+# never retried (it would be rejected identically).
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
 
 
 def scope_granted(validate_response: Dict[str, Any], scope: str) -> bool:
-    """La clé décrite par `/auth/validate` porte-t-elle `scope` ?
+    """Does the key described by `/auth/validate` carry `scope`?
 
-    ⚠️ **Une liste `scopes` VIDE signifie accès complet**, pas « aucun droit » (doc
-    éditeur : « Empty when the key has full access »). Cette fonction existe pour que
-    cette inversion soit écrite UNE fois : un `if scope in resp["scopes"]` naïf
-    déclarerait inutilisable la clé la plus puissante.
+    ⚠️ **An EMPTY `scopes` list means full access**, not "no rights" (vendor
+    docs: "Empty when the key has full access"). This function exists so that
+    this inversion is written ONCE: a naive `if scope in resp["scopes"]` would
+    declare the most powerful key unusable.
     """
     if not isinstance(validate_response, dict):
         return False
@@ -109,7 +109,7 @@ def scope_granted(validate_response: Dict[str, Any], scope: str) -> bool:
 
 
 class LightfieldClient:
-    """Client Lightfield v1 (https://api.lightfield.app), auth Bearer `sk_lf_…`."""
+    """Lightfield v1 client (https://api.lightfield.app), Bearer auth `sk_lf_…`."""
 
     BASE_URL = "https://api.lightfield.app"
 
@@ -117,15 +117,15 @@ class LightfieldClient:
                  api_version: Optional[str] = None):
         """
         Args:
-            api_key: clé Lightfield.
-            api_version: valeur de l'en-tête `Lightfield-Version`
-                (défaut `DEFAULT_API_VERSION`).
+            api_key: Lightfield key.
+            api_version: value of the `Lightfield-Version` header
+                (default `DEFAULT_API_VERSION`).
         """
         self.api_key = require(api_key, "LIGHTFIELD_API_KEY")
         self.api_version = api_version or DEFAULT_API_VERSION
         self.session = requests.Session()
-        # Clé en HEADER uniquement (jamais en query string : elle finirait dans l'URL,
-        # donc dans le message de toute exception, les logs et Sentry).
+        # Key in the HEADER only (never in the query string: it would end up in the URL,
+        # hence in the message of any exception, the logs and Sentry).
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",
             "Lightfield-Version": self.api_version,
@@ -137,22 +137,22 @@ class LightfieldClient:
 
     @staticmethod
     def _check_limit(limit: Optional[int]) -> None:
-        """`limit` hors [1, 25] est refusé ICI. L'API rendrait un 400 ; le dire
-        localement nomme la borne réelle, que personne ne devine."""
+        """A `limit` outside [1, 25] is refused HERE. The API would return a 400; saying so
+        locally names the real bound, which nobody guesses."""
         if limit is None:
             return
         if not isinstance(limit, int) or isinstance(limit, bool):
-            raise ValueError("`limit` doit être un entier.")
+            raise ValueError("`limit` must be an integer.")
         if not (MIN_LIMIT <= limit <= MAX_LIMIT):
             raise ValueError(
-                f"`limit` doit être entre {MIN_LIMIT} et {MAX_LIMIT} "
-                f"(plafond de l'API Lightfield) ; reçu {limit}. "
-                "Au-delà, paginer avec `offset`.")
+                f"`limit` must be between {MIN_LIMIT} and {MAX_LIMIT} "
+                f"(Lightfield API cap); got {limit}. "
+                "Beyond that, paginate with `offset`.")
 
     @staticmethod
     def _retry_after(resp: Any, attempt: int) -> float:
-        """Délai avant re-tentative : `Retry-After` s'il est là (l'amont sait mieux
-        que nous), sinon backoff exponentiel."""
+        """Delay before retrying: `Retry-After` if present (upstream knows better
+        than we do), otherwise exponential backoff."""
         raw = (getattr(resp, "headers", None) or {}).get("Retry-After")
         if raw:
             try:
@@ -165,8 +165,8 @@ class LightfieldClient:
                  params: Optional[Dict[str, Any]] = None,
                  json: Any = None,
                  idempotency_key: Optional[str] = None) -> Any:
-        # Params à None retirés ; booléens en `true`/`false` (requests écrirait
-        # `True`, que le serveur ne lit pas comme un booléen).
+        # None params removed; booleans as `true`/`false` (requests would write
+        # `True`, which the server does not read as a boolean).
         clean: Dict[str, Any] = {}
         for k, v in (params or {}).items():
             if v is None:
@@ -175,8 +175,8 @@ class LightfieldClient:
 
         headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
 
-        # Retente 429/5xx. Un POST n'est retenté QUE s'il porte une clé d'idempotence :
-        # sans elle, une réponse perdue en vol ferait créer deux fois l'enregistrement.
+        # Retries 429/5xx. A POST is retried ONLY if it carries an idempotency key:
+        # without one, a response lost in flight would create the record twice.
         retryable = method.upper() == "GET" or idempotency_key is not None
         last = None
         for attempt in range(_MAX_ATTEMPTS):
@@ -192,15 +192,15 @@ class LightfieldClient:
 
     def _write(self, path: str, payload: Dict[str, Any],
                idempotency_key: Optional[str] = None) -> Any:
-        """POST d'écriture. Sans clé fournie, on en génère une : elle rend SÛRE la
-        boucle de re-tentative interne (le rejeu resservira la réponse du premier
-        essai). Pour dédupliquer entre deux appels distincts — un agent qui rejoue
-        son tour —, c'est à l'appelant de passer SA clé, stable d'un appel à l'autre."""
+        """Write POST. If no key is supplied, we generate one: it makes the internal
+        retry loop SAFE (the replay will re-serve the response of the first
+        attempt). To deduplicate between two distinct calls — an agent replaying
+        its turn —, the caller must pass ITS key, stable from one call to the next."""
         if not isinstance(payload, dict):
-            raise ValueError("le corps doit être un dict.")
+            raise ValueError("the body must be a dict.")
         key = idempotency_key or f"oto-{uuid.uuid4()}"
         if len(key) > 255:
-            raise ValueError("`idempotency_key` : 255 caractères maximum.")
+            raise ValueError("`idempotency_key`: 255 characters maximum.")
         return self._request("POST", path, json=dict(payload), idempotency_key=key)
 
     def _list(self, path: str, limit: Optional[int], offset: Optional[int],
@@ -213,57 +213,57 @@ class LightfieldClient:
     # --- auth ---------------------------------------------------------------
 
     def validate(self) -> Dict[str, Any]:
-        """GET /v1/auth/validate — métadonnées de la clé courante. AUCUN scope requis,
-        donc c'est la sonde d'authentification : elle répond même à une clé très
-        restreinte.
+        """GET /v1/auth/validate — metadata of the current key. NO scope required,
+        so this is the authentication probe: it answers even to a very
+        restricted key.
 
-        Rend `{active, scopes, subjectType: "user"|"workspace", tokenType: "api_key"}`.
-        ⚠️ Lire `scopes` avec `scope_granted()` : une liste VIDE = accès complet.
+        Returns `{active, scopes, subjectType: "user"|"workspace", tokenType: "api_key"}`.
+        ⚠️ Read `scopes` with `scope_granted()`: an EMPTY list = full access.
         """
         return self._request("GET", "/v1/auth/validate")
 
-    # --- comptes ------------------------------------------------------------
+    # --- accounts -----------------------------------------------------------
 
     def list_accounts(self, limit: Optional[int] = None, offset: Optional[int] = None,
                       **filters: Any) -> Dict[str, Any]:
-        """GET /v1/accounts — `{data: [compte…]}`. Scope `accounts:read`.
+        """GET /v1/accounts — `{data: [account…]}`. Scope `accounts:read`.
 
-        ⚠️ Sert l'index de recherche, potentiellement en retard : pour l'état à jour
-        d'un enregistrement précis, `get_account`. `filters` = filtres par champ ou
-        relation (clé = slug de définition), cf. doc « List methods »."""
+        ⚠️ Serves the search index, potentially lagging: for the up-to-date state
+        of a specific record, `get_account`. `filters` = filters by field or
+        relationship (key = definition slug), see docs "List methods"."""
         return self._list("/v1/accounts", limit, offset, filters)
 
     def get_account(self, account_id: str) -> Dict[str, Any]:
-        """GET /v1/accounts/{id} — lecture DIRECTE (pas l'index) : la version à jour.
+        """GET /v1/accounts/{id} — DIRECT read (not the index): the up-to-date version.
         Scope `accounts:read`."""
         return self._request("GET", f"/v1/accounts/{account_id}")
 
     def create_account(self, payload: Dict[str, Any],
                        idempotency_key: Optional[str] = None) -> Dict[str, Any]:
         """POST /v1/accounts — `payload` = `{fields: {slug: value…}, relationships?}`,
-        slugs issus de `account_definitions()`. Scope `accounts:create`."""
+        slugs coming from `account_definitions()`. Scope `accounts:create`."""
         return self._write("/v1/accounts", payload, idempotency_key)
 
     def update_account(self, account_id: str, payload: Dict[str, Any],
                        idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        """POST /v1/accounts/{id} — mise à jour (l'API n'a ni PUT ni PATCH).
+        """POST /v1/accounts/{id} — update (the API has neither PUT nor PATCH).
         Scope `accounts:update`."""
         return self._write(f"/v1/accounts/{account_id}", payload, idempotency_key)
 
     def account_definitions(self) -> Dict[str, Any]:
-        """GET /v1/accounts/definitions — champs et relations du workspace : LA source
-        des slugs. Scope `accounts:read`."""
+        """GET /v1/accounts/definitions — fields and relationships of the workspace: THE source
+        of slugs. Scope `accounts:read`."""
         return self._request("GET", "/v1/accounts/definitions")
 
     # --- contacts -----------------------------------------------------------
 
     def list_contacts(self, limit: Optional[int] = None, offset: Optional[int] = None,
                       **filters: Any) -> Dict[str, Any]:
-        """GET /v1/contacts — index de recherche. Scope `contacts:read`."""
+        """GET /v1/contacts — search index. Scope `contacts:read`."""
         return self._list("/v1/contacts", limit, offset, filters)
 
     def get_contact(self, contact_id: str) -> Dict[str, Any]:
-        """GET /v1/contacts/{id} — lecture directe. Scope `contacts:read`."""
+        """GET /v1/contacts/{id} — direct read. Scope `contacts:read`."""
         return self._request("GET", f"/v1/contacts/{contact_id}")
 
     def create_contact(self, payload: Dict[str, Any],
@@ -280,16 +280,16 @@ class LightfieldClient:
         """GET /v1/contacts/definitions. Scope `contacts:read`."""
         return self._request("GET", "/v1/contacts/definitions")
 
-    # --- opportunités -------------------------------------------------------
+    # --- opportunities ------------------------------------------------------
 
     def list_opportunities(self, limit: Optional[int] = None,
                            offset: Optional[int] = None,
                            **filters: Any) -> Dict[str, Any]:
-        """GET /v1/opportunities — index de recherche. Scope `opportunities:read`."""
+        """GET /v1/opportunities — search index. Scope `opportunities:read`."""
         return self._list("/v1/opportunities", limit, offset, filters)
 
     def get_opportunity(self, opportunity_id: str) -> Dict[str, Any]:
-        """GET /v1/opportunities/{id} — lecture directe. Scope `opportunities:read`."""
+        """GET /v1/opportunities/{id} — direct read. Scope `opportunities:read`."""
         return self._request("GET", f"/v1/opportunities/{opportunity_id}")
 
     def create_opportunity(self, payload: Dict[str, Any],
@@ -307,12 +307,12 @@ class LightfieldClient:
         """GET /v1/opportunities/definitions. Scope `opportunities:read`."""
         return self._request("GET", "/v1/opportunities/definitions")
 
-    # --- notes & tâches -----------------------------------------------------
+    # --- notes & tasks ------------------------------------------------------
 
     def create_note(self, payload: Dict[str, Any],
                     idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        """POST /v1/notes — note rattachée à un compte/contact/opportunité par
-        relation. Scope `notes:create`."""
+        """POST /v1/notes — note attached to an account/contact/opportunity through a
+        relationship. Scope `notes:create`."""
         return self._write("/v1/notes", payload, idempotency_key)
 
     def note_definitions(self) -> Dict[str, Any]:
@@ -333,7 +333,7 @@ class LightfieldClient:
         """GET /v1/tasks/definitions. Scope `tasks:read`."""
         return self._request("GET", "/v1/tasks/definitions")
 
-    # --- listes -------------------------------------------------------------
+    # --- lists --------------------------------------------------------------
 
     def list_lists(self, limit: Optional[int] = None, offset: Optional[int] = None,
                    **filters: Any) -> Dict[str, Any]:
@@ -356,22 +356,22 @@ class LightfieldClient:
 
     def list_accounts_of_list(self, list_id: str, limit: Optional[int] = None,
                               offset: Optional[int] = None) -> Dict[str, Any]:
-        """GET /v1/lists/{listId}/accounts. Scopes `lists:read` ET `accounts:read` —
-        une clé qui n'a que `lists:read` échoue ici, pas sur `get_list`."""
+        """GET /v1/lists/{listId}/accounts. Scopes `lists:read` AND `accounts:read` —
+        a key that only has `lists:read` fails here, not on `get_list`."""
         return self._list(f"/v1/lists/{list_id}/accounts", limit, offset)
 
     def list_contacts_of_list(self, list_id: str, limit: Optional[int] = None,
                               offset: Optional[int] = None) -> Dict[str, Any]:
-        """GET /v1/lists/{listId}/contacts. Scopes `lists:read` ET `contacts:read`."""
+        """GET /v1/lists/{listId}/contacts. Scopes `lists:read` AND `contacts:read`."""
         return self._list(f"/v1/lists/{list_id}/contacts", limit, offset)
 
     def list_opportunities_of_list(self, list_id: str, limit: Optional[int] = None,
                                    offset: Optional[int] = None) -> Dict[str, Any]:
-        """GET /v1/lists/{listId}/opportunities. Scopes `lists:read` ET
+        """GET /v1/lists/{listId}/opportunities. Scopes `lists:read` AND
         `opportunities:read`."""
         return self._list(f"/v1/lists/{list_id}/opportunities", limit, offset)
 
-    # --- réunions & emails (lecture seule) ----------------------------------
+    # --- meetings & emails (read-only) --------------------------------------
 
     def list_meetings(self, limit: Optional[int] = None, offset: Optional[int] = None,
                       **filters: Any) -> Dict[str, Any]:
@@ -388,8 +388,8 @@ class LightfieldClient:
 
     def list_emails(self, limit: Optional[int] = None, offset: Optional[int] = None,
                     **filters: Any) -> Dict[str, Any]:
-        """GET /v1/emails — LECTURE seule ; l'envoi (`POST /v1/emails/send`) n'est
-        volontairement pas exposé. Scope `emails:read`."""
+        """GET /v1/emails — READ only; sending (`POST /v1/emails/send`) is
+        deliberately not exposed here. Scope `emails:read`."""
         return self._list("/v1/emails", limit, offset, filters)
 
     def get_email(self, email_id: str) -> Dict[str, Any]:
@@ -398,54 +398,54 @@ class LightfieldClient:
 
     @staticmethod
     def _check_from(payload: Dict[str, Any]) -> None:
-        """`from` absent = 400 amont. Le dire ICI nomme la vraie contrainte : ce n'est
-        pas une adresse quelconque, c'est une boîte CONNECTÉE par le propriétaire de la
-        clé — le second verrou qui rend l'envoi acceptable."""
+        """Missing `from` = upstream 400. Saying so HERE names the real constraint: it is not
+        just any address, it is a mailbox CONNECTED by the owner of the
+        key — the second lock that makes sending acceptable."""
         if not isinstance(payload, dict):
-            raise ValueError("le corps doit être un dict.")
+            raise ValueError("the body must be a dict.")
         if not str(payload.get("from") or "").strip():
             raise ValueError(
-                "`from` requis : l'adresse nue d'une boîte mail CONNECTÉE (Google ou "
-                "Microsoft) appartenant au propriétaire de la clé API. Sans boîte "
-                "connectée côté Lightfield, l'envoi est refusé en amont.")
+                "`from` required: the bare address of a CONNECTED mailbox (Google or "
+                "Microsoft) belonging to the API key owner. Without a mailbox "
+                "connected on the Lightfield side, the send is refused upstream.")
 
     def send_email(self, payload: Dict[str, Any],
                    idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        """POST /v1/emails/send — ENVOI RÉEL depuis la boîte connectée de `from`.
+        """POST /v1/emails/send — REAL SEND from the connected mailbox of `from`.
         Scope `emails:create`.
 
         `payload` = `{from, to, cc?, bcc?, subject?, messageBody?, attachments?}`.
-        ⚠️ Crée toujours un message NEUF : l'API ne sait pas répondre à un fil ni
-        transférer. ⚠️ `attachments` attend des ids de fichiers issus du cycle
-        d'upload, que ce client n'expose pas.
+        ⚠️ Always creates a NEW message: the API cannot reply to a thread nor
+        forward. ⚠️ `attachments` expects file ids coming from the upload
+        cycle, which this client does not expose.
 
-        C'est le seul geste de ce client qui SORT de la plateforme et atteint une
-        personne réelle : la couche appelante doit le garder derrière un dry-run.
+        This is the only action of this client that LEAVES the platform and reaches a
+        real person: the calling layer must keep it behind a dry-run.
         """
         self._check_from(payload)
         return self._write("/v1/emails/send", payload, idempotency_key)
 
     def draft_email(self, payload: Dict[str, Any],
                     idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-        """POST /v1/emails/draft — brouillon dans la boîte connectée de `from`, RIEN
-        n'est envoyé. Scope `emails:create`. Même corps que `send_email`.
+        """POST /v1/emails/draft — draft in the connected mailbox of `from`, NOTHING
+        is sent. Scope `emails:create`. Same body as `send_email`.
 
-        Seul `from` est requis, mais un brouillon qui ne porte QUE `from` est refusé
-        (400) : il faut au moins un `to`/`cc`/`bcc`/`subject`/`messageBody.content`/
-        `attachments`. On laisse ce refus à l'amont — lui seul connaît la règle exacte.
+        Only `from` is required, but a draft carrying ONLY `from` is refused
+        (400): at least one `to`/`cc`/`bcc`/`subject`/`messageBody.content`/
+        `attachments` is needed. We leave that refusal to upstream — only it knows the exact rule.
         """
         self._check_from(payload)
         return self._write("/v1/emails/draft", payload, idempotency_key)
 
-    # --- types d'objets -----------------------------------------------------
+    # --- object types -------------------------------------------------------
 
     def list_object_types(self) -> Dict[str, Any]:
-        """GET /v1/objects — types d'objets (standards et personnalisés) visibles par
-        la clé : `{data: [{label, objectType}]}`, `objectType` = le slug à passer à
+        """GET /v1/objects — object types (standard and custom) visible to
+        the key: `{data: [{label, objectType}]}`, `objectType` = the slug to pass to
         `object_definitions`."""
         return self._request("GET", "/v1/objects")
 
     def object_definitions(self, entity_slug: str) -> Dict[str, Any]:
-        """GET /v1/objects/{entitySlug}/definitions — champs et relations d'un type
-        d'objet, y compris personnalisé."""
+        """GET /v1/objects/{entitySlug}/definitions — fields and relationships of an object
+        type, including custom ones."""
         return self._request("GET", f"/v1/objects/{entity_slug}/definitions")

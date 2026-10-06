@@ -1,8 +1,8 @@
-"""Constantes et helpers de forme du connecteur Unipile.
+"""Constants and shape helpers of the Unipile connector.
 
-Extrait de `client.py` (découpage par domaine) — contenu inchangé. Ces noms
-restent réexportés par `oto.tools.unipile.client` : c'est le chemin d'import
-historique, et il est figé.
+Extracted from `client.py` (split by domain) — content unchanged. These names
+remain re-exported by `oto.tools.unipile.client`: it is the historical import
+path, and it is frozen.
 """
 
 from __future__ import annotations
@@ -11,45 +11,45 @@ import re
 from typing import Optional
 
 DEFAULT_DSN = "api.unipile.com"
-# (connect, read) en secondes — borne le blocage : un socket amont muet faisait
-# pendre l'appel jusqu'au cutoff 300s du client MCP (unipile_me, #114).
+# (connect, read) in seconds — bounds the blocking: a silent upstream socket made
+# the call hang until the MCP client's 300s cutoff (unipile_me, #114).
 _REQUEST_TIMEOUT = (10, 120)
-# #238 : la recherche Recruiter PAR URL (talent/search) peut PENDRE indéfiniment
-# quand le `searchContextId` de l'URL est expiré/mort côté LinkedIn — l'endpoint ne
-# répond ni erreur ni vide → timeout MCP à 180s, opaque. Read timeout court dédié :
-# on échoue AVANT le plafond MCP avec une erreur PROPRE et actionnable.
+# #238: the Recruiter search BY URL (talent/search) can HANG indefinitely
+# when the URL's `searchContextId` is expired/dead on the LinkedIn side — the endpoint
+# returns neither an error nor an empty result → opaque MCP timeout at 180s. Dedicated short
+# read timeout: we fail BEFORE the MCP ceiling with a CLEAN and actionable error.
 _URL_SEARCH_TIMEOUT = (10, 75)
-# Scrape (recherche structurée + fiche société) : LinkedIn/Unipile peut faire
-# PENDRE l'appel ~120s (surcharge / rate-limit qui queue) — vécu 2026-07-21, 166
-# ReadTimeout de 121s qui gelaient l'agent 2 min chacun. Read timeout court dédié :
-# échouer vite (60s) avec une erreur actionnable plutôt que geler.
+# Scrape (structured search + company page): LinkedIn/Unipile can make the call
+# HANG ~120s (overload / rate-limit that queues) — seen 2026-07-21, 166
+# ReadTimeouts of 121s that froze the agent 2 min each. Dedicated short read timeout:
+# fail fast (60s) with an actionable error rather than freeze.
 _SCRAPE_TIMEOUT = (10, 60)
 
-# Feed d'accueil LinkedIn : LinkedIn n'expose AUCUN endpoint feed côté API
-# Unipile. Le seul chemin est la Magic Route Voyager, exposée en v2 comme le proxy
-# générique `POST /v2/{account_id}/linkedin/` (proxyRequest) : on relaie une
-# requête Voyager brute. ⚠️ Voyager n'est PAS contractuel : ce queryId GraphQL et
-# le schéma JSON peuvent casser quand LinkedIn fait évoluer son API interne
-# (capture devtools sur linkedin.com/feed pour le rafraîchir). Source du queryId :
+# LinkedIn home feed: LinkedIn exposes NO feed endpoint on the Unipile API
+# side. The only path is the Voyager Magic Route, exposed in v2 as the generic proxy
+# `POST /v2/{account_id}/linkedin/` (proxyRequest): we relay a raw Voyager
+# request. ⚠️ Voyager is NOT contractual: this GraphQL queryId and
+# the JSON schema can break when LinkedIn evolves its internal API
+# (devtools capture on linkedin.com/feed to refresh it). Source of the queryId:
 # https://developer.unipile.com/docs/get-raw-data-example
 FEED_QUERY_ID = "voyagerFeedDashMainFeed.7a50ef8ba5a7865c23ad5df46f735709"
 
-# Providers dont la messagerie est rangée par INBOX. Unipile documente DEUX formes
-# d'endpoint pour la même opération — « Use `GET /v2/:account_id/chats` or
-# `GET /v2/:account_id/inboxes/:inbox_id/chats` **if the provider uses inboxes** »
-# (guide de migration messaging v2) — et répond **501** à la mauvaise, DANS LES DEUX
-# SENS. Le client ne servait que LinkedIn quand la forme inbox est arrivée (delta live
-# 2026-07-06) : la bascule a été faite en dur, donc appliquée aussi à WhatsApp/Telegram/
-# Instagram/Messenger/Twitter, qui n'ont pas d'inbox → 501 sur `op="list"` pour ces cinq
-# canaux, alors que leur compte est bien connecté. La forme est donc DÉCLARÉE par
-# provider (ci-dessous) — pas devinée par canal appelant, pas figée à un seul modèle.
+# Providers whose messaging is organized by INBOX. Unipile documents TWO endpoint
+# shapes for the same operation — "Use `GET /v2/:account_id/chats` or
+# `GET /v2/:account_id/inboxes/:inbox_id/chats` **if the provider uses inboxes**"
+# (messaging v2 migration guide) — and answers **501** to the wrong one, IN BOTH
+# DIRECTIONS. The client only served LinkedIn when the inbox shape arrived (live delta
+# 2026-07-06): the switch was hardcoded, so also applied to WhatsApp/Telegram/
+# Instagram/Messenger/Twitter, which have no inbox → 501 on `op="list"` for these five
+# channels, even though their account is properly connected. The shape is therefore DECLARED per
+# provider (below) — not guessed per calling channel, not frozen to a single model.
 _INBOX_PROVIDERS = {"LINKEDIN"}
-# Provider supposé quand l'appelant n'en déclare pas : le client est historiquement
-# LinkedIn-first (`UNIPILE_LINKEDIN_ACCOUNT_ID`, découverte du 1er compte linkedin), et
-# un appelant qui ne dit rien attend le comportement d'avant.
+# Assumed provider when the caller declares none: the client is historically
+# LinkedIn-first (`UNIPILE_LINKEDIN_ACCOUNT_ID`, discovery of the first linkedin account), and
+# a caller that says nothing expects the previous behavior.
 _DEFAULT_PROVIDER = "LINKEDIN"
 
-# Préfixe de path par produit LinkedIn (search & co.).
+# Path prefix per LinkedIn product (search & co.).
 _API_PREFIX = {
     "classic": "/linkedin/search",
     "sales_navigator": "/linkedin/sales-navigator/search",
@@ -58,13 +58,13 @@ _API_PREFIX = {
 
 
 def cursor_with_limit(cursor: str, limit: int) -> str:
-    """Réécrit `limit` DANS un cursor Unipile (base64 de `{limit, startIndex}`).
+    """Rewrite `limit` INSIDE a Unipile cursor (base64 of `{limit, startIndex}`).
 
-    L'API Unipile fige le `limit` du 1er appel dans le cursor et IGNORE ensuite
-    le param `limit` (feedback #179 : une pagination entamée à limit=3 restait
-    bloquée à 3/page — des centaines d'appels pour un réseau entier). Le limit
-    de l'appel courant doit primer. Forme de cursor inattendue (non-base64,
-    non-JSON, pas de clé limit) → rendu tel quel, l'API tranche."""
+    The Unipile API freezes the `limit` of the 1st call in the cursor and then IGNORES
+    the `limit` param (feedback #179: a pagination started at limit=3 stayed
+    stuck at 3/page — hundreds of calls for a whole network). The current call's
+    limit must win. Unexpected cursor shape (non-base64,
+    non-JSON, no limit key) → returned as is, the API decides."""
     import base64
     import json
     try:
@@ -72,17 +72,17 @@ def cursor_with_limit(cursor: str, limit: int) -> str:
         if isinstance(data, dict) and "limit" in data:
             data["limit"] = int(limit)
             return base64.b64encode(json.dumps(data).encode()).decode()
-    except Exception:  # noqa: BLE001 — cursor opaque : jamais bloquant
+    except Exception:  # noqa: BLE001 — opaque cursor: never blocking
         pass
     return cursor
 
 
 def _sections_param(sections: str) -> Optional[list[str]]:
-    """Map la valeur `sections` vers le param v2 `with_sections`.
+    """Map the `sections` value to the v2 `with_sections` param.
 
-    Entrée : `"*"` (tout) ou une liste séparée par virgules de noms nus
-    (`experience`, `education`…). v2 : `with_sections=linkedin_<nom>` (et
-    `linkedin_*` = tout). `"*"`/vide → None (défaut serveur = tout)."""
+    Input: `"*"` (everything) or a comma-separated list of bare names
+    (`experience`, `education`…). v2: `with_sections=linkedin_<name>` (and
+    `linkedin_*` = everything). `"*"`/empty → None (server default = everything)."""
     s = (sections or "").strip()
     if not s or s in ("*", "linkedin_*"):
         return None
@@ -96,7 +96,7 @@ def _sections_param(sections: str) -> Optional[list[str]]:
 
 
 def _slug_from_company_url(url: str) -> Optional[str]:
-    """Extrait le slug d'une URL LinkedIn société (`…/company/<slug>[/…]`)."""
+    """Extract the slug from a LinkedIn company URL (`…/company/<slug>[/…]`)."""
     if not url:
         return None
     m = re.search(r"/company/([^/?#]+)", url)

@@ -1,38 +1,38 @@
-"""Client Google Analytics 4 — LECTURE SEULE, par clé de compte de service.
+"""Google Analytics 4 client — READ-ONLY, via a service account key.
 
-Deux API REST de Google, un seul credential :
+Two Google REST APIs, a single credential:
 
-- **Analytics Admin v1beta** (`analyticsadmin.googleapis.com`) : les comptes et
-  propriétés visibles (`accountSummaries`), les flux de données d'une propriété
-  (`dataStreams`), ses événements clés (`keyEvents`) ;
-- **Analytics Data v1beta** (`analyticsdata.googleapis.com`) : les rapports
-  (`:runReport`), le temps réel (`:runRealtimeReport`), et le catalogue des
-  dimensions et métriques d'une propriété (`/metadata`).
+- **Analytics Admin v1beta** (`analyticsadmin.googleapis.com`): the visible accounts and
+  properties (`accountSummaries`), a property's data streams
+  (`dataStreams`), its key events (`keyEvents`);
+- **Analytics Data v1beta** (`analyticsdata.googleapis.com`): reports
+  (`:runReport`), realtime (`:runRealtimeReport`), and the catalog of a
+  property's dimensions and metrics (`/metadata`).
 
-**Pourquoi un compte de service.** Le consentement OAuth d'un utilisateur au scope
-`analytics.readonly` peut être bloqué par Google pour une application non
-vérifiée. Un compte de service ajouté comme **Lecteur** d'une propriété GA4 lit
-sans le compte Google de personne, et se coupe en retirant son accès dans GA4.
+**Why a service account.** A user's OAuth consent to the `analytics.readonly`
+scope can be blocked by Google for an unverified application. A service account
+added as **Viewer** of a GA4 property reads without anyone's Google account,
+and is cut off by removing its access in GA4.
 
-**Credential** = le contenu du fichier JSON de la clé du compte de service
-(cf. `auth.parse_service_account_key`). Le jeton d'accès est émis et mis en
-cache par `auth.access_token`.
+**Credential** = the content of the service account's JSON key file
+(see `auth.parse_service_account_key`). The access token is issued and
+cached by `auth.access_token`.
 
-**Aucune écriture.** Le client n'expose aucune méthode qui crée, modifie ou
-supprime quoi que ce soit dans GA4 — et le scope demandé (`analytics.readonly`)
-l'interdirait de toute façon.
+**No writes.** The client exposes no method that creates, modifies or
+deletes anything in GA4 — and the requested scope (`analytics.readonly`)
+would forbid it anyway.
 
-**Refus typés** (sous-classes d'`UpstreamHTTPError`, lus sur le `status` canonique
-de l'erreur Google et sur la `reason` de ses détails, jamais sur le texte) :
+**Typed refusals** (subclasses of `UpstreamHTTPError`, read from the canonical `status`
+of the Google error and from the `reason` of its details, never from the text):
 
-- `GA4InvalidArgument` — 400 `INVALID_ARGUMENT` : un nom de dimension ou de
-  métrique inconnu de la propriété, une combinaison incompatible, une date mal
-  formée. Le message de Google nomme le champ fautif ; il est rendu tel quel.
-- `GA4PermissionDenied` — 403 `PERMISSION_DENIED` : le compte de service n'a pas
-  accès à la propriété. Porte l'email du compte de service, qu'il faut ajouter
-  comme Lecteur dans GA4.
-- `GA4ServiceDisabled` — 403 dont la raison est `SERVICE_DISABLED` : l'API n'est
-  pas activée dans le projet Google Cloud du compte de service.
+- `GA4InvalidArgument` — 400 `INVALID_ARGUMENT`: a dimension or metric name
+  unknown to the property, an incompatible combination, a malformed
+  date. Google's message names the offending field; it is rendered as is.
+- `GA4PermissionDenied` — 403 `PERMISSION_DENIED`: the service account has no
+  access to the property. Carries the service account's email, which must be added
+  as Viewer in GA4.
+- `GA4ServiceDisabled` — 403 whose reason is `SERVICE_DISABLED`: the API is
+  not enabled in the service account's Google Cloud project.
 
 Requires: requests, google-auth (extra `google`)
 """
@@ -52,28 +52,28 @@ DATA_BASE = "https://analyticsdata.googleapis.com/v1beta"
 
 _HTTP_TIMEOUT = (10, 60)
 _ADMIN_PAGE_SIZE = 200
-# Borne du suivi de `nextPageToken` : au-delà, l'amont boucle — on le dit.
+# Bound on following `nextPageToken`: beyond it, upstream is looping — we say so.
 _MAX_PAGES = 50
 
-#: Fenêtre par défaut d'un rapport : les 30 derniers jours complets (hier inclus,
-#: aujourd'hui exclu — la journée en cours est incomplète). Même définition que
-#: « 30 derniers jours » dans l'interface GA4.
+#: Default window of a report: the last 30 complete days (yesterday included,
+#: today excluded — the current day is incomplete). Same definition as
+#: "Last 30 days" in the GA4 interface.
 DEFAULT_START_DATE = "30daysAgo"
 DEFAULT_END_DATE = "yesterday"
 
 _PROPERTY_RE = re.compile(r"^(?:properties/)?(\d+)$")
 
-# Clés d'une FilterExpression GA4 : un filtre qui en porte une est passé tel quel.
+# Keys of a GA4 FilterExpression: a filter carrying one is passed through as is.
 _EXPRESSION_KEYS = frozenset({"andGroup", "orGroup", "notExpression", "filter"})
 
-# Types de métrique rendus en entier ; tous les autres types numériques en flottant.
+# Metric types rendered as integers; all other numeric types as floats.
 _INT_TYPES = frozenset({"TYPE_INTEGER"})
 
 
 class GA4Error(UpstreamHTTPError):
-    """Refus d'une API Google Analytics. `status` = statut canonique Google
-    (`INVALID_ARGUMENT`, `PERMISSION_DENIED`…), `reason` = la raison d'`ErrorInfo`
-    quand Google en donne une (`SERVICE_DISABLED`…), `message` = le texte de Google."""
+    """Refusal from a Google Analytics API. `status` = Google's canonical status
+    (`INVALID_ARGUMENT`, `PERMISSION_DENIED`…), `reason` = the `ErrorInfo` reason
+    when Google gives one (`SERVICE_DISABLED`…), `message` = Google's text."""
 
     def __init__(self, status_code: int, body: Any, *, status: str = "",
                  reason: str = "", message: str = ""):
@@ -84,100 +84,100 @@ class GA4Error(UpstreamHTTPError):
 
 
 class GA4InvalidArgument(GA4Error):
-    """400 `INVALID_ARGUMENT` — dimension/métrique inconnue ou incompatible, date
-    mal formée, filtre invalide."""
+    """400 `INVALID_ARGUMENT` — unknown or incompatible dimension/metric, malformed
+    date, invalid filter."""
 
 
 class GA4PermissionDenied(GA4Error):
-    """403 — le compte de service n'a pas accès à la ressource demandée."""
+    """403 — the service account has no access to the requested resource."""
 
     def __init__(self, *args, client_email: str = "", resource: str = "", **kw):
         self.client_email = client_email
         self.resource = resource
         super().__init__(*args, **kw)
-        qui = client_email or "le compte de service"
-        quoi = resource or "cette propriété"
+        qui = client_email or "the service account"
+        quoi = resource or "this property"
         self.args = (
-            f"google_analytics HTTP 403 : {qui} n'a pas accès à {quoi}. Ajoute cet "
-            "email comme Lecteur de la propriété dans GA4 (Administration → Gestion "
-            "des accès à la propriété).",)
+            f"google_analytics HTTP 403: {qui} has no access to {quoi}. Add this "
+            "email as a Viewer of the property in GA4 (Admin → Property access "
+            "management).",)
 
 
 class GA4ServiceDisabled(GA4Error):
-    """403 `SERVICE_DISABLED` — l'API n'est pas activée dans le projet Google
-    Cloud du compte de service."""
+    """403 `SERVICE_DISABLED` — the API is not enabled in the service account's
+    Google Cloud project."""
 
 
 def property_name(prop: Union[str, int]) -> str:
-    """`properties/<id>` depuis `<id>` ou `properties/<id>` — sinon `ValueError`.
+    """`properties/<id>` from `<id>` or `properties/<id>` — otherwise `ValueError`.
 
-    Un identifiant de MESURE (`G-XXXX`) ou de compte n'est pas une propriété :
-    refusé avec ce qu'il faut à la place."""
+    A MEASUREMENT id (`G-XXXX`) or an account id is not a property:
+    refused with what is needed instead."""
     m = _PROPERTY_RE.match(str(prop).strip())
     if not m:
         raise ValueError(
-            f"Propriété GA4 invalide : {prop!r}. Attendu l'identifiant numérique de la "
-            "propriété (`123456789` ou `properties/123456789`) — pas un ID de mesure "
-            "`G-…`, ni un ID de compte.")
+            f"Invalid GA4 property: {prop!r}. Expected the property's numeric "
+            "identifier (`123456789` or `properties/123456789`) — not a measurement ID "
+            "`G-…`, nor an account ID.")
     return f"properties/{m.group(1)}"
 
 
 def _names(values: Union[str, Iterable[str], None], kind: str) -> list[str]:
-    """Une liste de noms ; un texte seul se lit comme une liste séparée par des
-    virgules (`"sessions,activeUsers"`), jamais comme une suite de caractères."""
+    """A list of names; a lone text reads as a comma-separated list
+    (`"sessions,activeUsers"`), never as a sequence of characters."""
     if isinstance(values, str):
         values = [v for v in values.split(",") if v.strip()]
     out = []
     for v in values or ():
         if not isinstance(v, str) or not v.strip():
-            raise ValueError(f"Nom de {kind} invalide : {v!r}.")
+            raise ValueError(f"Invalid {kind} name: {v!r}.")
         out.append(v.strip())
     return out
 
 
 def build_filter(spec: Optional[dict]) -> Optional[dict]:
-    """Une `FilterExpression` GA4 depuis un filtre SIMPLE — ou l'expression telle
-    quelle.
+    """A GA4 `FilterExpression` from a SIMPLE filter — or the expression as
+    is.
 
-    Forme simple : `{"champ": valeur, …}`, combinés en ET. Une valeur texte est une
-    égalité exacte, une liste une appartenance (`inListFilter`), un nombre une
-    égalité numérique. Une expression GA4 complète (`andGroup`, `orGroup`,
-    `notExpression`, `filter`) passe sans transformation — c'est la voie des
-    opérateurs (contient, commence par, comparaisons)."""
+    Simple form: `{"champ": valeur, …}`, combined with AND. A text value is an
+    exact match, a list a membership (`inListFilter`), a number a
+    numeric equality. A full GA4 expression (`andGroup`, `orGroup`,
+    `notExpression`, `filter`) passes through untransformed — that is the route for
+    operators (contains, begins with, comparisons)."""
     if spec is None:
         return None
     if not isinstance(spec, dict) or not spec:
-        raise ValueError("Un filtre est un objet non vide : {\"champ\": valeur} ou une "
-                         "FilterExpression GA4.")
+        raise ValueError("A filter is a non-empty object: {\"champ\": valeur} or a "
+                         "GA4 FilterExpression.")
     if _EXPRESSION_KEYS & set(spec):
         return spec
     exprs = []
     for field, value in spec.items():
         if isinstance(value, bool):
-            raise ValueError(f"Filtre sur {field!r} : valeur booléenne non prise en charge.")
+            raise ValueError(f"Filter on {field!r}: boolean value not supported.")
         if isinstance(value, str):
             f = {"stringFilter": {"matchType": "EXACT", "value": value}}
         elif isinstance(value, (list, tuple)):
             if not value or not all(isinstance(v, str) for v in value):
-                raise ValueError(f"Filtre sur {field!r} : une liste de valeurs texte non vide.")
+                raise ValueError(f"Filter on {field!r}: expected a non-empty list of text values.")
             f = {"inListFilter": {"values": list(value)}}
         elif isinstance(value, (int, float)):
             num = {"int64Value": str(value)} if isinstance(value, int) else {"doubleValue": value}
             f = {"numericFilter": {"operation": "EQUAL", "value": num}}
         else:
-            raise ValueError(f"Filtre sur {field!r} : valeur {type(value).__name__} non "
-                             "prise en charge (texte, liste de textes ou nombre).")
+            raise ValueError(f"Filter on {field!r}: {type(value).__name__} value not "
+                             "supported (text, list of texts or number).")
         exprs.append({"filter": {"fieldName": field, **f}})
     return exprs[0] if len(exprs) == 1 else {"andGroup": {"expressions": exprs}}
 
 
 def build_order_bys(order_by: Optional[Sequence[str]], metrics: Sequence[str]) -> list[dict]:
-    """`["-sessions", "date"]` → les `orderBys` GA4. Un `-` en tête = décroissant.
-    Un nom présent dans `metrics` trie sur la métrique, sinon sur la dimension."""
+    """`["-sessions", "date"]` → the GA4 `orderBys`. A leading `-` = descending.
+    A name present in `metrics` sorts on the metric, otherwise on the dimension."""
     out = []
     for raw in order_by or ():
         if not isinstance(raw, str) or not raw.strip("- "):
-            raise ValueError(f"Tri invalide : {raw!r}.")
+            raise ValueError(f"Invalid sort: {raw!r}.")
         name = raw.strip()
         desc = name.startswith("-")
         name = name.lstrip("-")
@@ -197,13 +197,13 @@ def _typed(value: Optional[str], metric_type: str) -> Any:
 
 
 def flatten_report(resp: dict) -> dict:
-    """Un rapport GA4 (`runReport` / `runRealtimeReport`) en TABLE : `columns`
-    (dimensions puis métriques) et `rows` (listes de valeurs, métriques typées).
+    """A GA4 report (`runReport` / `runRealtimeReport`) as a TABLE: `columns`
+    (dimensions then metrics) and `rows` (lists of values, typed metrics).
 
-    Garde `row_count` (le total de lignes qui correspondent, pour paginer) et les
-    avertissements de fiabilité que GA4 attache au rapport : échantillonnage,
-    seuils de confidentialité, regroupement en « (other) ». Les retirer ferait
-    lire un chiffre estimé comme exact."""
+    Keeps `row_count` (the total of matching rows, for paging) and the
+    reliability warnings GA4 attaches to the report: sampling,
+    privacy thresholds, grouping into "(other)". Removing them would make
+    an estimated figure read as exact."""
     dims = [h.get("name") for h in resp.get("dimensionHeaders") or ()]
     mets = resp.get("metricHeaders") or ()
     rows = []
@@ -233,15 +233,15 @@ def flatten_report(resp: dict) -> dict:
 
 
 class GA4Client:
-    """Client GA4 (Admin + Data v1beta), auth par clé de compte de service."""
+    """GA4 client (Admin + Data v1beta), auth via service account key."""
 
     def __init__(self, service_account_key: Union[str, bytes, dict, None] = None, *,
                  session: Optional[requests.Session] = None):
         """
         Args:
-            service_account_key: le contenu JSON de la clé du compte de service
-                (texte ou dict), fourni par le consommateur (requis).
-            session: transport HTTP (défaut : une `requests.Session` neuve).
+            service_account_key: the JSON content of the service account key
+                (text or dict), supplied by the consumer (required).
+            session: HTTP transport (default: a fresh `requests.Session`).
         """
         raw = require(service_account_key, "GA4_SERVICE_ACCOUNT_JSON")
         self._key = auth.parse_service_account_key(raw)
@@ -294,30 +294,30 @@ class GA4Client:
             token = page.get("nextPageToken")
             if not token:
                 return items
-        raise RuntimeError(f"google_analytics : plus de {_MAX_PAGES} pages de "
-                           f"`{items_key}` — pagination interrompue.")
+        raise RuntimeError(f"google_analytics: more than {_MAX_PAGES} pages of "
+                           f"`{items_key}` — pagination interrupted.")
 
     # --- Admin API -----------------------------------------------------------
 
     def account_summaries(self) -> list[dict]:
-        """Les comptes GA visibles, chacun avec ses propriétés (`propertySummaries`)."""
+        """The visible GA accounts, each with its properties (`propertySummaries`)."""
         return self._paged(f"{ADMIN_BASE}/accountSummaries", "accountSummaries")
 
     def list_data_streams(self, prop: Union[str, int]) -> list[dict]:
-        """Les flux de données (web, iOS, Android) d'une propriété."""
+        """A property's data streams (web, iOS, Android)."""
         name = property_name(prop)
         return self._paged(f"{ADMIN_BASE}/{name}/dataStreams", "dataStreams", name)
 
     def list_key_events(self, prop: Union[str, int]) -> list[dict]:
-        """Les événements clés (ex-« conversions ») configurés sur une propriété."""
+        """The key events (formerly "conversions") configured on a property."""
         name = property_name(prop)
         return self._paged(f"{ADMIN_BASE}/{name}/keyEvents", "keyEvents", name)
 
     # --- Data API ------------------------------------------------------------
 
     def get_metadata(self, prop: Union[str, int]) -> dict:
-        """Les dimensions et métriques utilisables sur la propriété (standard et
-        personnalisées). `properties/0` rend le catalogue commun à toutes."""
+        """The dimensions and metrics usable on the property (standard and
+        custom). `properties/0` returns the catalog common to all."""
         name = property_name(prop)
         return self._request("GET", f"{DATA_BASE}/{name}/metadata", resource=name)
 
@@ -331,15 +331,15 @@ class GA4Client:
                    order_by: Optional[Sequence[str]] = None,
                    limit: Optional[int] = None, offset: Optional[int] = None,
                    keep_empty_rows: bool = False) -> dict:
-        """`:runReport` — réponse brute GA4 (cf. `flatten_report` pour une table).
+        """`:runReport` — raw GA4 response (see `flatten_report` for a table).
 
-        Dates : `YYYY-MM-DD`, `today`, `yesterday` ou `NdaysAgo`. Par défaut les 30
-        derniers jours complets. Filtres : cf. `build_filter`. Tri : cf.
+        Dates: `YYYY-MM-DD`, `today`, `yesterday` or `NdaysAgo`. Defaults to the last 30
+        complete days. Filters: see `build_filter`. Sort: see
         `build_order_bys`."""
         name = property_name(prop)
-        mets, dims = _names(metrics, "métrique"), _names(dimensions, "dimension")
+        mets, dims = _names(metrics, "metric"), _names(dimensions, "dimension")
         if not mets and not dims:
-            raise ValueError("Un rapport GA4 demande au moins une métrique ou une dimension.")
+            raise ValueError("A GA4 report requires at least one metric or one dimension.")
         body: dict[str, Any] = {
             "dateRanges": [{"startDate": start_date, "endDate": end_date}],
             "dimensions": [{"name": d} for d in dims],
@@ -361,19 +361,19 @@ class GA4Client:
                             order_by: Optional[Sequence[str]] = None,
                             limit: Optional[int] = None,
                             minutes_ago: Optional[int] = None) -> dict:
-        """`:runRealtimeReport` — l'activité des dernières minutes (30 par défaut
-        côté GA4, 60 sur GA4 360). `minutes_ago` borne la fenêtre à N minutes."""
+        """`:runRealtimeReport` — activity of the last few minutes (30 by default
+        on the GA4 side, 60 on GA4 360). `minutes_ago` bounds the window to N minutes."""
         name = property_name(prop)
-        mets, dims = _names(metrics, "métrique"), _names(dimensions, "dimension")
+        mets, dims = _names(metrics, "metric"), _names(dimensions, "dimension")
         if not mets and not dims:
-            raise ValueError("Un rapport temps réel demande au moins une métrique ou une "
+            raise ValueError("A realtime report requires at least one metric or one "
                              "dimension.")
         body: dict[str, Any] = {"dimensions": [{"name": d} for d in dims],
                                 "metrics": [{"name": m} for m in mets]}
         body.update(self._common(dimension_filter, metric_filter, order_by, mets, limit))
         if minutes_ago is not None:
             if minutes_ago < 1:
-                raise ValueError("`minutes_ago` est un nombre de minutes ≥ 1.")
+                raise ValueError("`minutes_ago` is a number of minutes ≥ 1.")
             body["minuteRanges"] = [{"startMinutesAgo": minutes_ago - 1,
                                      "endMinutesAgo": 0}]
         return self._request("POST", f"{DATA_BASE}/{name}:runRealtimeReport",
@@ -390,6 +390,6 @@ class GA4Client:
             body["orderBys"] = build_order_bys(order_by, mets)
         if limit is not None:
             if limit < 1:
-                raise ValueError("`limit` est un nombre de lignes ≥ 1.")
+                raise ValueError("`limit` is a number of rows ≥ 1.")
             body["limit"] = limit
         return body

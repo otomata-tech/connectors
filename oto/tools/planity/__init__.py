@@ -1,58 +1,58 @@
-"""Client Planity (agenda + caisse d'un salon) — LECTURE SEULE.
+"""Planity client (a salon's calendar + till) — READ-ONLY.
 
-`PlanityClient` est le point d'entrée : il s'authentifie avec l'email et le mot de
-passe du compte, tient son jeton à jour, et sert le référentiel, les clientes,
-l'agenda et les chiffres. Les modules voisins portent chacun un transport ; c'est
-un détail d'implémentation, pas une surface.
+`PlanityClient` is the entry point: it authenticates with the account's email and
+password, keeps its token fresh, and serves reference data, customers, the
+calendar and the figures. The neighbouring modules each carry one transport; that
+is an implementation detail, not a surface.
 
-Tout est **asynchrone**, et ce n'est pas un choix de style : l'amont l'impose, et
-il n'y a pas d'équivalent synchrone à écrire.
+Everything is **asynchronous**, and that is not a style choice: the upstream
+imposes it, and there is no synchronous equivalent to write.
 
-⚠️ **Les coordonnées de Planity ne sont PAS ici.** `PlanityClient` exige un
-`PlanityEndpoints` (clé d'API Firebase, App ID, racine des lambdas REST), sans
-valeur par défaut : ce dépôt est public, un client qu'on y publie décrit un
-protocole et n'embarque pas les constantes d'une entreprise tierce en dur. Elles
-sont publiques par conception — tout navigateur qui ouvre `pro.planity.com` les
-reçoit — donc les sortir d'ici n'est pas un geste de secret, c'en est un de
-généricité : celui qui déploie le connecteur les pose, et répond de ce qu'il
-appelle.
+⚠️ **Planity's endpoints are NOT here.** `PlanityClient` requires a
+`PlanityEndpoints` (Firebase API key, App ID, root of the REST lambdas), with no
+default value: this repo is public, a client published here describes a
+protocol and does not hard-code a third-party company's constants. They
+are public by design — any browser that opens `pro.planity.com` receives
+them — so taking them out of here is not a gesture of secrecy, it is one of
+genericity: whoever deploys the connector sets them, and answers for what they
+call.
 
-Aucune écriture n'est exposée : pas de création ni de modification de rendez-vous.
+No write is exposed: no creation or modification of appointments.
 """
 from __future__ import annotations
 
-#: Les modules que l'extra `planity` apporte, et rien d'autre. Nommés ici parce
-#: que c'est le seul endroit qui sait POURQUOI ils manquent.
+#: The modules that the `planity` extra brings, and nothing else. Named here because
+#: this is the only place that knows WHY they are missing.
 _MODULES_DE_L_EXTRA = ("httpx", "websockets")
 
 
 def _refus_d_extra(e: ImportError) -> "ImportError | None":
-    """L'erreur à lever À LA PLACE quand c'est l'extra qui manque — sinon `None`.
+    """The error to raise INSTEAD when it is the extra that is missing — otherwise `None`.
 
-    Sans elle, un installateur sans l'extra rend « No module named 'httpx' ». Ce
-    message est vrai et parfaitement inutile : il n'a jamais fait installer un
-    extra à personne, et il ne dit pas que le connecteur est le seul concerné.
-    Chez le consommateur (oto-backend), il devient une ligne de journal
-    « planity tools disabled: No module named 'httpx' » sur laquelle on cherche un
-    bug d'import pendant vingt minutes.
+    Without it, an installer without the extra returns "No module named 'httpx'". That
+    message is true and perfectly useless: it has never made anyone install an
+    extra, and it does not say that only the connector is affected.
+    At the consumer (oto-backend), it becomes a log line
+    "planity tools disabled: No module named 'httpx'" on which one hunts for an
+    import bug for twenty minutes.
 
-    La retraduction vit ICI, à l'origine, et pas chez le consommateur : ils sont
-    plusieurs (oto-backend, un installateur qui essaie), et une règle
-    posée chez l'un ne protège pas les autres.
+    The retranslation lives HERE, at the origin, and not at the consumer: there are
+    several of them (oto-backend, an installer that tries), and a rule
+    set at one does not protect the others.
 
-    ⚠️ Elle ne s'applique QU'aux deux modules de l'extra. Un `ImportError` interne
-    — un module du paquet renommé, un import circulaire — doit remonter tel quel :
-    le déguiser en « installe l'extra » enverrait chercher la panne à l'opposé
-    d'où elle est.
+    ⚠️ It applies ONLY to the extra's two modules. An internal `ImportError`
+    — a renamed package module, a circular import — must bubble up as is:
+    disguising it as "install the extra" would send people looking for the fault
+    in the opposite direction from where it is.
     """
     if getattr(e, "name", None) not in _MODULES_DE_L_EXTRA:
         return None
     return ImportError(
-        f"le connecteur `planity` a besoin de l'extra du même nom — installe "
-        f"`oto-core[planity]` (il manque `{e.name}`). Le cœur Planity parle le "
-        f"protocole WebSocket du Realtime Database de Firebase et fait ses appels "
-        f"en asynchrone : ni l'un ni l'autre n'existe dans `requests`, le socle du "
-        f"reste de la lib — d'où un extra plutôt qu'une dépendance pour tous.")
+        f"the `planity` connector needs the extra of the same name — install "
+        f"`oto-core[planity]` (`{e.name}` is missing). The Planity core speaks the "
+        f"WebSocket protocol of Firebase's Realtime Database and makes its calls "
+        f"asynchronously: neither exists in `requests`, the foundation of the "
+        f"rest of the lib — hence an extra rather than a dependency for everyone.")
 
 
 try:

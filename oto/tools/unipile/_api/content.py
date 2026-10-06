@@ -1,8 +1,8 @@
-"""Posts, engagement, feed d'accueil et activité d'un membre.
+"""Posts, engagement, home feed and a member's activity.
 
-Extrait de `client.py` (découpage par domaine, surface publique figée) :
-les corps sont inchangés. Ce mixin n'est jamais instancié seul — il est
-composé dans `UnipileClient`, qui fournit le transport (`_request`,
+Extracted from `client.py` (split by domain, frozen public surface):
+the bodies are unchanged. This mixin is never instantiated on its own — it is
+composed into `UnipileClient`, which provides the transport (`_request`,
 `_acct`, `_norm`, `_by_shape`, `session`).
 """
 
@@ -16,13 +16,13 @@ from ..feed import _unpack_cursor, parse_feed
 
 
 class _ContentMixin:
-    """Posts, engagement, feed d'accueil et activité d'un membre."""
+    """Posts, engagement, home feed and a member's activity."""
 
     def _member_id(self, identifier: str) -> str:
-        """Résout un identifiant de membre vers le **provider_id (URN, `ACoAA…`)**
-        attendu par les endpoints posts/comments/reactions v2 : le slug public y
-        renvoie 400 « Invalid User ID » (delta v2 relevé en live 2026-07-06). URN
-        déjà opaque → tel quel ; slug → résolu via le profil (1 appel)."""
+        """Resolve a member identifier to the **provider_id (URN, `ACoAA…`)**
+        expected by the v2 posts/comments/reactions endpoints: the public slug
+        returns 400 "Invalid User ID" there (v2 delta seen live 2026-07-06). Already
+        opaque URN → as is; slug → resolved via the profile (1 call)."""
         ident = str(identifier).strip()
         if ident.startswith(("ACoA", "urn:")):
             return ident
@@ -49,21 +49,21 @@ class _ContentMixin:
     def list_comments(self, post_id: str, offset: Optional[int] = None,
                       limit: Optional[int] = None,
                       comment_id: Optional[str] = None) -> dict:
-        """UNE page des commentaires d'un post — ou des réponses à un commentaire
+        """ONE page of a post's comments — or of the replies to a comment
         (`comment_id` → `/posts/{id}/comments/{comment_id}/comments`).
 
-        ⚠️ Paginé par `offset` SEUL (doc Unipile v2 : « Pagination on the following
-        endpoints uses exclusively the `offset` parameter ») : un `cursor` n'a jamais
-        eu d'effet ici, d'où le plafond à la première page (oto#177). Page vide = fin.
-        La boucle de pages est à l'appelant, qui borne volume et durée."""
+        ⚠️ Paginated by `offset` ALONE (Unipile v2 doc: "Pagination on the following
+        endpoints uses exclusively the `offset` parameter"): a `cursor` never
+        had any effect here, hence the cap at the first page (oto#177). Empty page = end.
+        The page loop is up to the caller, who bounds volume and duration."""
         return self._engagement_page("comments", post_id, offset, limit, comment_id)
 
     def list_reactions(self, post_id: str, offset: Optional[int] = None,
                        limit: Optional[int] = None,
                        comment_id: Optional[str] = None) -> dict:
-        """UNE page des réactions d'un post — ou d'un commentaire (`comment_id` →
-        `/posts/{id}/comments/{comment_id}/reactions`). Même pagination par
-        `offset` seul que `list_comments`."""
+        """ONE page of a post's reactions — or of a comment's (`comment_id` →
+        `/posts/{id}/comments/{comment_id}/reactions`). Same `offset`-only
+        pagination as `list_comments`."""
         return self._engagement_page("reactions", post_id, offset, limit, comment_id)
 
     def _engagement_page(self, what: str, post_id: str, offset: Optional[int],
@@ -90,7 +90,7 @@ class _ContentMixin:
         )
 
     def react_post(self, post_id: str, value: str = "LIKE") -> dict:
-        """Réagit à un post. v2 : corps `{reaction}`."""
+        """React to a post. v2: body `{reaction}`."""
         return self._request(
             "POST", self._acct(f"/posts/{quote(post_id, safe='')}/reactions"),
             json={"reaction": value},
@@ -107,8 +107,8 @@ class _ContentMixin:
         encoding: bool = False,
         force_api: bool = False,
     ) -> dict:
-        """Relaie une requête Voyager brute — v2 : `POST /v2/{account}/linkedin/`
-        (proxyRequest), corps `{url, method, bypass_url_encoding, …}`."""
+        """Relay a raw Voyager request — v2: `POST /v2/{account}/linkedin/`
+        (proxyRequest), body `{url, method, bypass_url_encoding, …}`."""
         payload: dict[str, Any] = {
             "url": request_url,
             "method": method,
@@ -127,7 +127,7 @@ class _ContentMixin:
         raw: bool = False,
         sort_order: str = "MEMBER_SETTING",
     ) -> dict:
-        """Feed d'accueil LinkedIn via la Magic Route Voyager."""
+        """LinkedIn home feed via the Voyager Magic Route."""
         start, token = _unpack_cursor(cursor)
         if token:
             variables = (
@@ -148,11 +148,11 @@ class _ContentMixin:
             return resp
         return parse_feed(resp, count=count, start=start)
 
-    # ---- moi / followers / activité d'un membre -------------------------
+    # ---- me / followers / a member's activity ---------------------------
 
     def get_own_profile(self) -> dict:
-        """Profil du compte connecté. v2 : `GET /users/me` (pas de garde #153 :
-        l'id rendu ≠ le littéral « me »)."""
+        """Profile of the connected account. v2: `GET /users/me` (no #153 guard:
+        the returned id ≠ the literal "me")."""
         return self._request("GET", self._acct("/users/me"))
 
     def list_followers(self, user_id: Optional[str] = None,

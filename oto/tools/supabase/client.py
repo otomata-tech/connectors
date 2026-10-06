@@ -1,9 +1,9 @@
 """
 Supabase Management API client.
 
-Auth : SUPABASE_ACCESS_TOKEN (Personal Access Token `sbp_...`, créé sur
-https://supabase.com/dashboard/account/tokens), fourni par le consommateur.
-Docs API : https://api.supabase.com
+Auth: SUPABASE_ACCESS_TOKEN (Personal Access Token `sbp_...`, created at
+https://supabase.com/dashboard/account/tokens), supplied by the consumer.
+API docs: https://api.supabase.com
 
 Requires: requests
 """
@@ -16,8 +16,8 @@ import requests
 from ..common.credentials import require
 
 BASE = "https://api.supabase.com"
-# UA explicite : l'endpoint analytics renvoie un 403 Cloudflare (1010) sur le
-# User-Agent python-urllib par défaut ; un UA non-vide passe.
+# Explicit UA: the analytics endpoint returns a Cloudflare 403 (1010) on the
+# default python-urllib User-Agent; a non-empty UA gets through.
 _UA = "oto-supabase-client/1.0"
 
 
@@ -45,12 +45,12 @@ def _request(
 
 
 def list_projects(token: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Liste les projets accessibles avec ce PAT."""
+    """List the projects accessible with this PAT."""
     return _request("GET", "/v1/projects", token=token)
 
 
 def get_auth_config(project_ref: str, token: Optional[str] = None) -> Dict[str, Any]:
-    """Config Auth d'un projet (site_url, uri_allow_list, providers, etc.)."""
+    """Auth config of a project (site_url, uri_allow_list, providers, etc.)."""
     return _request("GET", f"/v1/projects/{project_ref}/config/auth", token=token)
 
 
@@ -63,18 +63,18 @@ def query_logs(
     token: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Interroge les logs d'un projet (Logflare via l'API Management).
+    Query a project's logs (Logflare via the Management API).
 
     Args:
-        project_ref: ref du projet (ex: doebdriroupduqpggcsj).
-        sql: requête SQL Logflare. Si None, dernières lignes de `source`.
-        source: table de logs (auth_logs, edge_logs, function_edge_logs,
+        project_ref: project ref (e.g. doebdriroupduqpggcsj).
+        sql: Logflare SQL query. If None, latest lines of `source`.
+        source: log table (auth_logs, edge_logs, function_edge_logs,
                 function_logs, postgres_logs, postgrest_logs, storage_logs...).
-        limit: nb de lignes (si sql None).
-        minutes: fenêtre temporelle (l'API exige une plage iso_timestamp_*).
+        limit: number of lines (if sql is None).
+        minutes: time window (the API requires an iso_timestamp_* range).
 
     Returns:
-        Liste de lignes (dict). Chaque ligne a typiquement `timestamp` + `event_message`.
+        List of rows (dict). Each row typically has `timestamp` + `event_message`.
     """
     if sql is None:
         sql = (
@@ -85,7 +85,7 @@ def query_logs(
     start = now - timedelta(minutes=minutes)
     params = {
         "sql": sql,
-        # format RFC3339 avec suffixe Z (l'API rejette l'offset +00:00).
+        # RFC3339 format with Z suffix (the API rejects the +00:00 offset).
         "iso_timestamp_start": start.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "iso_timestamp_end": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

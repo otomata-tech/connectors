@@ -2,9 +2,9 @@
 Serper API Client for Google search (web, images, videos, news, places, maps,
 shopping, scholar, patents, lens, reviews, autocomplete) and web scraping.
 
-Serper expose une famille d'endpoints Google sous `https://google.serper.dev`
-(POST, header `X-API-KEY`) + un scraper sous `https://scrape.serper.dev`. Tous
-partagent le même socle de paramètres (`q`, `gl`, `hl`, `location`, `num`,
+Serper exposes a family of Google endpoints under `https://google.serper.dev`
+(POST, header `X-API-KEY`) + a scraper under `https://scrape.serper.dev`. They all
+share the same base parameters (`q`, `gl`, `hl`, `location`, `num`,
 `page`, `tbs`, `autocorrect`).
 
 Requires: requests
@@ -20,43 +20,43 @@ import requests
 
 from ..common.credentials import require
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
-# Le SCRAPE attend moins que le reste, et c'est un choix mesuré (oto-backend#662).
-# Sur une campagne de 193 passages d'agents (01/09/2026) : p95 de `scrape` à 61,6 s,
-# 58 expirations à 60 s, 31 % d'échec — et la moitié des échecs portait sur des URL
-# fabriquées par l'agent, qui ne pouvaient PAS répondre.
+# SCRAPE waits less than everything else, and that is a measured choice (oto-backend#662).
+# Over a campaign of 193 agent runs (2026-09-01): scrape p95 at 61.6 s,
+# 58 timeouts at 60 s, 31% failure — and half of the failures were on URLs
+# made up by the agent, which could NOT answer.
 #
-# ⚠️ Ce qui coûte n'est pas l'attente, c'est ce qu'elle emporte : pendant une minute
-# bloquée, le cache de contexte de l'agent expire. Le passage médian ayant scrapé a
-# coûté 72 077 jetons contre 35 798 sans — le DOUBLE — alors que la corrélation avec
-# le volume rapporté reste faible (r = +0,177). Un appel qui bloque une minute peut
-# donc coûter des dizaines de milliers de jetons SANS RIEN RAPPORTER.
+# ⚠️ What costs is not the wait, it is what the wait carries away: during a blocked
+# minute, the agent's context cache expires. The median run that scraped
+# cost 72,077 tokens against 35,798 without — DOUBLE — while the correlation with
+# the reported volume stays weak (r = +0.177). A call that blocks for a minute can
+# therefore cost tens of thousands of tokens FOR NOTHING.
 #
-# Une page qui n'a pas répondu en 15 s ne répondra pas mieux en 60 : le plafond
-# tombe là. Un pré-contrôle DNS (« un domaine inexistant se sait en millisecondes »)
-# a été écarté : notre résolution n'est pas celle de Serper, un refus fondé dessus ne
-# peut pas être garanti juste, et il ajouterait une attente bloquante sur le chemin
-# chaud. Le plafond court donne déjà 4× sans rien risquer.
+# A page that has not answered in 15 s will not answer better in 60: the cap
+# falls there. A DNS pre-check ("a nonexistent domain is known in milliseconds")
+# was ruled out: our resolution is not Serper's, a refusal based on it
+# cannot be guaranteed correct, and it would add a blocking wait on the hot
+# path. The short cap already gives 4x without risking anything.
 _SCRAPE_TIMEOUT = (5, 15)
 
 
 class SerperClient:
     """
-    Serper API client. Une méthode par endpoint Google + scrape :
-    - search           — recherche web (`/search`)
+    Serper API client. One method per Google endpoint + scrape:
+    - search           — web search (`/search`)
     - search_images    — images (`/images`)
-    - search_videos    — vidéos (`/videos`)
-    - search_news      — actualités (`/news`)
-    - search_places    — lieux / Google Local (`/places`)
+    - search_videos    — videos (`/videos`)
+    - search_news      — news (`/news`)
+    - search_places    — places / Google Local (`/places`)
     - search_maps      — Google Maps (`/maps`)
-    - search_reviews   — avis d'un lieu (`/reviews`)
+    - search_reviews   — reviews of a place (`/reviews`)
     - search_shopping  — shopping (`/shopping`)
     - search_scholar   — Google Scholar (`/scholar`)
-    - search_patents   — brevets (`/patents`)
+    - search_patents   — patents (`/patents`)
     - search_lens      — Google Lens / reverse image (`/lens`)
     - get_suggestions  — autocomplete (`/autocomplete`)
-    - scrape_page      — scraping d'une page (`scrape.serper.dev`)
+    - scrape_page      — scraping a page (`scrape.serper.dev`)
     """
 
     BASE_URL = "https://google.serper.dev"
@@ -80,12 +80,12 @@ class SerperClient:
         self._rate_lock = threading.Lock()
 
     def _rate_limit(self):
-        """Ensure minimum time between requests — y compris entre THREADS.
+        """Ensure minimum time between requests — including across THREADS.
 
-        Une instance partagée entre appels concurrents (le backend en garde une par
-        clé, oto#115) : sans verrou, deux threads lisent le même `_last_request`,
-        dorment le même temps et partent ensemble — la limite ne tient plus. Le
-        verrou est tenu pendant l'attente : c'est ce qui ESPACE les départs."""
+        An instance shared between concurrent calls (the backend keeps one per
+        key, oto#115): without a lock, two threads read the same `_last_request`,
+        sleep the same amount and leave together — the limit no longer holds. The
+        lock is held during the wait: that is what SPACES OUT the departures."""
         with self._rate_lock:
             elapsed = time.time() - self._last_request
             if elapsed < self._min_interval:
@@ -94,12 +94,12 @@ class SerperClient:
 
     def _post(self, url: str, json_data: Dict, label: str,
               timeout: Optional[tuple] = None) -> Dict:
-        """POST + gestion d'erreur. Surface le message d'erreur Serper plutôt
-        qu'un opaque "400 Bad Request" (Serper renvoie 400 + {"message":...}
-        pour "Not enough credits", clé invalide, etc.).
+        """POST + error handling. Surfaces Serper's error message rather than
+        an opaque "400 Bad Request" (Serper returns 400 + {"message":...}
+        for "Not enough credits", invalid key, etc.).
 
-        `timeout` = `(connexion, lecture)` en secondes ; `None` = le défaut du
-        client. Le scrape en pose un plus court, cf. `_SCRAPE_TIMEOUT`."""
+        `timeout` = `(connect, read)` in seconds; `None` = the client's
+        default. Scrape sets a shorter one, see `_SCRAPE_TIMEOUT`."""
         self._rate_limit()
         response = self.session.post(url, json=json_data,
                                      timeout=timeout or _HTTP_TIMEOUT)
@@ -117,13 +117,13 @@ class SerperClient:
 
     @staticmethod
     def _credits_of(res: Any) -> int:
-        """Les crédits que Serper a DÉDUITS pour une réponse — son champ `credits`.
+        """The credits Serper DEDUCTED for a response — its `credits` field.
 
-        Une méthode qui pagine (`census_maps`, `reviews_all`) enchaîne plusieurs
-        requêtes, chacune facturée par Serper selon ce qu'elle a coûté (une page
-        Maps à 100 résultats, un scrape difficile) : compter les pages sous-estime
-        la dépense. Repli sur 1 quand la réponse ne le dit pas — une réponse
-        réussie coûte au moins un crédit."""
+        A method that paginates (`census_maps`, `reviews_all`) chains several
+        requests, each billed by Serper according to what it cost (a Maps
+        page of 100 results, a hard scrape): counting pages underestimates
+        the spend. Falls back to 1 when the response does not say — a
+        successful response costs at least one credit."""
         credits = res.get("credits") if isinstance(res, dict) else None
         if isinstance(credits, bool) or not isinstance(credits, (int, float)) or credits < 0:
             return 1
@@ -140,10 +140,10 @@ class SerperClient:
         tbs: Optional[str] = None,
         autocorrect: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """Construit le payload commun aux endpoints de recherche Serper.
+        """Builds the payload shared by the Serper search endpoints.
 
-        Mappe les noms ergonomiques (country/language) vers les clés Serper
-        (`gl`/`hl`) et n'inclut que les champs fournis.
+        Maps the ergonomic names (country/language) to the Serper keys
+        (`gl`/`hl`) and only includes the fields provided.
         """
         payload: Dict[str, Any] = {"q": query}
         if num is not None:
@@ -359,9 +359,9 @@ class SerperClient:
     def _grid_anchors(
         center: str, radius_km: float, grid: int, zoom: int
     ) -> List[str]:
-        """Pave une zone carrée (center ± radius_km) en `grid`×`grid` ancres
-        `@lat,lng,zoomz`. Conversion km→degrés : 1° lat ≈ 111 km, 1° lng ≈
-        111·cos(lat) km. Une seule ancre si grid ≤ 1."""
+        """Tiles a square area (center ± radius_km) into `grid`×`grid` anchors
+        `@lat,lng,zoomz`. km→degrees conversion: 1° lat ≈ 111 km, 1° lng ≈
+        111·cos(lat) km. A single anchor if grid ≤ 1."""
         lat0, lng0 = (float(x) for x in center.split(","))
         grid = max(1, grid)
         if grid == 1:
@@ -381,8 +381,8 @@ class SerperClient:
 
     @staticmethod
     def _place_key(place: Dict[str, Any]) -> str:
-        """Clé de déduplication stable d'un lieu Maps : id Google si présent
-        (cid > placeId > fid), sinon repli titre+adresse normalisés."""
+        """Stable deduplication key for a Maps place: Google id if present
+        (cid > placeId > fid), otherwise fall back to normalized title+address."""
         for k in ("cid", "placeId", "fid"):
             v = place.get(k)
             if v:
@@ -403,33 +403,33 @@ class SerperClient:
         country: str = None,
         language: str = None,
     ) -> Dict[str, Any]:
-        """Recensement EXHAUSTIF d'un type de commerce sur une zone.
+        """EXHAUSTIVE census of a type of business over an area.
 
-        `search_maps` plafonne à ~20 résultats/appel et biaise vers le point
-        d'ancrage `ll` → il **sous-compte silencieusement**. Ce recensement
-        supprime les deux défauts côté serveur : il **pave** la zone en une
-        grille d'ancres géographiques, **pagine** chacune, et **déduplique** par
-        id de lieu. Le `count` rendu est donc le total réel dédupliqué.
+        `search_maps` caps at ~20 results/call and biases toward the `ll`
+        anchor point → it **silently undercounts**. This census
+        removes both defects server-side: it **tiles** the area into a
+        grid of geographic anchors, **paginates** each one, and **deduplicates** by
+        place id. The returned `count` is therefore the real deduplicated total.
 
-        Fournir soit `center` "lat,lng" (+ radius_km, grid) pour paver la zone,
-        soit `ll_anchors` explicites (qui priment sur le pavage).
+        Provide either `center` "lat,lng" (+ radius_km, grid) to tile the area,
+        or explicit `ll_anchors` (which take precedence over tiling).
 
         Args:
-            query: Ce qu'on énumère (ex. "laverie automatique").
-            center: Centre de zone "lat,lng" (requis sauf si ll_anchors).
-            radius_km: Demi-largeur de la zone carrée autour du centre (défaut 5).
-            grid: Densité du pavage grid×grid (défaut 3 → 9 ancres).
-            zoom: Niveau de zoom Maps par ancre (défaut 14).
-            ll_anchors: Ancres "@lat,lng,zoomz" explicites (priment sur le pavage).
-            max_pages: Pages maxi paginées par ancre (défaut 3).
-            country: Code pays (gl).
-            language: Code langue (hl).
+            query: What is being enumerated (e.g. "self-service laundry").
+            center: Area center "lat,lng" (required unless ll_anchors).
+            radius_km: Half-width of the square area around the center (default 5).
+            grid: Tiling density grid×grid (default 3 → 9 anchors).
+            zoom: Maps zoom level per anchor (default 14).
+            ll_anchors: Explicit "@lat,lng,zoomz" anchors (take precedence over tiling).
+            max_pages: Max pages paginated per anchor (default 3).
+            country: Country code (gl).
+            language: Language code (hl).
 
         Returns:
             {query, count, places[], anchors_used, pages_fetched, credits_used} —
-            `count` = total dédupliqué, à préférer à tout comptage d'un
-            `search_maps` seul ; `credits_used` = somme des crédits que Serper a
-            déduits sur toutes les pages (ce qui se facture, pas `pages_fetched`).
+            `count` = deduplicated total, to be preferred over any count from a
+            lone `search_maps`; `credits_used` = sum of the credits Serper
+            deducted across all pages (what gets billed, not `pages_fetched`).
         """
         if not query:
             raise ValueError("census_maps requires a non-empty query")
@@ -464,8 +464,8 @@ class SerperClient:
                     seen[key] = p
                     order.append(key)
                     new += 1
-                # Page entièrement déjà vue → ancre épuisée ou recouvrante,
-                # inutile de paginer plus loin (les pages profondes divergent).
+                # Page entirely already seen → anchor exhausted or overlapping,
+                # no point paginating further (deep pages diverge).
                 if new == 0:
                     break
 
@@ -545,19 +545,19 @@ class SerperClient:
         country: str = None,
         language: str = None,
     ) -> Dict[str, Any]:
-        """TOUS les avis d'un lieu — pagine `nextPageToken` jusqu'à épuisement.
+        """ALL the reviews of a place — paginates `nextPageToken` until exhausted.
 
-        `search_reviews` ne rend qu'une page (~10 avis) : un seul appel
-        sous-représente silencieusement les avis d'un lieu (le total réel vit
-        dans `ratingCount` côté lieu, pas ici). Cette méthode suit le curseur
-        `nextPageToken` jusqu'à ce qu'il n'y ait plus de page, ou jusqu'au
-        plafond `max_reviews` (borne le coût — un lieu peut avoir des milliers
-        d'avis).
+        `search_reviews` returns only one page (~10 reviews): a single call
+        silently under-represents a place's reviews (the real total lives
+        in `ratingCount` on the place side, not here). This method follows the
+        `nextPageToken` cursor until there is no more page, or until the
+        `max_reviews` cap (bounds the cost — a place can have thousands
+        of reviews).
 
-        Identifier le lieu par `cid`/`fid`/`place_id` ou `query` (comme
+        Identify the place by `cid`/`fid`/`place_id` or `query` (like
         search_reviews). Returns {count, reviews[], pages_fetched, credits_used,
-        truncated}. `truncated=True` = le plafond a coupé avant épuisement ;
-        `credits_used` = somme des crédits que Serper a déduits sur les pages.
+        truncated}. `truncated=True` = the cap cut before exhaustion;
+        `credits_used` = sum of the credits Serper deducted across the pages.
         """
         collected: List[Dict[str, Any]] = []
         token: Optional[str] = None
@@ -577,7 +577,7 @@ class SerperClient:
                 break
             collected.extend(reviews)
             token = res.get("nextPageToken")
-            # Plus de curseur, ou curseur qui se répète (garde anti-boucle).
+            # No more cursor, or a cursor that repeats (anti-loop guard).
             if not token or token in seen_tokens:
                 token = None
                 break
@@ -684,35 +684,35 @@ class SerperClient:
 
     # --------------------------------------------------------------- scrape
 
-    # Hôtes qui refusent SYSTÉMATIQUEMENT un scrape serveur (mur de connexion ou
-    # anti-bot permanent). Y envoyer Serper coûte ~45 s — son propre timeout — pour
-    # revenir bredouille à tous les coups : mesuré sur 4 jours de journal, six échecs
-    # à 45-48 s dont quatre sur des profils LinkedIn. Mieux vaut refuser tout de suite,
-    # en disant le FAIT — la source est close à l'extraction — sans prescrire un outil :
-    # ce client ne connaît pas le jeu d'outils servi à l'appelant (une CLI, un endpoint
-    # publié qui sert une liste à l'inclusion…), et un refus qui nomme une porte absente
-    # laisse l'agent avec une intention sans destination (oto-backend#632, famille de
-    # #613). Le texte d'avant nommait `unipile_*` — une famille qui n'existe même plus
-    # sous ce nom.
+    # Hosts that SYSTEMATICALLY refuse a server-side scrape (login wall or
+    # permanent anti-bot). Sending Serper there costs ~45 s — its own timeout — to
+    # come back empty-handed every time: measured over 4 days of logs, six failures
+    # at 45-48 s, four of them on LinkedIn profiles. Better to refuse right away,
+    # stating the FACT — the source is closed to extraction — without prescribing a tool:
+    # this client does not know the toolset served to the caller (a CLI, a
+    # published endpoint serving an inclusion list…), and a refusal that names an absent door
+    # leaves the agent with an intent and no destination (oto-backend#632, family of
+    # #613). The previous text named `unipile_*` — a family that no longer even exists
+    # under that name.
     #
-    # La liste reste COURTE et ne contient que des refus structurels. Un site qui
-    # bloque parfois n'a rien à y faire : ce garde supprime une attente inutile, il ne
-    # doit pas devenir une liste noire qui prive d'un scrape qui aurait marché.
+    # The list stays SHORT and only holds structural refusals. A site that
+    # sometimes blocks has no business there: this guard removes a useless wait, it must not
+    # become a blacklist that deprives us of a scrape that would have worked.
     _NEVER_SCRAPABLE = {
-        "linkedin.com": "les profils et pages LinkedIn ne se lisent pas par extraction "
-                        "(mur de connexion) ; si ton jeu d'outils porte un compte "
-                        "LinkedIn connecté, c'est par lui.",
-        "instagram.com": "Instagram exige une session ; passe par le connecteur "
-                         "messagerie ou une autre source.",
-        "facebook.com": "Facebook exige une session ; cherche une autre source.",
-        "x.com": "X exige une session ; cherche une autre source.",
-        "twitter.com": "X exige une session ; cherche une autre source.",
+        "linkedin.com": "LinkedIn profiles and pages cannot be read by extraction "
+                        "(login wall); if your toolset carries a connected "
+                        "LinkedIn account, go through it.",
+        "instagram.com": "Instagram requires a session; go through the messaging "
+                         "connector or another source.",
+        "facebook.com": "Facebook requires a session; look for another source.",
+        "x.com": "X requires a session; look for another source.",
+        "twitter.com": "X requires a session; look for another source.",
     }
 
     @classmethod
     def _refuses_scraping(cls, url: str) -> Optional[str]:
-        """La raison de refuser d'emblée, ou None. Compare sur le domaine
-        enregistrable pour couvrir les sous-domaines (`fr.`, `uk.`, `www.`)."""
+        """The reason to refuse outright, or None. Compares on the registrable
+        domain to cover subdomains (`fr.`, `uk.`, `www.`)."""
         try:
             host = (urlparse(url).hostname or "").lower()
         except ValueError:
@@ -743,16 +743,16 @@ class SerperClient:
             Page data with text, metadata, and JSON-LD
 
         Raises:
-            RuntimeError: si l'hôte refuse structurellement le scrape serveur — le
-                message dit le fait (source close à l'extraction) sans prescrire un
-                outil : l'appelant décide avec le jeu d'outils qu'il a.
-            requests.Timeout: la page n'a pas répondu dans le délai. C'est un
-                ÉCHEC NORMAL, pas une panne : la moitié des expirations mesurées
-                portaient sur des adresses qui ne pouvaient pas répondre.
+            RuntimeError: if the host structurally refuses server-side scraping — the
+                message states the fact (source closed to extraction) without prescribing a
+                tool: the caller decides with the toolset it has.
+            requests.Timeout: the page did not answer within the delay. This is a
+                NORMAL FAILURE, not an outage: half of the measured timeouts
+                were on addresses that could not answer.
         """
         why = self._refuses_scraping(url)
         if why:
-            raise RuntimeError(f"Serper scrape refusé pour {url} : {why}")
+            raise RuntimeError(f"Serper scrape refused for {url}: {why}")
         payload: Dict[str, Any] = {"url": url}
         if include_markdown:
             payload["includeMarkdown"] = True

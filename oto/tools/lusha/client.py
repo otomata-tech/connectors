@@ -10,13 +10,13 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
 class LushaClient:
     BASE_URL = "https://api.lusha.com"
 
-    # Limite DURE Lusha (search-and-enrich) — pas une politique oto.
+    # Lusha HARD limit (search-and-enrich) — not an oto policy.
     MAX_CONTACTS_PER_CALL = 100
 
     def __init__(self, api_key: Optional[str] = None):

@@ -52,13 +52,13 @@ BALANCE_SCOPES = ("Impacted", "All")
 
 def _date(value: str, name: str) -> str:
     if not isinstance(value, str) or not _DATE.match(value):
-        raise ValueError(f"{name} doit être une date yyyy-MM-dd — reçu {value!r}.")
+        raise ValueError(f"{name} must be a yyyy-MM-dd date — got {value!r}.")
     return value
 
 
 def _choice(value: Optional[str], name: str, allowed: tuple) -> Optional[str]:
     if value is not None and value not in allowed:
-        raise ValueError(f"{name} doit valoir l'un de {list(allowed)} — reçu {value!r}.")
+        raise ValueError(f"{name} must be one of {list(allowed)} — got {value!r}.")
     return value
 
 
@@ -212,7 +212,7 @@ class InqomClient:
         """GET /v1/dossiers/{dossierId}/entry-lines — one page (≤ 1000 lines)
         of entry lines dated in the period: `{EntryLines, CurrentPage}`."""
         if int(page_number) < 1:
-            raise ValueError(f"page_number commence à 1 — reçu {page_number}.")
+            raise ValueError(f"page_number starts at 1 — got {page_number}.")
         return self._get(
             f"/v1/dossiers/{int(dossier_id)}/entry-lines",
             startDate=_date(start_date, "start_date"), endDate=_date(end_date, "end_date"),
@@ -228,7 +228,7 @@ class InqomClient:
         Returns the inserted entries with their ids.
         """
         if not entries:
-            raise ValueError("entries ne peut pas être vide.")
+            raise ValueError("entries cannot be empty.")
         return self._request("POST", f"/v1/dossiers/{int(dossier_id)}/entries",
                              json_body=list(entries)) or []
 

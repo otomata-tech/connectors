@@ -1,17 +1,17 @@
-"""Pull requests GitHub — propositions, revues, fusion.
+"""GitHub pull requests — proposals, reviews, merging.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `GitHubClient`, qui
-fournit le transport (`_request`, `_get`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `GitHubClient`, which
+provides the transport (`_request`, `_get`, `_check_choice`).
 
-⚠️ **Une PR est aussi une issue** : ses commentaires de FIL, ses étiquettes, ses
-jalons et ses assignations passent par les méthodes d'`issues.py`, avec le numéro
-de la PR. Ce module ne porte que ce qui lui est propre — le diff, les revues, les
-commentaires de revue (ligne à ligne), les relecteurs demandés, et la fusion.
+⚠️ **A PR is also an issue**: its THREAD comments, labels,
+milestones and assignments go through the methods of `issues.py`, with the PR's
+number. This module only carries what is specific to it — the diff, reviews,
+review comments (line by line), requested reviewers, and merging.
 
-⚠️ **`merge_pull` modifie la branche cible, et n'est pas annulable d'un clic.**
-Les trois méthodes n'ont pas le même effet sur l'historique : `merge` ajoute un
-commit de fusion, `squash` écrase la branche en un seul commit, `rebase` réécrit
-les commits. Le choix appartient à l'appelant, et le connecteur ne le devine pas.
+⚠️ **`merge_pull` modifies the target branch, and cannot be undone with one click.**
+The three methods do not have the same effect on history: `merge` adds a
+merge commit, `squash` squashes the branch into a single commit, `rebase` rewrites
+the commits. The choice belongs to the caller, and the connector does not guess it.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from ..const import (MERGE_METHODS, PULL_SORTS, PULL_STATES, REVIEW_EVENTS,
 
 
 class _PullsMixin:
-    """Pull requests, revues, fusion."""
+    """Pull requests, reviews, merging."""
 
     # --- pull requests --------------------------------------------------------
 
@@ -32,13 +32,13 @@ class _PullsMixin:
                    sort: Optional[str] = None, direction: Optional[str] = None,
                    per_page: Optional[int] = None,
                    page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/pulls — pull requests du dépôt.
+        """GET /repos/{owner}/{repo}/pulls — the repository's pull requests.
 
-        `state` vaut `open` (défaut GitHub), `closed` ou `all`. `head` filtre par
-        branche source (`utilisateur:branche`), `base` par branche cible.
+        `state` is `open` (GitHub default), `closed` or `all`. `head` filters by
+        source branch (`user:branch`), `base` by target branch.
 
-        ⚠️ Une PR **fusionnée** est `closed` : il n'existe pas d'état `merged`.
-        Pour les distinguer, lire `merged_at` (nul = fermée sans fusion).
+        ⚠️ A **merged** PR is `closed`: there is no `merged` state.
+        To tell them apart, read `merged_at` (null = closed without merging).
         """
         self._check_choice("state", state, PULL_STATES)
         self._check_choice("sort", sort, PULL_SORTS)
@@ -48,50 +48,50 @@ class _PullsMixin:
             "sort": sort, "direction": direction}, per_page, page)
 
     def get_pull(self, owner: str, repo: str, number: Any) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number} — une PR, avec ses compteurs.
+        """GET /repos/{owner}/{repo}/pulls/{number} — one PR, with its counters.
 
-        Cette forme (contrairement à la liste) porte `mergeable`, `merged`,
+        This form (unlike the list) carries `mergeable`, `merged`,
         `additions`, `deletions`, `changed_files`.
 
-        ⚠️ **`mergeable` peut valoir `null`** : GitHub calcule la fusionnabilité
-        en tâche de fond au premier appel. `null` veut dire « pas encore su » —
-        redemander, et surtout ne pas le lire comme « non fusionnable ».
+        ⚠️ **`mergeable` may be `null`**: GitHub computes mergeability
+        in the background on the first call. `null` means "not known yet" —
+        ask again, and above all do not read it as "not mergeable".
         """
         return self._request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
 
     def create_pull(self, owner: str, repo: str,
                     payload: Dict[str, Any]) -> Any:
-        """POST /repos/{owner}/{repo}/pulls — ouvre une pull request.
+        """POST /repos/{owner}/{repo}/pulls — open a pull request.
 
-        Requis : `title` (ou `issue`), `head`, `base`. Optionnels : `body`,
+        Required: `title` (or `issue`), `head`, `base`. Optional: `body`,
         `draft`, `maintainer_can_modify`.
 
-        `head` est la branche source (`utilisateur:branche` depuis un fork),
-        `base` la branche cible. `draft=True` ouvre un brouillon, qui ne demande
-        pas de revue tant qu'il n'est pas marqué prêt.
+        `head` is the source branch (`user:branch` from a fork),
+        `base` the target branch. `draft=True` opens a draft, which does not request
+        review until it is marked ready.
 
-        ⚠️ **Notifie** les propriétaires de code (CODEOWNERS) et les abonnés du
-        dépôt, sauf en brouillon.
+        ⚠️ **Notifies** code owners (CODEOWNERS) and repository
+        watchers, except as a draft.
         """
         for champ in ("head", "base"):
             if not payload.get(champ):
-                raise ValueError(f"`{champ}` requis pour ouvrir une PR.")
+                raise ValueError(f"`{champ}` required to open a PR.")
         if not payload.get("title") and not payload.get("issue"):
             raise ValueError(
-                "`title` requis (ou `issue`, pour convertir une issue "
-                "existante en PR).")
+                "`title` required (or `issue`, to convert an existing "
+                "issue into a PR).")
         return self._request("POST", f"/repos/{owner}/{repo}/pulls",
                              json=dict(payload))
 
     def update_pull(self, owner: str, repo: str, number: Any,
                     payload: Dict[str, Any]) -> Any:
-        """PATCH /repos/{owner}/{repo}/pulls/{number} — met à jour une PR.
+        """PATCH /repos/{owner}/{repo}/pulls/{number} — update a PR.
 
-        Champs : `title`, `body`, `state` (`open`/`closed`), `base`,
+        Fields: `title`, `body`, `state` (`open`/`closed`), `base`,
         `maintainer_can_modify`.
 
-        ⚠️ On ne FUSIONNE pas par ici : `state="closed"` ferme sans fusionner.
-        La fusion est `merge_pull`.
+        ⚠️ You do not MERGE through here: `state="closed"` closes without merging.
+        Merging is `merge_pull`.
         """
         return self._request("PATCH", f"/repos/{owner}/{repo}/pulls/{number}",
                              json=dict(payload))
@@ -99,11 +99,11 @@ class _PullsMixin:
     def list_pull_files(self, owner: str, repo: str, number: Any,
                         per_page: Optional[int] = None,
                         page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number}/files — fichiers modifiés + patch.
+        """GET /repos/{owner}/{repo}/pulls/{number}/files — modified files + patch.
 
-        ⚠️ **Plafonné à 3 000 fichiers**, et le `patch` de chaque fichier est
-        omis au-delà d'une certaine taille. Une PR massive est donc rendue
-        incomplète, sans erreur.
+        ⚠️ **Capped at 3,000 files**, and each file's `patch` is
+        omitted beyond a certain size. A massive PR is therefore returned
+        incomplete, without error.
         """
         return self._get(f"/repos/{owner}/{repo}/pulls/{number}/files", None,
                          per_page, page)
@@ -111,19 +111,19 @@ class _PullsMixin:
     def list_pull_commits(self, owner: str, repo: str, number: Any,
                           per_page: Optional[int] = None,
                           page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number}/commits — commits de la PR.
+        """GET /repos/{owner}/{repo}/pulls/{number}/commits — the PR's commits.
 
-        ⚠️ Plafonné à 250 commits ; au-delà, passer par l'API des commits du dépôt.
+        ⚠️ Capped at 250 commits; beyond that, go through the repository's commits API.
         """
         return self._get(f"/repos/{owner}/{repo}/pulls/{number}/commits", None,
                          per_page, page)
 
     def check_pull_merged(self, owner: str, repo: str, number: Any) -> bool:
-        """GET /repos/{owner}/{repo}/pulls/{number}/merge — la PR est-elle fusionnée ?
+        """GET /repos/{owner}/{repo}/pulls/{number}/merge — has the PR been merged?
 
-        ⚠️ Endpoint sans corps : GitHub répond **204 si fusionnée, 404 sinon**.
-        Le 404 est ici une RÉPONSE, pas une erreur — d'où ce booléen, plutôt que
-        de laisser un `UpstreamHTTPError` remonter pour dire « non ».
+        ⚠️ Bodyless endpoint: GitHub answers **204 if merged, 404 otherwise**.
+        The 404 here is an ANSWER, not an error — hence this boolean, rather than
+        letting an `UpstreamHTTPError` bubble up to say "no".
         """
         resp = self._request("GET", f"/repos/{owner}/{repo}/pulls/{number}/merge",
                              raw=True)
@@ -139,20 +139,20 @@ class _PullsMixin:
                    commit_message: Optional[str] = None,
                    sha: Optional[str] = None,
                    merge_method: Optional[str] = None) -> Any:
-        """PUT /repos/{owner}/{repo}/pulls/{number}/merge — **FUSIONNE la PR**.
+        """PUT /repos/{owner}/{repo}/pulls/{number}/merge — **MERGES the PR**.
 
-        ⚠️ Écriture sur la branche cible, non annulable d'un clic. Les trois
-        méthodes ne font pas la même chose à l'historique :
-        `merge` ajoute un commit de fusion, `squash` écrase la branche en un seul
-        commit, `rebase` réécrit les commits sur la cible.
+        ⚠️ Write to the target branch, cannot be undone with one click. The three
+        methods do not do the same thing to history:
+        `merge` adds a merge commit, `squash` squashes the branch into a single
+        commit, `rebase` rewrites the commits onto the target.
 
-        `sha` est une **protection contre la course** : si la tête de la PR a
-        bougé depuis la lecture, GitHub refuse (409) au lieu de fusionner autre
-        chose que ce qui a été relu. Le passer quand la décision de fusion
-        s'appuie sur un diff déjà lu.
+        `sha` is a **race protection**: if the PR's head has moved
+        since it was read, GitHub refuses (409) instead of merging something other
+        than what was reviewed. Pass it when the merge decision
+        rests on an already-read diff.
 
-        Refus courants : **405** (non fusionnable — conflits, contrôles en
-        échec), **409** (la tête a bougé, ou `sha` obsolète).
+        Common refusals: **405** (not mergeable — conflicts, failing
+        checks), **409** (the head moved, or stale `sha`).
         """
         self._check_choice("merge_method", merge_method, MERGE_METHODS)
         body: Dict[str, Any] = {}
@@ -167,11 +167,11 @@ class _PullsMixin:
 
     def update_pull_branch(self, owner: str, repo: str, number: Any,
                            expected_head_sha: Optional[str] = None) -> Any:
-        """PUT /repos/{owner}/{repo}/pulls/{number}/update-branch — rebase la cible dedans.
+        """PUT /repos/{owner}/{repo}/pulls/{number}/update-branch — rebase the target into it.
 
-        Met à jour la branche de la PR avec les derniers commits de sa base. Rend
-        **202** (accepté, traité en tâche de fond) : le travail n'est pas fini
-        quand la réponse arrive.
+        Updates the PR's branch with the latest commits of its base. Returns
+        **202** (accepted, processed in the background): the work is not finished
+        when the response arrives.
         """
         body = ({"expected_head_sha": expected_head_sha}
                 if expected_head_sha else None)
@@ -179,27 +179,27 @@ class _PullsMixin:
             "PUT", f"/repos/{owner}/{repo}/pulls/{number}/update-branch",
             json=body)
 
-    # --- revues ---------------------------------------------------------------
+    # --- reviews --------------------------------------------------------------
 
     def list_reviews(self, owner: str, repo: str, number: Any,
                      per_page: Optional[int] = None,
                      page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number}/reviews — revues déposées."""
+        """GET /repos/{owner}/{repo}/pulls/{number}/reviews — submitted reviews."""
         return self._get(f"/repos/{owner}/{repo}/pulls/{number}/reviews", None,
                          per_page, page)
 
     def create_review(self, owner: str, repo: str, number: Any,
                       payload: Dict[str, Any]) -> Any:
-        """POST /repos/{owner}/{repo}/pulls/{number}/reviews — dépose une revue.
+        """POST /repos/{owner}/{repo}/pulls/{number}/reviews — submit a review.
 
-        Champs : `body`, `event` (`APPROVE` | `REQUEST_CHANGES` | `COMMENT`),
-        `commit_id`, `comments` (commentaires ligne à ligne).
+        Fields: `body`, `event` (`APPROVE` | `REQUEST_CHANGES` | `COMMENT`),
+        `commit_id`, `comments` (line-by-line comments).
 
-        ⚠️ **`event` absent laisse la revue en ATTENTE** (`PENDING`) : rien n'est
-        publié, personne n'est notifié, et elle reste visible de son seul auteur.
-        C'est utile pour préparer, et c'est un piège quand on croyait approuver.
-        ⚠️ `APPROVE` peut débloquer une fusion protégée : c'est un acte de
-        gouvernance, pas un commentaire.
+        ⚠️ **A missing `event` leaves the review PENDING** (`PENDING`): nothing is
+        published, nobody is notified, and it stays visible to its author alone.
+        This is useful for preparing, and a trap when you thought you were approving.
+        ⚠️ `APPROVE` can unblock a protected merge: it is an act of
+        governance, not a comment.
         """
         self._check_choice("event", payload.get("event"), REVIEW_EVENTS)
         return self._request(
@@ -209,9 +209,9 @@ class _PullsMixin:
     def submit_review(self, owner: str, repo: str, number: Any,
                       review_id: Any, event: str,
                       body: Optional[str] = None) -> Any:
-        """POST /…/pulls/{number}/reviews/{id}/events — publie une revue en attente.
+        """POST /…/pulls/{number}/reviews/{id}/events — publish a pending review.
 
-        C'est le geste qui sort une revue `PENDING` de l'ombre. `event` est requis.
+        This is the action that brings a `PENDING` review out of the shadows. `event` is required.
         """
         self._check_choice("event", event, REVIEW_EVENTS)
         payload: Dict[str, Any] = {"event": event}
@@ -226,9 +226,9 @@ class _PullsMixin:
                              since: Optional[str] = None,
                              per_page: Optional[int] = None,
                              page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number}/comments — commentaires LIGNE À LIGNE.
+        """GET /repos/{owner}/{repo}/pulls/{number}/comments — LINE-BY-LINE comments.
 
-        Distincts des commentaires du fil, qui sont ceux de l'issue
+        Distinct from thread comments, which are the issue's
         (`list_issue_comments`).
         """
         return self._get(f"/repos/{owner}/{repo}/pulls/{number}/comments",
@@ -236,34 +236,34 @@ class _PullsMixin:
 
     def create_review_comment(self, owner: str, repo: str, number: Any,
                               payload: Dict[str, Any]) -> Any:
-        """POST /repos/{owner}/{repo}/pulls/{number}/comments — commente une LIGNE.
+        """POST /repos/{owner}/{repo}/pulls/{number}/comments — comment on a LINE.
 
-        Requis : `body`, `commit_id`, `path`, et la position — `line` (+ `side`),
-        ou `start_line`/`line` pour une plage. `in_reply_to` répond à un fil
-        existant, auquel cas la position est inutile.
+        Required: `body`, `commit_id`, `path`, and the position — `line` (+ `side`),
+        or `start_line`/`line` for a range. `in_reply_to` replies to an existing
+        thread, in which case the position is unnecessary.
 
-        ⚠️ `commit_id` doit être un commit **de la PR** : un SHA étranger rend
-        un 422.
+        ⚠️ `commit_id` must be a commit **of the PR**: a foreign SHA returns
+        a 422.
         """
         if not payload.get("body"):
-            raise ValueError("`body` requis.")
+            raise ValueError("`body` required.")
         if not payload.get("in_reply_to"):
             for champ in ("commit_id", "path"):
                 if not payload.get(champ):
                     raise ValueError(
-                        f"`{champ}` requis pour un commentaire de revue neuf "
-                        "(sauf en réponse, avec `in_reply_to`).")
+                        f"`{champ}` required for a new review comment "
+                        "(except as a reply, with `in_reply_to`).")
         return self._request(
             "POST", f"/repos/{owner}/{repo}/pulls/{number}/comments",
             json=dict(payload))
 
-    # --- relecteurs ------------------------------------------------------------
+    # --- reviewers --------------------------------------------------------------
 
     def list_requested_reviewers(self, owner: str, repo: str,
                                  number: Any) -> Any:
-        """GET /repos/{owner}/{repo}/pulls/{number}/requested_reviewers — demandes en cours.
+        """GET /repos/{owner}/{repo}/pulls/{number}/requested_reviewers — pending requests.
 
-        ⚠️ Rend un OBJET `{users: [...], teams: [...]}`, pas une liste.
+        ⚠️ Returns an OBJECT `{users: [...], teams: [...]}`, not a list.
         """
         return self._request(
             "GET", f"/repos/{owner}/{repo}/pulls/{number}/requested_reviewers")
@@ -271,16 +271,16 @@ class _PullsMixin:
     def request_reviewers(self, owner: str, repo: str, number: Any,
                           reviewers: Optional[List[str]] = None,
                           team_reviewers: Optional[List[str]] = None) -> Any:
-        """POST /…/pulls/{number}/requested_reviewers — demande une revue.
+        """POST /…/pulls/{number}/requested_reviewers — request a review.
 
-        ⚠️ **Notifie** les personnes et équipes désignées. `reviewers` sont des
-        identifiants de compte, `team_reviewers` des *slugs* d'équipe.
-        ⚠️ Demander une revue à l'AUTEUR de la PR rend un 422.
+        ⚠️ **Notifies** the designated people and teams. `reviewers` are
+        account handles, `team_reviewers` team *slugs*.
+        ⚠️ Requesting a review from the PR's AUTHOR returns a 422.
         """
         if not reviewers and not team_reviewers:
             raise ValueError(
-                "passer `reviewers` (comptes) et/ou `team_reviewers` (slugs "
-                "d'équipe).")
+                "pass `reviewers` (accounts) and/or `team_reviewers` (team "
+                "slugs).")
         body: Dict[str, Any] = {}
         if reviewers:
             body["reviewers"] = list(reviewers)
@@ -293,14 +293,14 @@ class _PullsMixin:
     def remove_requested_reviewers(self, owner: str, repo: str, number: Any,
                                    reviewers: Optional[List[str]] = None,
                                    team_reviewers: Optional[List[str]] = None) -> Any:
-        """DELETE /…/pulls/{number}/requested_reviewers — retire une demande de revue."""
+        """DELETE /…/pulls/{number}/requested_reviewers — remove a review request."""
         body: Dict[str, Any] = {}
         if reviewers:
             body["reviewers"] = list(reviewers)
         if team_reviewers:
             body["team_reviewers"] = list(team_reviewers)
         if not body:
-            raise ValueError("passer `reviewers` et/ou `team_reviewers`.")
+            raise ValueError("pass `reviewers` and/or `team_reviewers`.")
         return self._request(
             "DELETE",
             f"/repos/{owner}/{repo}/pulls/{number}/requested_reviewers",

@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any, List, Union
 import requests
 
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 class UnsplashClient:

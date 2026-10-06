@@ -1,14 +1,14 @@
 """Lever ATS API client.
 
-Auth = **API key** en Basic auth (la clé est le *username*, mot de passe vide).
-Créée dans Lever : Settings → Integrations and API → API credentials. Passée en
-clair au constructeur.
+Auth = **API key** via Basic auth (the key is the *username*, empty password).
+Created in Lever: Settings → Integrations and API → API credentials. Passed in
+plain text to the constructor.
 
-Vocabulaire Lever : un candidat dans un pipeline = une **opportunity** ; un poste
-= un **posting**. Les écritures (création, note) acceptent un `perform_as` (id
-d'un utilisateur Lever au nom de qui agir).
+Lever vocabulary: a candidate in a pipeline = an **opportunity**; a job
+= a **posting**. Writes (creation, note) accept a `perform_as` (id of a
+Lever user to act on behalf of).
 
-Docs : https://hire.lever.co/developer/documentation
+Docs: https://hire.lever.co/developer/documentation
 
 Requires: requests
 """
@@ -23,12 +23,12 @@ from ..common import raise_for_upstream
 
 
 class LeverClient:
-    """Client Lever Hire v1 — opportunities (candidats), postings, notes."""
+    """Lever Hire v1 client — opportunities (candidates), postings, notes."""
 
     BASE_URL = "https://api.lever.co/v1"
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialise le client.
+        """Initialize the client.
 
         Args:
             api_key: Lever API key.
@@ -44,7 +44,7 @@ class LeverClient:
         raise_for_upstream(resp, service="lever")
         return resp.json() if resp.content else {}
 
-    # --- Opportunities (candidats dans un pipeline) -------------------------
+    # --- Opportunities (candidates in a pipeline) ----------------------------
 
     def list_opportunities(
         self,
@@ -55,13 +55,13 @@ class LeverClient:
         email: Optional[str] = None,
         expand: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Liste les opportunities (candidats). Renvoie `{data, hasNext, next}` —
-        passer `next` à `offset` pour la page suivante.
+        """List opportunities (candidates). Returns `{data, hasNext, next}` —
+        pass `next` as `offset` for the next page.
 
         Args:
-            posting_id / stage_id : filtres pipeline.
-            email: filtre par email exact du candidat.
-            expand: champs à dérouler (ex. ["applications", "stage", "owner"]).
+            posting_id / stage_id: pipeline filters.
+            email: filter by exact candidate email.
+            expand: fields to expand (e.g. ["applications", "stage", "owner"]).
         """
         params: Dict[str, Any] = {"limit": min(limit, 100)}
         if offset:
@@ -79,7 +79,7 @@ class LeverClient:
     def get_opportunity(
         self, opportunity_id: str, expand: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Récupère une opportunity (candidat) par id."""
+        """Fetch an opportunity (candidate) by id."""
         params = {"expand": expand} if expand else None
         return self._request("GET", f"/opportunities/{opportunity_id}", params=params)
 
@@ -87,13 +87,13 @@ class LeverClient:
         self, candidate: Dict[str, Any], perform_as: str,
         posting_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Crée un candidat (opportunity).
+        """Create a candidate (opportunity).
 
         Args:
-            candidate: objet candidat Lever (`name`, `emails`, `phones`, `links`,
+            candidate: Lever candidate object (`name`, `emails`, `phones`, `links`,
                 `tags`, `sources`, …).
-            perform_as: id de l'utilisateur Lever au nom de qui créer (requis).
-            posting_ids: postings auxquels rattacher le candidat.
+            perform_as: id of the Lever user to create on behalf of (required).
+            posting_ids: postings to attach the candidate to.
         """
         body = dict(candidate)
         if posting_ids:
@@ -104,22 +104,22 @@ class LeverClient:
     def add_note(
         self, opportunity_id: str, value: str, perform_as: str,
     ) -> Dict[str, Any]:
-        """Ajoute une note à une opportunity (candidat).
+        """Add a note to an opportunity (candidate).
 
         Args:
-            perform_as: id de l'utilisateur Lever auteur de la note (requis).
+            perform_as: id of the Lever user authoring the note (required).
         """
         return self._request(
             "POST", f"/opportunities/{opportunity_id}/notes",
             json={"value": value}, params={"perform_as": perform_as})
 
-    # --- Postings (postes) --------------------------------------------------
+    # --- Postings (jobs) ----------------------------------------------------
 
     def list_postings(
         self, limit: int = 50, offset: Optional[str] = None,
         state: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les postings (postes). `state` : "published" | "internal" |
+        """List postings (jobs). `state`: "published" | "internal" |
         "closed" | "draft" | "pending" | "rejected"."""
         params: Dict[str, Any] = {"limit": min(limit, 100)}
         if offset:
@@ -129,17 +129,17 @@ class LeverClient:
         return self._request("GET", "/postings", params=params)
 
     def get_posting(self, posting_id: str) -> Dict[str, Any]:
-        """Récupère un posting (poste) par id."""
+        """Fetch a posting (job) by id."""
         return self._request("GET", f"/postings/{posting_id}")
 
-    # --- Référentiels -------------------------------------------------------
+    # --- Reference data -------------------------------------------------------
 
     def list_stages(self) -> Dict[str, Any]:
-        """Liste les stages du pipeline (référentiel)."""
+        """List the pipeline stages (reference data)."""
         return self._request("GET", "/stages")
 
     def list_users(self, limit: int = 50, offset: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les utilisateurs Lever (recruteurs) — pour `perform_as`."""
+        """List Lever users (recruiters) — for `perform_as`."""
         params: Dict[str, Any] = {"limit": min(limit, 100)}
         if offset:
             params["offset"] = offset

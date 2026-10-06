@@ -1,23 +1,23 @@
-"""Changelogs Productlane — les notes de version, leurs étiquettes, leur diffusion.
+"""Productlane changelogs — release notes, their tags, their broadcast.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`, `_list`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`, `_list`).
 
-⚠️ **`broadcast` est le seul appel de tout ce client qui écrit à des tiers.** Il
-envoie un email aux contacts abonnés et/ou publie dans les canaux Slack
-configurés. Il n'y a **ni annulation, ni brouillon, ni rappel** : un envoi parti
-l'est pour de bon, auprès de gens qui ne sont pas l'utilisateur de la clé. Il est
-donc traité à part — signature explicite plutôt qu'un dict opaque, et refus local
-quand aucun canal n'est demandé.
+⚠️ **`broadcast` is the only call in this whole client that writes to third parties.** It
+sends an email to subscribed contacts and/or posts to the configured Slack
+channels. There is **no cancel, no draft, no recall**: a send that has gone out
+has gone out for good, to people who are not the key's user. It is
+therefore handled separately — explicit signature rather than an opaque dict, and a local refusal
+when no channel is requested.
 
-**`published` et la diffusion sont deux choses distinctes**, et c'est écrit noir
-sur blanc côté éditeur : « This endpoint never toggles `published` ». Publier
-(rendre visible sur le portail) se fait par `update_changelog(published=True)` ;
-diffuser (pousser vers des boîtes mail) se fait ici. Confondre les deux, c'est
-soit publier sans prévenir, soit prévenir d'une page invisible.
+**`published` and broadcasting are two distinct things**, and the vendor
+spells it out: "This endpoint never toggles `published`". Publishing
+(making it visible on the portal) is done via `update_changelog(published=True)`;
+broadcasting (pushing to mailboxes) is done here. Mixing them up means
+either publishing without notifying, or notifying about an invisible page.
 
-**Traductions** : `language` crée/met à jour une LIGNE DE TRADUCTION au lieu de
-la ligne de base. Les champs non traduisibles s'appliquent toujours à la base.
+**Translations**: `language` creates/updates a TRANSLATION ROW instead of
+the base row. Non-translatable fields always apply to the base.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from typing import Any, Dict, Optional
 
 
 class _ChangelogsMixin:
-    """Changelogs, étiquettes de changelog, diffusion."""
+    """Changelogs, changelog tags, broadcast."""
 
     # --- changelogs ---------------------------------------------------------
 
@@ -41,7 +41,7 @@ class _ChangelogsMixin:
                         created_before: Optional[str] = None,
                         updated_after: Optional[str] = None,
                         updated_before: Optional[str] = None) -> Any:
-        """GET /changelogs — changelogs de l'espace de travail. Scope `changelogs:read`."""
+        """GET /changelogs — workspace changelogs. Scope `changelogs:read`."""
         return self._list("/changelogs", limit, cursor, {
             "published": published, "archived": archived, "language": language,
             "title_contains": title_contains, "tag_id": tag_id,
@@ -52,35 +52,35 @@ class _ChangelogsMixin:
 
     def get_changelog(self, changelog_id: str,
                       language: Optional[str] = None) -> Any:
-        """GET /changelogs/{id} — un changelog. Scope `changelogs:read`.
+        """GET /changelogs/{id} — one changelog. Scope `changelogs:read`.
 
-        `language` sert la ligne de traduction correspondante plutôt que la base.
+        `language` serves the matching translation row rather than the base.
         """
         return self._request("GET", f"/changelogs/{changelog_id}",
                              params={"language": language})
 
     def create_changelog(self, payload: Dict[str, Any]) -> Any:
-        """POST /changelogs — crée un changelog. Scope `changelogs:write`.
+        """POST /changelogs — create a changelog. Scope `changelogs:write`.
 
-        Requis : `title`, `content`. Optionnels : `date`, `published`,
+        Required: `title`, `content`. Optional: `date`, `published`,
         `image_url`, `portal_instance_id`, `language`, `tag_ids`.
 
-        `published=True` le rend visible sur le portail — **cela ne prévient
-        personne** : la diffusion est un appel distinct (`broadcast_changelog`).
-        `language` crée une ligne de TRADUCTION au lieu de remplir la base.
+        `published=True` makes it visible on the portal — **it notifies
+        no one**: broadcasting is a separate call (`broadcast_changelog`).
+        `language` creates a TRANSLATION row instead of filling the base.
         """
         return self._request("POST", "/changelogs", json=dict(payload))
 
     def update_changelog(self, changelog_id: str,
                          payload: Dict[str, Any]) -> Any:
-        """PATCH /changelogs/{id} — met à jour un changelog. Scope `changelogs:write`.
+        """PATCH /changelogs/{id} — update a changelog. Scope `changelogs:write`.
 
-        Champs : `title`, `content`, `date`, `published`, `archived`,
+        Fields: `title`, `content`, `date`, `published`, `archived`,
         `image_url`, `portal_instance_id`, `tag_ids`, `language`.
 
-        C'est **ici** que `published` se bascule, jamais dans `broadcast_changelog`.
-        `language` upsert une ligne de traduction ; les champs non traduisibles
-        s'appliquent toujours à la ligne de base.
+        This is **where** `published` is toggled, never in `broadcast_changelog`.
+        `language` upserts a translation row; non-translatable fields
+        always apply to the base row.
         """
         return self._request("PATCH", f"/changelogs/{changelog_id}",
                              json=dict(payload))
@@ -89,7 +89,7 @@ class _ChangelogsMixin:
         """DELETE /changelogs/{id} — **soft-delete**. Scope `changelogs:write`."""
         return self._request("DELETE", f"/changelogs/{changelog_id}")
 
-    # --- diffusion ----------------------------------------------------------
+    # --- broadcast ----------------------------------------------------------
 
     def broadcast_changelog(self, changelog_id: str,
                             email: Optional[bool] = None,
@@ -98,38 +98,38 @@ class _ChangelogsMixin:
                             subject: Optional[str] = None,
                             sender_name: Optional[str] = None,
                             from_email: Optional[str] = None) -> Any:
-        """POST /changelogs/{id}/broadcast — **envoie le changelog à des tiers**.
+        """POST /changelogs/{id}/broadcast — **send the changelog to third parties**.
 
-        Scope `changelogs:write`, plan Pro ou supérieur.
+        Scope `changelogs:write`, Pro plan or higher.
 
-        ⚠️ **Effet de bord externe et irréversible.** `email=True` écrit aux
-        contacts ABONNÉS (intégration email requise) ; `slack=True` publie dans
-        les canaux Slack configurés (Slack connecté requis). Rien de tout cela ne
-        se rappelle ni ne s'annule.
+        ⚠️ **External and irreversible side effect.** `email=True` writes to
+        SUBSCRIBED contacts (email integration required); `slack=True` posts to
+        the configured Slack channels (Slack connected required). None of this can
+        be recalled or cancelled.
 
-        ⚠️ **Ne touche jamais `published`** (contrat éditeur explicite) : on peut
-        donc diffuser un changelog non publié — les destinataires recevraient un
-        lien vers une page qui n'est pas visible. Publier, c'est
+        ⚠️ **Never touches `published`** (explicit vendor contract): so an
+        unpublished changelog can be broadcast — recipients would get a
+        link to a page that is not visible. Publishing is
         `update_changelog(published=True)`.
 
-        Les paramètres sont nommés un par un, et non passés en dict, précisément
-        parce qu'un appel qui envoie du courrier mérite d'être lisible sur son
-        site d'appel.
+        Parameters are named one by one, not passed as a dict, precisely
+        because a call that sends mail deserves to be readable at its
+        call site.
 
         Args:
-            changelog_id: le changelog à diffuser.
-            email: écrire aux contacts abonnés.
-            slack: publier dans les canaux Slack configurés.
-            message: texte d'accompagnement.
-            subject: objet de l'email.
-            sender_name: nom d'expéditeur affiché.
-            from_email: adresse d'expédition.
+            changelog_id: the changelog to broadcast.
+            email: write to subscribed contacts.
+            slack: post to the configured Slack channels.
+            message: accompanying text.
+            subject: email subject.
+            sender_name: displayed sender name.
+            from_email: sending address.
         """
         if not email and not slack:
             raise ValueError(
-                "diffuser exige au moins un canal : `email=True` et/ou "
-                "`slack=True`. Sans canal, l'amont refuse — et un appel qui ne "
-                "diffuse rien serait de toute façon un malentendu.")
+                "broadcasting requires at least one channel: `email=True` and/or "
+                "`slack=True`. Without a channel, upstream refuses — and a call that "
+                "broadcasts nothing would be a misunderstanding anyway.")
         body: Dict[str, Any] = {}
         for key, value in (("email", email), ("slack", slack),
                            ("message", message), ("subject", subject),
@@ -140,30 +140,30 @@ class _ChangelogsMixin:
         return self._request("POST", f"/changelogs/{changelog_id}/broadcast",
                              json=body)
 
-    # --- étiquettes de changelog -------------------------------------------
+    # --- changelog tags ----------------------------------------------------
 
     def list_changelog_tags(self) -> Any:
-        """GET /changelog-tags — étiquettes attachables à un changelog.
+        """GET /changelog-tags — tags attachable to a changelog.
 
-        Scope `changelogs:read`. ⚠️ **Pas de pagination** sur cet endpoint,
-        contrairement aux listes v2 : il rend tout d'un coup.
+        Scope `changelogs:read`. ⚠️ **No pagination** on this endpoint,
+        unlike v2 lists: it returns everything at once.
         """
         return self._request("GET", "/changelog-tags")
 
     def create_changelog_tag(self, name: str, color: Optional[str] = None,
                              icon: Optional[str] = None) -> Any:
-        """POST /changelog-tags — crée une étiquette. Scope `changelogs:write`, plan Scale.
+        """POST /changelog-tags — create a tag. Scope `changelogs:write`, Scale plan.
 
-        Fournir **au moins** `color` ou `icon` : avec `color` seul, l'interface
-        rend une pastille colorée ; avec `icon` (un nom d'icône Lucide), elle rend
-        l'icône dans cette couleur.
+        Provide **at least** `color` or `icon`: with `color` alone, the UI
+        renders a colored dot; with `icon` (a Lucide icon name), it renders
+        the icon in that color.
         """
         if not name:
-            raise ValueError("`name` requis.")
+            raise ValueError("`name` is required.")
         if color is None and icon is None:
             raise ValueError(
-                "fournir au moins `color` ou `icon` : une étiquette sans l'un "
-                "des deux n'a pas de rendu.")
+                "provide at least `color` or `icon`: a tag with neither "
+                "has no rendering.")
         body: Dict[str, Any] = {"name": name}
         if color is not None:
             body["color"] = color
@@ -173,21 +173,21 @@ class _ChangelogsMixin:
 
     def update_changelog_tag(self, tag_id: str,
                              payload: Dict[str, Any]) -> Any:
-        """PATCH /changelog-tags/{id} — met à jour une étiquette.
+        """PATCH /changelog-tags/{id} — update a tag.
 
-        Scope `changelogs:write`, plan Scale. Champs : `name`, `color`, `icon`.
-        `icon=None` **retire** l'icône et repasse à la pastille colorée — c'est
-        une valeur signifiante, pas une absence, donc elle doit être présente
-        dans le dict pour être prise en compte.
+        Scope `changelogs:write`, Scale plan. Fields: `name`, `color`, `icon`.
+        `icon=None` **removes** the icon and falls back to the colored dot — it is
+        a meaningful value, not an absence, so it must be present
+        in the dict to be taken into account.
         """
         return self._request("PATCH", f"/changelog-tags/{tag_id}",
                              json=dict(payload))
 
     def delete_changelog_tag(self, tag_id: str) -> Any:
-        """DELETE /changelog-tags/{id} — **suppression DURE**. Plan Scale.
+        """DELETE /changelog-tags/{id} — **HARD delete**. Scale plan.
 
-        Scope `changelogs:write`. ⚠️ Contrairement aux autres suppressions de ce
-        client (soft-delete), celle-ci est définitive, et l'étiquette est
-        **détachée de tous les changelogs** où elle était posée.
+        Scope `changelogs:write`. ⚠️ Unlike the other deletions in this
+        client (soft-delete), this one is permanent, and the tag is
+        **detached from all changelogs** it was applied to.
         """
         return self._request("DELETE", f"/changelog-tags/{tag_id}")

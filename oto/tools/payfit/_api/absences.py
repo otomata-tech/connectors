@@ -1,25 +1,25 @@
-"""Les absences : lecture, création d'une absence DÉJÀ validée, annulation.
+"""Absences: reading, creating an ALREADY-approved absence, cancelling.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `PayfitClient`, qui
-fournit le transport (`_get`, `_post`, `_delete`, `_company_path`).
+This mixin is never instantiated on its own: it is composed into `PayfitClient`,
+which provides the transport (`_get`, `_post`, `_delete`, `_company_path`).
 
-⚠️ **`POST /absences` crée une absence APPROUVÉE**, pas une demande. L'API n'a
-aucun endpoint d'approbation, de refus ou de solde : ce qui est écrit ici entre
-directement en paie. Symétriquement, `DELETE` **annule** l'absence et porte son
-commentaire dans un CORPS JSON — un DELETE à corps, inhabituel, mais c'est ce
-que la spec documente.
+⚠️ **`POST /absences` creates an APPROVED absence**, not a request. The API has
+no approval, refusal or balance endpoint: what is written here goes straight
+into payroll. Symmetrically, `DELETE` **cancels** the absence and carries its
+comment in a JSON BODY — a DELETE with a body, unusual, but that is what the
+spec documents.
 
-⚠️ **Les deux jeux de types ne coïncident pas.** Ce qu'on peut LIRE
-(`AbsenceType`, ~50 valeurs, dont `other` quand PayFit n'a pas encore tranché)
-et ce qu'on peut CRÉER (`CreateAbsenceType`, ~75 valeurs) se recoupent sans
-s'inclure : la création détaille les événements familiaux (`fr_mariage_salarie`,
-`fr_deces_conjoint`…) que la lecture regroupe, et elle n'a ni `fr_maternite` ni
-`fr_accident_travail`. Aucune des deux listes n'est recopiée ici : une valeur inconnue
-repart en 400 nommé par PayFit, là où une liste figée côté client se périmerait
-en silence au prochain type ajouté.
+⚠️ **The two sets of types do not coincide.** What can be READ
+(`AbsenceType`, ~50 values, including `other` when PayFit has not yet decided)
+and what can be CREATED (`CreateAbsenceType`, ~75 values) overlap without
+including each other: creation details the family events (`fr_mariage_salarie`,
+`fr_deces_conjoint`…) that reading groups together, and it has neither
+`fr_maternite` nor `fr_accident_travail`. Neither list is copied here: an unknown
+value comes back as a 400 named by PayFit, whereas a list frozen on the client
+side would silently go stale the next time a type is added.
 
-**Ce que l'API ne sait pas faire** : il n'y a ni solde de congés, ni compteur
-(CP acquis/pris, RTT restants), ni lecture unitaire d'une absence.
+**What the API cannot do**: there is no leave balance, no counter
+(paid leave earned/taken, RTT remaining), and no single-absence read.
 """
 from __future__ import annotations
 
@@ -29,21 +29,21 @@ from ..params import clean
 from ..params import ident as _id
 from ..params import page as _page
 
-# Les moments de journée que l'API accepte aux deux bornes d'une absence. Jeu
-# FERMÉ côté PayFit et stable (une demi-journée n'a pas de quatrième forme) :
-# le refuser ici évite un 400 qui ne nomme pas le champ.
+# The moments of the day the API accepts at both ends of an absence. A CLOSED set
+# on the PayFit side and stable (a half-day has no fourth form):
+# refusing it here avoids a 400 that does not name the field.
 MOMENTS = ("beginning-of-day", "middle-of-day", "end-of-day")
 
 
 def _moment(value: Any, name: str) -> str:
     if value not in MOMENTS:
-        raise ValueError(f"{name} doit valoir l'un de {', '.join(MOMENTS)} — "
-                         f"reçu {value!r}.")
+        raise ValueError(f"{name} must be one of {', '.join(MOMENTS)} — "
+                         f"got {value!r}.")
     return value
 
 
 class _AbsencesMixin:
-    """Absences : lecture, création, annulation."""
+    """Absences: reading, creating, cancelling."""
 
     def list_absences(self, *, limit: int = 50, cursor: Optional[str] = None,
                       contract_id: Optional[str] = None,
@@ -72,18 +72,18 @@ class _AbsencesMixin:
                        start_date: str, end_date: str,
                        start_moment: str = "beginning-of-day",
                        end_moment: str = "end-of-day") -> Any:
-        """POST /companies/{companyId}/absences — une absence déjà VALIDÉE.
+        """POST /companies/{companyId}/absences — an already APPROVED absence.
 
-        Scope `time:write`. Rend `{id}`.
+        Scope `time:write`. Returns `{id}`.
 
         Args:
-            contract_id: le contrat concerné.
-            absence_type: une valeur de `CreateAbsenceType` (`fr_conges_payes`,
-                `fr_rtt`, `fr_sans_solde`, `fr_maladie_ordinaire`…) — le jeu
-                exact est celui de la spec PayFit, pas une liste tenue ici.
-            start_date / end_date: AAAA-MM-JJ.
-            start_moment / end_moment: `beginning-of-day`, `middle-of-day` ou
-                `end-of-day` — les défauts couvrent une absence en jours pleins.
+            contract_id: the contract concerned.
+            absence_type: a `CreateAbsenceType` value (`fr_conges_payes`,
+                `fr_rtt`, `fr_sans_solde`, `fr_maladie_ordinaire`…) — the exact
+                set is the PayFit spec's, not a list kept here.
+            start_date / end_date: YYYY-MM-DD.
+            start_moment / end_moment: `beginning-of-day`, `middle-of-day` or
+                `end-of-day` — the defaults cover an absence in full days.
         """
         return self._post(self._company_path("/absences"), {
             "contractId": _id(contract_id, "contract_id"),
@@ -96,12 +96,12 @@ class _AbsencesMixin:
 
     def cancel_absence(self, absence_id: str, *,
                        comment: Optional[str] = None) -> Any:
-        """DELETE /companies/{companyId}/absences/{absenceId} — annule l'absence.
+        """DELETE /companies/{companyId}/absences/{absenceId} — cancels the absence.
 
-        Scope `time:write`. Répond 204 sans corps.
+        Scope `time:write`. Responds 204 with no body.
 
         Args:
-            comment: commentaire consigné sur l'annulation (facultatif).
+            comment: comment recorded on the cancellation (optional).
         """
         return self._delete(
             self._company_path(f"/absences/{_id(absence_id, 'absence_id')}"),

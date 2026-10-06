@@ -1,11 +1,11 @@
 """Zoho Analytics API v2 client — https://www.zoho.com/analytics/api/v2/
 
-Lecture des données d'un workspace : métadonnées (workspaces, vues) + export
-des données d'une vue (synchrone) et exécution de requêtes SQL SELECT (flux
-d'export asynchrone : create job → poll → download).
+Reads a workspace's data: metadata (workspaces, views) + export
+of a view's data (synchronous) and execution of SQL SELECT queries (asynchronous
+export flow: create job → poll → download).
 
-OAuth2 self-client (client_id/client_secret/refresh_token), même mécanique de
-token que Zoho CRM. Toutes les requêtes portent l'en-tête `ZANALYTICS-ORGID`.
+OAuth2 self-client (client_id/client_secret/refresh_token), same token
+mechanics as Zoho CRM. All requests carry the `ZANALYTICS-ORGID` header.
 """
 
 import json
@@ -18,7 +18,7 @@ from ..common.credentials import require
 from ..common import raise_for_upstream
 from ..zoho.auth import ZohoAuthError, cred_key, get_access_token, invalidate
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
 class ZohoAnalyticsClient:
@@ -31,23 +31,23 @@ class ZohoAnalyticsClient:
         api_domain: Optional[str] = None,
         accounts_url: Optional[str] = None,
     ):
-        """Initialise le client.
+        """Initialize the client.
 
-        Credentials toujours fournis par le consommateur (usage serveur
-        multi-utilisateur). Le token d'accès est mis en cache
-        **en mémoire de process**, keyé par credential (`_TOKEN_CACHE`) — jamais sur
-        disque, jamais partagé entre credentials distincts (clé = hash du secret).
+        Credentials are always supplied by the consumer (multi-user server
+        use). The access token is cached
+        **in process memory**, keyed by credential (`_TOKEN_CACHE`) — never on
+        disk, never shared between distinct credentials (key = hash of the secret).
         """
         self.client_id = require(client_id, "ZOHO_ANALYTICS_CLIENT_ID")
         self.client_secret = require(client_secret, "ZOHO_ANALYTICS_CLIENT_SECRET")
-        # FACULTATIF à la construction : en mode server-based il est obtenu par le
-        # flux de consentement, pas collé. Son absence est signalée au moment
-        # du refresh (message actionnable) plutôt que par une erreur de config.
+        # OPTIONAL at construction: in server-based mode it is obtained through the
+        # consent flow, not pasted. Its absence is reported at refresh
+        # time (actionable message) rather than as a config error.
         self.refresh_token = refresh_token
-        # FACULTATIF à la construction, comme `refresh_token` et pour la même raison :
-        # en mode server-based, l'organisation n'est connue qu'APRÈS le consentement —
-        # c'est `list_orgs()` qui la découvre. Son absence est signalée au moment du
-        # premier appel qui en a besoin (message actionnable), pas à la construction.
+        # OPTIONAL at construction, like `refresh_token` and for the same reason:
+        # in server-based mode, the organization is only known AFTER consent —
+        # `list_orgs()` is what discovers it. Its absence is reported at the time of
+        # the first call that needs it (actionable message), not at construction.
         self.org_id = org_id
         self.api_domain = api_domain or "https://analyticsapi.zoho.com"
         self.accounts_url = accounts_url or "https://accounts.zoho.com"
@@ -57,9 +57,9 @@ class ZohoAnalyticsClient:
     # --- Auth ---
 
     def _get_access_token(self) -> str:
-        """Token d'accès valide, rafraîchi au besoin. Cache PROCESS-WIDE keyé par
-        credential (#233) : une nouvelle instance de client par appel serveur ne
-        re-refresh PAS si un token valide est déjà en cache (sinon rate-limit Zoho)."""
+        """Valid access token, refreshed as needed. PROCESS-WIDE cache keyed by
+        credential (#233): a new client instance per server call does NOT
+        re-refresh if a valid token is already cached (otherwise Zoho rate-limits)."""
         return get_access_token(self.accounts_url, self.client_id,
                                 self.client_secret, self.refresh_token,
                                 key=self._cred_key)
@@ -70,27 +70,27 @@ class ZohoAnalyticsClient:
     # --- HTTP ---
 
     def _auth_headers(self) -> dict:
-        """Authentification seule. Un seul endpoint s'en contente — `list_orgs`, qui
-        sert justement à découvrir l'organisation qu'on ne connaît pas encore."""
+        """Authentication only. Only one endpoint settles for it — `list_orgs`, which
+        precisely serves to discover the organization we do not know yet."""
         return {"Authorization": f"Zoho-oauthtoken {self._get_access_token()}"}
 
     def _headers(self) -> dict:
         if not self.org_id:
             raise ValueError(
-                "Org ID Zoho Analytics manquant : chaque requête porte l'en-tête "
-                "ZANALYTICS-ORGID. Découvre les organisations du compte avec "
-                "`list_orgs()`, puis renseigne celle qui porte tes workspaces.")
+                "Zoho Analytics Org ID missing: every request carries the "
+                "ZANALYTICS-ORGID header. Discover the account's organizations with "
+                "`list_orgs()`, then fill in the one that holds your workspaces.")
         return {**self._auth_headers(), "ZANALYTICS-ORGID": self.org_id}
 
     def _request(self, method: str, url: str, *, parse_json: bool = True,
                  with_org: bool = True, **kwargs) -> Any:
-        """Requête authentifiée avec refresh du token sur 401 et backoff sur 429.
+        """Authenticated request with token refresh on 401 and backoff on 429.
 
-        `url` est absolu (les endpoints Analytics mélangent `/restapi/v2/…` et
-        des URL de download déjà pleines renvoyées par l'API).
+        `url` is absolute (the Analytics endpoints mix `/restapi/v2/…` and
+        already-complete download URLs returned by the API).
 
-        `with_org=False` omet l'en-tête d'organisation — réservé à `list_orgs`, seul
-        endpoint qui répond sans savoir dans quelle organisation chercher."""
+        `with_org=False` omits the organization header — reserved for `list_orgs`, the only
+        endpoint that answers without knowing which organization to look in."""
         build = self._headers if with_org else self._auth_headers
         headers = build()
         for attempt in range(3):
@@ -117,21 +117,21 @@ class ZohoAnalyticsClient:
     def _v2(self, endpoint: str) -> str:
         return f"{self.api_domain}/restapi/v2/{endpoint}"
 
-    # --- Métadonnées ---
+    # --- Metadata ---
 
     def list_orgs(self) -> list[dict]:
-        """Organisations Analytics visibles par ce compte : `{org_id, name, role}`.
+        """Analytics organizations visible to this account: `{org_id, name, role}`.
 
-        Le SEUL endpoint qui ne réclame pas `ZANALYTICS-ORGID` — d'où son intérêt :
-        après un consentement OAuth, il permet de renseigner l'organisation au lieu
-        d'envoyer l'utilisateur chercher un identifiant à onze chiffres dans
-        l'interface Zoho.
+        The ONLY endpoint that does not require `ZANALYTICS-ORGID` — hence its value:
+        after an OAuth consent, it lets us fill in the organization instead of
+        sending the user to look for an eleven-digit identifier in the
+        Zoho interface.
 
-        ⚠️ **Un compte en voit souvent PLUSIEURS** (workspaces partagés), et la
-        réponse ne désigne aucune organisation par défaut. Au-delà d'une seule, c'est
-        donc un CHOIX à faire faire — pas à deviner : sur le premier compte réel
-        testé, deux organisations remontaient, et prendre « la première » aurait
-        désigné la mauvaise."""
+        ⚠️ **An account often sees SEVERAL** (shared workspaces), and the
+        response designates no default organization. Beyond a single one, it is
+        therefore a CHOICE to have made — not to guess: on the first real account
+        tested, two organizations came back, and taking "the first" would have
+        picked the wrong one."""
         payload = self._request("GET", self._v2("orgs"), with_org=False)
         orgs = (payload or {}).get("data", {}).get("orgs") or []
         return [{"org_id": str(o.get("orgId")), "name": o.get("orgName"),
@@ -144,7 +144,7 @@ class ZohoAnalyticsClient:
     def list_views(
         self, workspace_id: str, view_types: Optional[list[int]] = None,
     ) -> dict:
-        """List views of a workspace. `view_types` filtre par code Zoho
+        """List views of a workspace. `view_types` filters by Zoho code
         (0 Table, 2 Chart, 3 Pivot, 4 Summary, 6 QueryTable, 7 Dashboard)."""
         params = {}
         if view_types:
@@ -155,18 +155,18 @@ class ZohoAnalyticsClient:
     def get_view_details(self, view_id: str, *, with_meta: bool = True) -> dict:
         """Get metadata of one view (columns, type, folder…).
 
-        L'API v2 keye le détail d'une vue sur le `view_id` **globalement unique** —
-        l'endpoint est `/restapi/v2/views/<view-id>`, **PAS** imbriqué sous le
-        workspace : un GET sur `/workspaces/<ws>/views/<view-id>` renvoie
-        `INVALID_METHOD` (errorCode 8541), ce chemin n'accepte pas GET.
-        `with_meta` (CONFIG `withInvolvedMetaInfo`) ramène le détail des colonnes
-        + vues impliquées — sinon on n'obtient que l'entête de la vue."""
+        The v2 API keys a view's detail on the **globally unique** `view_id` —
+        the endpoint is `/restapi/v2/views/<view-id>`, **NOT** nested under the
+        workspace: a GET on `/workspaces/<ws>/views/<view-id>` returns
+        `INVALID_METHOD` (errorCode 8541), that path does not accept GET.
+        `with_meta` (CONFIG `withInvolvedMetaInfo`) brings back the detail of columns
+        + involved views — otherwise you only get the view header."""
         params = {}
         if with_meta:
             params["CONFIG"] = json.dumps({"withInvolvedMetaInfo": True})
         return self._request("GET", self._v2(f"views/{view_id}"), params=params)
 
-    # --- Export des données ---
+    # --- Data export ---
 
     def export_view(
         self,
@@ -176,11 +176,11 @@ class ZohoAnalyticsClient:
         criteria: Optional[str] = None,
         selected_columns: Optional[list[str]] = None,
     ) -> Any:
-        """Export synchrone des données d'une vue.
+        """Synchronous export of a view's data.
 
-        `response_format` ∈ csv/json/xml/xls/pdf/html/image. `criteria` = filtre
-        SQL-like Zoho (ex. `"Sales" > 500`). Renvoie le JSON parsé pour `json`,
-        sinon le texte brut."""
+        `response_format` ∈ csv/json/xml/xls/pdf/html/image. `criteria` = Zoho
+        SQL-like filter (e.g. `"Sales" > 500`). Returns the parsed JSON for `json`,
+        otherwise the raw text."""
         config: dict[str, Any] = {"responseFormat": response_format}
         if criteria:
             config["criteria"] = criteria
@@ -201,11 +201,11 @@ class ZohoAnalyticsClient:
         poll_interval: float = 1.5,
         max_polls: int = 40,
     ) -> Any:
-        """Exécute une requête SQL SELECT sur un workspace via le flux d'export
-        asynchrone (create job → poll jusqu'à `JOB COMPLETED` → download).
+        """Run a SQL SELECT query on a workspace via the asynchronous export
+        flow (create job → poll until `JOB COMPLETED` → download).
 
-        Renvoie le JSON parsé pour `json`, sinon le texte brut. Lève si le job
-        échoue ou n'aboutit pas dans `max_polls` itérations."""
+        Returns the parsed JSON for `json`, otherwise the raw text. Raises if the job
+        fails or does not complete within `max_polls` iterations."""
         created = self._request(
             "GET",
             self._v2(f"bulk/workspaces/{workspace_id}/data"),

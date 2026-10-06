@@ -1,39 +1,39 @@
-"""TheirStack API client — offres d'emploi par employeur + technologies utilisées.
+"""TheirStack API client — job postings by employer + technologies used.
 
-API v1 (https://api.theirstack.com, doc https://theirstack.com/en/docs/api-reference),
-auth **Bearer**. Deux surfaces de recherche, chacune un POST dont le corps EST la DSL
-de filtres TheirStack (~110 champs pour les jobs, ~60 pour les entreprises) : le
-client la passe telle quelle, il ne la re-type pas — l'appelant compose le dict, la
-doc éditeur fait foi pour les noms de champs. Réponse = `{metadata, data}`.
+API v1 (https://api.theirstack.com, docs https://theirstack.com/en/docs/api-reference),
+**Bearer** auth. Two search surfaces, each a POST whose body IS the TheirStack
+filter DSL (~110 fields for jobs, ~60 for companies): the
+client passes it through as is, it does not re-type it — the caller composes the dict, the
+vendor docs are authoritative for field names. Response = `{metadata, data}`.
 
 - `search_jobs(payload)`      → POST /v1/jobs/search
 - `search_companies(payload)` → POST /v1/companies/search
-- `credit_balance()`          → GET  /v0/billing/credit-balance (gratuit ; sonde d'auth)
+- `credit_balance()`          → GET  /v0/billing/credit-balance (free; auth probe)
 
-Filtres les plus utiles (extraits du spec OpenAPI du 17/08/2026) :
-- pagination : `page` (0-based, défaut 0), `limit` (défaut 25), `offset`, `cursor` ;
-- fraîcheur : `posted_at_max_age_days` (0 = aujourd'hui), `posted_at_gte`/`_lte`,
-  `discovered_at_max_age_days` ;
-- entreprise : `company_name_or` (exact, SENSIBLE à la casse), `company_name_case_insensitive_or`,
+Most useful filters (extracted from the 2026-08-17 OpenAPI spec):
+- pagination: `page` (0-based, default 0), `limit` (default 25), `offset`, `cursor`;
+- freshness: `posted_at_max_age_days` (0 = today), `posted_at_gte`/`_lte`,
+  `discovered_at_max_age_days`;
+- company: `company_name_or` (exact, CASE-SENSITIVE), `company_name_case_insensitive_or`,
   `company_name_partial_match_or`, `company_domain_or`, `company_linkedin_url_or`,
-  `company_country_code_or` (ISO2, pays du siège), `min_employee_count`/`max_employee_count`,
-  `industry_or`, `company_technology_slug_or` ;
-- offre : `job_title_or` (mots-clés), `job_title_pattern_or` (regex), `job_country_code_or`
+  `company_country_code_or` (ISO2, HQ country), `min_employee_count`/`max_employee_count`,
+  `industry_or`, `company_technology_slug_or`;
+- job: `job_title_or` (keywords), `job_title_pattern_or` (regex), `job_country_code_or`
   (ISO2), `job_location_pattern_or`, `job_seniority_or`, `job_technology_slug_or`,
-  `job_description_pattern_or`, `workplace_types_or`, `employment_statuses_or` ;
-- coût : `include_total_results` (lent, à ne poser qu'au 1er appel), `blur_company_data`
-  (aperçu flouté, sans crédit — sur demande à TheirStack pour les nouveaux workspaces).
+  `job_description_pattern_or`, `workplace_types_or`, `employment_statuses_or`;
+- cost: `include_total_results` (slow, only set on the 1st call), `blur_company_data`
+  (blurred preview, no credit — on request to TheirStack for new workspaces).
 
-⚠️ `/v1/jobs/search` exige AU MOINS un de : `posted_at_max_age_days`, `posted_at_gte`,
+⚠️ `/v1/jobs/search` requires AT LEAST one of: `posted_at_max_age_days`, `posted_at_gte`,
 `posted_at_lte`, `company_domain_or`, `company_linkedin_url_or`, `company_name_or` —
-sinon l'API refuse (raison de performance). Rien n'est ajouté ici : le refus amont
-remonte tel quel (`UpstreamHTTPError`, status 4xx), lisible par l'appelant.
+otherwise the API refuses (performance reasons). Nothing is added here: the upstream refusal
+surfaces as is (`UpstreamHTTPError`, status 4xx), readable by the caller.
 
-Facturation (spec OpenAPI du 17/08/2026) : le crédit se compte au RECORD rendu —
-1 crédit API par offre sur `/v1/jobs/search`, 3 par entreprise sur
-`/v1/companies/search` ; `limit` borne donc la dépense. `metadata.truncated_results`
-/ `truncated_companies` disent combien de résultats n'ont PAS été rendus faute de
-crédits.
+Billing (2026-08-17 OpenAPI spec): credit is counted per RECORD returned —
+1 API credit per job on `/v1/jobs/search`, 3 per company on
+`/v1/companies/search`; `limit` therefore bounds the spend. `metadata.truncated_results`
+/ `truncated_companies` say how many results were NOT returned for lack of
+credits.
 
 Requires: requests
 """
@@ -46,23 +46,23 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
 
 class TheirStackClient:
-    """Client TheirStack v1 (https://api.theirstack.com), auth Bearer."""
+    """TheirStack v1 client (https://api.theirstack.com), Bearer auth."""
 
     BASE_URL = "https://api.theirstack.com"
 
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: clé TheirStack.
+            api_key: TheirStack key.
         """
         self.api_key = require(api_key, "THEIRSTACK_API_KEY")
         self.session = requests.Session()
-        # La clé part en HEADER, jamais en query string (elle atterrirait dans l'URL,
-        # donc dans le message de toute exception requests, les logs et Sentry).
+        # The key goes in a HEADER, never in the query string (it would land in the URL,
+        # hence in the message of any requests exception, the logs and Sentry).
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -82,45 +82,45 @@ class TheirStackClient:
         if payload is None:
             return {}
         if not isinstance(payload, dict):
-            raise ValueError("payload doit être un dict (la DSL de filtres TheirStack).")
+            raise ValueError("payload must be a dict (the TheirStack filter DSL).")
         return dict(payload)
 
-    # --- recherche ----------------------------------------------------------
+    # --- search -------------------------------------------------------------
 
     def search_jobs(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """POST /v1/jobs/search — offres d'emploi filtrées par la DSL TheirStack.
+        """POST /v1/jobs/search — job postings filtered by the TheirStack DSL.
 
-        `payload` = le corps tel que documenté par l'éditeur (`page`, `limit`,
+        `payload` = the body as documented by the vendor (`page`, `limit`,
         `posted_at_max_age_days`, `company_name_or`, `company_country_code_or`,
-        `job_country_code_or`, `job_title_or`, `job_technology_slug_or`…). Renvoie
+        `job_country_code_or`, `job_title_or`, `job_technology_slug_or`…). Returns
         `{metadata: {total_results?, truncated_results, truncated_companies,
-        total_companies?}, data: [job…]}` — chaque job porte `company`, `job_title`,
+        total_companies?}, data: [job…]}` — each job carries `company`, `job_title`,
         `date_posted`, `url`, `location`, `company_domain`, `technology_slugs`,
         `company_object`, `description`…
 
-        Coût : 1 crédit API par offre rendue → borner `limit`.
+        Cost: 1 API credit per job returned → bound `limit`.
         """
         return self._request("POST", "/v1/jobs/search", json=self._payload(payload))
 
     def search_companies(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """POST /v1/companies/search — entreprises filtrées par firmographie,
-        technologies (`company_technology_slug_or`) et signaux de recrutement
+        """POST /v1/companies/search — companies filtered by firmographics,
+        technologies (`company_technology_slug_or`) and hiring signals
         (`job_filters` + `min_num_jobs_found`).
 
-        Renvoie `{metadata, data: [company…]}` — chaque entreprise porte `name`,
+        Returns `{metadata, data: [company…]}` — each company carries `name`,
         `domain`, `employee_count`, `industry`, `country_code`, `technology_names`,
         `technology_slugs`, `num_jobs`, `jobs_found`, `technologies_found`,
         `linkedin_url`, `annual_revenue_usd`…
 
-        Coût : 3 crédits API par entreprise rendue → borner `limit`. Une entreprise
-        absente de la base (couverture partielle des PME) rend `data: []` — ce n'est
-        pas une erreur.
+        Cost: 3 API credits per company returned → bound `limit`. A company
+        absent from the database (partial SME coverage) returns `data: []` — this is
+        not an error.
         """
         return self._request("POST", "/v1/companies/search", json=self._payload(payload))
 
-    # --- compte -------------------------------------------------------------
+    # --- account ------------------------------------------------------------
 
     def credit_balance(self) -> Dict[str, Any]:
-        """GET /v0/billing/credit-balance — solde de crédits de l'équipe. Appel
-        authentifié GRATUIT : c'est la sonde « la clé marche-t-elle ? » sans dépenser."""
+        """GET /v0/billing/credit-balance — the team's credit balance. FREE
+        authenticated call: it is the "does the key work?" probe without spending."""
         return self._request("GET", "/v0/billing/credit-balance")

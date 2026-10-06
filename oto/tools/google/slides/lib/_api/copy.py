@@ -1,14 +1,14 @@
-"""Duplication d'une slide et recopie d'une slide vers une autre présentation.
+"""Duplicating a slide and copying a slide into another presentation.
 
-Extrait de `slides_client.py` (découpage par famille d'opérations, surface
-publique figée) : les corps sont inchangés. Ce mixin n'est jamais instancié
-seul — il est composé dans `SlidesClient`, qui construit `slides_service` et
+Extracted from `slides_client.py` (split by operation family, public surface
+frozen): the bodies are unchanged. This mixin is never instantiated on its
+own — it is composed into `SlidesClient`, which builds `slides_service` and
 `drive_service`.
 """
 
 
 class _CopyMixin:
-    """Duplication d'une slide et recopie d'une slide vers une autre présentation."""
+    """Duplicating a slide and copying a slide into another presentation."""
 
     def duplicate_slide(self, presentation_id, slide_id, insertion_index=None):
         """

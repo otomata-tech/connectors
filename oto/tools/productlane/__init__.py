@@ -1,1 +1,1 @@
-"""Client Productlane (retours clients, roadmap adossée à Linear, centre d'aide)."""
+"""Productlane client (customer feedback, Linear-backed roadmap, help center)."""

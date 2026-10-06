@@ -61,9 +61,9 @@ def test_normalize_site_url(raw, expected):
 
 
 def test_http_refused_unless_explicitly_allowed():
-    with pytest.raises(ValueError, match="en clair"):
+    with pytest.raises(ValueError, match="in clear"):
         normalize_site_url("http://blog.example.com")
-    with pytest.raises(ValueError, match="en clair"):
+    with pytest.raises(ValueError, match="in clear"):
         WordPressClient("http://blog.example.com", "u", "p")
     assert normalize_site_url("http://localhost:8080", allow_http=True) == "http://localhost:8080"
     assert WordPressClient("http://localhost:8080", "u", "p", allow_http=True,
@@ -75,7 +75,7 @@ def test_http_refused_unless_explicitly_allowed():
 def test_credentials_in_url_refused_and_not_echoed(raw):
     with pytest.raises(ValueError) as e:
         normalize_site_url(raw)
-    assert "secret" not in str(e.value) and "identifiants" in str(e.value)
+    assert "secret" not in str(e.value) and "credentials" in str(e.value)
 
 
 def test_normalize_rejects_empty_and_bad_scheme():
@@ -162,7 +162,7 @@ def test_redirect_on_write_is_raised(calls, call):
 def test_list_of_a_non_collection_is_an_error(calls):
     _, replies = calls
     replies.append(_Resp({"code": "x", "data": {}}))
-    with pytest.raises(UpstreamHTTPError, match="liste"):
+    with pytest.raises(UpstreamHTTPError, match="list"):
         _client().list("wp/v2/settings")
 
 

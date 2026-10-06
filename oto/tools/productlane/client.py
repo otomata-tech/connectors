@@ -1,54 +1,54 @@
-"""Productlane API client — retours clients, roadmap, centre d'aide.
+"""Productlane API client — customer feedback, roadmap, help center.
 
-API **v2** (`https://productlane.com/api/v2`, doc https://productlane.mintlify.dev),
-auth **Bearer**. Une méthode = un endpoint ; corps et réponses passent tels quels,
-le client n'invente aucune sémantique. Chemins, verbes, paramètres et scopes
-relevés dans l'OpenAPI publié par l'éditeur (`openapi-v2.json`) le 2026-09-02.
+API **v2** (`https://productlane.com/api/v2`, docs https://productlane.mintlify.dev),
+auth **Bearer**. One method = one endpoint; bodies and responses pass through as-is,
+the client invents no semantics. Paths, verbs, parameters and scopes were
+taken from the OpenAPI published by the vendor (`openapi-v2.json`) on 2026-09-02.
 
-Ce module porte la **construction et le transport**, et compose les familles
-d'appels de `_api/` (fils, contacts, entreprises, roadmap, changelogs, docs,
-taxonomie, méta). Les constantes vivent dans `const.py` et sont réexportées ici :
-le backend épingle oto-core par tag et n'importe que
+This module carries **construction and transport**, and composes the call
+families from `_api/` (threads, contacts, companies, roadmap, changelogs, docs,
+taxonomy, meta). Constants live in `const.py` and are re-exported here:
+the backend pins oto-core by tag and only imports
 `oto.tools.productlane.client`.
 
-Cinq choses conditionnent l'appelant :
+Five things the caller must know:
 
-- **Pagination par CURSEUR, partout, sans exception.** Ni `page`, ni `offset`,
-  ni `skip` nulle part. Une liste rend `{data: [...], page: {cursor, has_more,
-  limit}}` ; la boucle se fait sur `has_more`, pas sur la taille de `data`
-  (« Empty array on the last page if it lined up »). `iterate()` écrit cette
-  boucle une fois — la recopier au site d'appel est le moyen le plus simple de
-  perdre une page. Tri figé côté serveur (`created_at DESC, id DESC`), sans
-  paramètre pour en changer.
+- **CURSOR pagination, everywhere, no exception.** No `page`, no `offset`,
+  no `skip` anywhere. A list returns `{data: [...], page: {cursor, has_more,
+  limit}}`; loop on `has_more`, not on the size of `data`
+  ("Empty array on the last page if it lined up"). `iterate()` writes this
+  loop once — copying it at the call site is the easiest way to
+  lose a page. Order is fixed server-side (`created_at DESC, id DESC`), with no
+  parameter to change it.
 
-- ⚠️ **`limit` plafonne à 200** (défaut 50). `_check_limit` refuse localement
-  hors bornes plutôt que de laisser partir un 400.
+- ⚠️ **`limit` caps at 200** (default 50). `_check_limit` rejects out-of-range
+  values locally rather than letting a 400 go out.
 
-- ⚠️ **Productlane est un MIROIR de Linear pour sa roadmap.** Projets et issues
-  sont créés dans Linear d'abord ; les mises à jour et suppressions y sont
-  poussées, **et un échec de cette synchro ne fait PAS échouer l'appel** (il est
-  journalisé côté éditeur). Un `200` sur `update_issue` ne prouve donc pas que
-  Linear a suivi. Voir `_api/roadmap.py`.
+- ⚠️ **Productlane is a MIRROR of Linear for its roadmap.** Projects and issues
+  are created in Linear first; updates and deletions are pushed
+  there, **and a failure of that sync does NOT fail the call** (it is
+  logged on the vendor side). A `200` on `update_issue` therefore does not prove
+  that Linear followed. See `_api/roadmap.py`.
 
-- ⚠️ **Un seul appel de tout ce client écrit à des tiers** :
-  `broadcast_changelog` (email aux contacts abonnés et/ou publication Slack).
-  Sans annulation ni rappel possible. Il est traité à part dans
-  `_api/changelogs.py` — signature explicite, refus local si aucun canal.
+- ⚠️ **Only one call in this whole client writes to third parties**:
+  `broadcast_changelog` (email to subscribed contacts and/or Slack post).
+  It cannot be cancelled or recalled. It is handled separately in
+  `_api/changelogs.py` — explicit signature, local refusal if no channel.
 
-- **Les énumérations sont scopées à leur endpoint** : `status` ne vaut pas la
-  même chose sur un fil et sur un brouillon de doc, `type` pas la même chose sur
-  un expéditeur bloqué et sur un message. `const.py` en donne la raison, et porte
-  un nom par usage plutôt qu'un nom par paramètre.
+- **Enums are scoped to their endpoint**: `status` does not mean the
+  same thing on a thread and on a doc draft, `type` not the same thing on
+  a blocked sender and on a message. `const.py` gives the reason, and carries
+  one name per usage rather than one name per parameter.
 
-Limites amont **par clé** : 1000 GET/minute, 60 écritures/minute, burst 2× sur
-10 s. Chaque réponse porte `X-RateLimit-{Limit,Remaining,Reset}` ; le 429 porte
-`Retry-After`, respecté par la boucle de re-tentative — **en lecture seule**,
-l'API n'offrant aucune clé d'idempotence.
+Upstream limits **per key**: 1000 GET/minute, 60 writes/minute, 2x burst over
+10 s. Every response carries `X-RateLimit-{Limit,Remaining,Reset}`; the 429 carries
+`Retry-After`, honored by the retry loop — **for reads only**,
+since the API offers no idempotency key.
 
-**Hors périmètre, délibérément** (à ne pas « compléter » sans décision) : toute
-l'administration de l'espace de travail — `/members`, invitations, changement de
-rôle, retrait d'un membre. Elle exige le scope `admin`, envoie des emails
-d'invitation, et n'a rien à faire dans un connecteur de retours clients.
+**Out of scope, deliberately** (do not "complete" without a decision): all
+workspace administration — `/members`, invitations, role changes,
+member removal. It requires the `admin` scope, sends invitation emails,
+and has no place in a customer-feedback connector.
 
 Requires: requests
 """
@@ -84,22 +84,22 @@ class ProductlaneClient(
     _DocsMixin,
     _TaxonomyMixin,
 ):
-    """Client Productlane v2 (https://productlane.com/api/v2), auth Bearer."""
+    """Productlane v2 client (https://productlane.com/api/v2), Bearer auth."""
 
     BASE_URL = "https://productlane.com/api/v2"
 
     def __init__(self, api_key: Optional[str] = None):
         """
         Args:
-            api_key: clé d'API v2 Productlane.
+            api_key: Productlane v2 API key.
 
-        La clé se génère dans Productlane (Settings → API). ⚠️ Une clé **v1** ne
-        marche pas ici : v2 est une API distincte, et v1 s'arrête le 20/11/2026.
+        The key is generated in Productlane (Settings → API). ⚠️ A **v1** key does
+        not work here: v2 is a separate API, and v1 shuts down on 2026-11-20.
         """
         self.api_key = require(api_key, "PRODUCTLANE_API_KEY")
         self.session = requests.Session()
-        # Clé en HEADER uniquement (jamais en query string : elle finirait dans
-        # l'URL, donc dans le message de toute exception, les logs et Sentry).
+        # Key in the HEADER only (never in the query string: it would end up in
+        # the URL, hence in every exception message, the logs and Sentry).
         self.session.headers.update({
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -110,42 +110,42 @@ class ProductlaneClient(
 
     @staticmethod
     def _check_limit(limit: Optional[int]) -> None:
-        """`limit` hors [1, 200] est refusé ICI. L'API rendrait un 400 ; le dire
-        localement nomme la borne réelle, que personne ne devine."""
+        """A `limit` outside [1, 200] is rejected HERE. The API would return a 400; saying
+        so locally names the real bound, which nobody can guess."""
         if limit is None:
             return
         if not isinstance(limit, int) or isinstance(limit, bool):
-            raise ValueError("`limit` doit être un entier.")
+            raise ValueError("`limit` must be an integer.")
         if not (MIN_LIMIT <= limit <= MAX_LIMIT):
             raise ValueError(
-                f"`limit` doit être entre {MIN_LIMIT} et {MAX_LIMIT} "
-                f"(plafond de l'API Productlane) ; reçu {limit}. "
-                "Au-delà, paginer avec `cursor` (ou boucler avec `iterate`).")
+                f"`limit` must be between {MIN_LIMIT} and {MAX_LIMIT} "
+                f"(Productlane API cap); got {limit}. "
+                "Beyond that, paginate with `cursor` (or loop with `iterate`).")
 
     @staticmethod
     def _check_choice(name: str, value: Optional[Any],
                       allowed: Iterable[Any]) -> None:
-        """Refuse localement une valeur hors énumération, en NOMMANT les valides.
+        """Locally reject a value outside the enum, NAMING the valid ones.
 
-        ⚠️ Les énumérations sont passées PAR L'APPELANT, depuis `const.py` :
-        le même nom de paramètre n'a pas les mêmes valeurs partout (cf. l'en-tête
-        de `const.py`), donc ce garde ne peut pas les deviner du nom.
+        ⚠️ Enums are passed BY THE CALLER, from `const.py`:
+        the same parameter name does not have the same values everywhere (see the header
+        of `const.py`), so this guard cannot infer them from the name.
         """
         if value is None:
             return
         allowed = tuple(allowed)
         if value not in allowed:
             raise ValueError(
-                f"`{name}` invalide : {value!r}. Valeurs acceptées : "
+                f"`{name}` invalid: {value!r}. Accepted values: "
                 + ", ".join(repr(a) for a in allowed))
 
     @staticmethod
     def _encode_params(params: Optional[Dict[str, Any]]) -> List[Tuple[str, Any]]:
-        """Params → liste de paires, `None` retiré, booléens en `true`/`false`.
+        """Params → list of pairs, `None` dropped, booleans as `true`/`false`.
 
-        (requests écrirait `True`, que le serveur ne lit pas comme un booléen.)
-        Une liste est jointe par des virgules : c'est la forme que l'API v2 lit
-        pour ses rares paramètres multi-valeurs (`expand`).
+        (requests would write `True`, which the server does not read as a boolean.)
+        A list is joined with commas: that is the form the v2 API reads
+        for its few multi-valued parameters (`expand`).
         """
         out: List[Tuple[str, Any]] = []
         for key, value in (params or {}).items():
@@ -161,8 +161,8 @@ class ProductlaneClient(
 
     @staticmethod
     def _retry_after(resp: Any, attempt: int) -> float:
-        """Délai avant re-tentative : `Retry-After` s'il est là (l'amont sait mieux
-        que nous), sinon backoff exponentiel."""
+        """Delay before retrying: `Retry-After` if present (upstream knows better
+        than we do), otherwise exponential backoff."""
         raw = (getattr(resp, "headers", None) or {}).get("Retry-After")
         if raw:
             try:
@@ -175,9 +175,9 @@ class ProductlaneClient(
                  params: Optional[Dict[str, Any]] = None,
                  json: Any = None) -> Any:
         encoded = self._encode_params(params)
-        # Retente 429/5xx en LECTURE seulement : l'API n'offre AUCUNE clé
-        # d'idempotence, donc rejouer un POST créerait un doublon — un fil de
-        # plus, ou pire, une diffusion de changelog envoyée deux fois.
+        # Retry 429/5xx for READS only: the API offers NO idempotency key,
+        # so replaying a POST would create a duplicate — one more thread, or
+        # worse, a changelog broadcast sent twice.
         retryable = method.upper() in ("GET", "HEAD")
         last = None
         for attempt in range(MAX_ATTEMPTS):
@@ -202,26 +202,26 @@ class ProductlaneClient(
 
     def iterate(self, method: Any, *args: Any,
                 max_pages: Optional[int] = None, **kwargs: Any) -> Iterator[Any]:
-        """Déroule une liste paginée par curseur, page après page, et rend les LIGNES.
+        """Walk a cursor-paginated list page by page and yield the ROWS.
 
-        Écrit une fois ce que chaque appelant réécrirait mal : la boucle s'arrête
-        sur `page.has_more`, **pas** sur `data` vide — la doc éditeur prévient
-        qu'une dernière page peut être vide « if it lined up », et s'arrêter là
-        raterait le cas inverse (des lignes derrière un `has_more` vrai).
+        Writes once what every caller would rewrite badly: the loop stops
+        on `page.has_more`, **not** on an empty `data` — the vendor docs warn
+        that a last page can be empty "if it lined up", and stopping there
+        would miss the opposite case (rows behind a true `has_more`).
 
-        `method` est une méthode de liste de ce client, passée telle quelle ::
+        `method` is a list method of this client, passed as-is ::
 
             for fil in client.iterate(client.list_threads, status="open"):
                 ...
 
-        `max_pages` borne le déroulé — utile quand l'appelant sert un agent et
-        doit tenir un budget de réponse.
+        `max_pages` bounds the walk — useful when the caller serves an agent and
+        has to stay within a response budget.
 
-        ⚠️ Ne pas passer `cursor` : c'est cette boucle qui le gère.
+        ⚠️ Do not pass `cursor`: this loop manages it.
         """
         if "cursor" in kwargs:
             raise ValueError(
-                "`iterate` gère le curseur lui-même — ne pas le passer.")
+                "`iterate` manages the cursor itself — do not pass it.")
         pages = 0
         cursor: Optional[str] = None
         while True:

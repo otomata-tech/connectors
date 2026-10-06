@@ -10,12 +10,12 @@ consolidation trick is needed.
 Derived from Tally's OpenAPI 3.0.1 spec
 (`https://developers.tally.so/api-reference/openapi.json`, read 2026-08-31) —
 required fields, body shapes, enums and `limit` bounds are all spec-derived,
-not guessed from doc prose — **et testé en live le 2026-08-31** avec une vraie
-clé `tly-` (compte FREE) : identité, formulaires (création → lecture → PATCH →
-corbeille), questions, réponses, les cinq vues d'analytics et le cycle complet
-d'un webhook (création → liste → journal → PATCH → suppression) répondent
-exactement comme codé. Ce que ce compte n'a PAS permis d'exercer est dit plus
-bas, nommément.
+not guessed from doc prose — **and tested live on 2026-08-31** with a real
+`tly-` key (FREE account): identity, forms (create → read → PATCH →
+trash), questions, responses, the five analytics views and the full cycle
+of a webhook (create → list → log → PATCH → delete) respond
+exactly as coded. What this account did NOT allow us to exercise is stated
+below, by name.
 
 ## The version header is not optional
 
@@ -48,52 +48,52 @@ describes. **Confirmed accepted in live on 2026-08-31** — every call in this
 module was made with that header. `api_version=None` disables the header
 entirely, falling back to whatever the key is pinned to.
 
-## Les enveloppes de liste, relevées en live — le spec ne les tranchait pas
+## The list envelopes, recorded live — the spec did not settle them
 
-Il n'y a PAS une forme de liste, il y en a quatre, et deux d'entre elles ne se
-devinent pas (relevé 2026-08-31) :
+There is NOT one list shape, there are four, and two of them cannot be
+guessed (recorded 2026-08-31):
 
-| appel | enveloppe |
+| call | envelope |
 |---|---|
 | `GET /forms`, `GET /workspaces` | `{items, page, limit, total, hasMore}` |
 | `GET /webhooks` | `{webhooks, page, limit, hasMore, totalCount}` — **pas** `items` |
 | `GET /webhooks/{id}/events` | `{page, limit, hasMore, totalNumberOfEvents, events}` |
 | `GET /forms/{id}/questions` | `{questions, hasResponses}` |
 | `GET /forms/{id}/submissions` | `{page, limit, hasMore, totalNumberOfSubmissionsPerFilter, questions, submissions}` |
-| `GET /organizations/{id}/users`, `.../invites` | **un tableau nu**, sans enveloppe |
+| `GET /organizations/{id}/users`, `.../invites` | **a bare array**, no envelope |
 
-`PATCH /webhooks/{id}` et les `DELETE` rendent un **corps vide** (d'où le
-`return None` du transport sur un corps vide, pas seulement sur un 204).
+`PATCH /webhooks/{id}` and the `DELETE`s return an **empty body** (hence the
+transport's `return None` on an empty body, not only on a 204).
 
-## Un 401 de Tally ne veut pas dire « clé invalide »
+## A Tally 401 does not mean "invalid key"
 
-Relevé en live, et c'est le piège le plus coûteux de cette API :
+Recorded live, and this is the costliest trap of this API:
 
-- `GET /webhooks` rend **401** tant qu'aucun webhook n'a JAMAIS été créé sur le
-  compte. Après une première création il rend 200 — et continue de rendre 200
-  même une fois tous les webhooks supprimés. Le 401 dit « l'intégration
-  webhooks n'existe pas encore », pas « ta clé est mauvaise ».
-- `GET /forms/{id}/blocks` et `POST /workspaces` rendent **401** sur un plan
-  FREE (gate de plan, pas d'authentification).
+- `GET /webhooks` returns **401** as long as no webhook has EVER been created on the
+  account. After a first creation it returns 200 — and keeps returning 200
+  even once all the webhooks are deleted. The 401 says "the webhooks
+  integration does not exist yet", not "your key is bad".
+- `GET /forms/{id}/blocks` and `POST /workspaces` return **401** on a FREE
+  plan (plan gate, not authentication).
 
-La sonde qui tranche est `get_me()` : si elle répond, la clé est bonne.
+The probe that settles it is `get_me()`: if it answers, the key is good.
 
-## ⚠️ Les URL rendues portent des jetons signés
+## ⚠️ The returned URLs carry signed tokens
 
-Trois champs d'une réponse embarquent un `accessToken` (un JWT) et une
-`signature` dans leur query string — vérifié en live :
+Three fields of a response embed an `accessToken` (a JWT) and a
+`signature` in their query string — verified live:
 
-- `submissions[].previewUrl` — la page de la réponse ;
-- `submissions[].pdfUrl` — le PDF de la réponse ;
-- l'`answer` d'une question `FILE_UPLOAD` — chaque fichier déposé, sur
+- `submissions[].previewUrl` — the response's page;
+- `submissions[].pdfUrl` — the response's PDF;
+- the `answer` of a `FILE_UPLOAD` question — each uploaded file, on
   `storage.tally.so/private/...`.
 
-Ce ne sont pas des URL publiques : le jeton EST le droit d'accès. Elles
-traversent donc le contexte de l'agent et tout ce qui journalise un résultat
-d'outil. Le client ne les retire pas — sans elles le fichier est inatteignable,
-et c'est précisément ce à quoi il sert — mais quiconque journalise, met en
-cache ou re-publie une réponse doit savoir qu'il manipule un porteur de droit,
-pas une référence inerte.
+These are not public URLs: the token IS the access right. They therefore
+travel through the agent's context and through anything that logs a tool
+result. The client does not strip them — without them the file is unreachable,
+and that is precisely what it is for — but whoever logs, caches or
+re-publishes a response must know they are handling a bearer of rights,
+not an inert reference.
 
 ## Rate limit
 

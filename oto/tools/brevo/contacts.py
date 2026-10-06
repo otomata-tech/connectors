@@ -1,9 +1,9 @@
-"""Brevo — contacts, attributs, listes, dossiers, segments.
+"""Brevo — contacts, attributes, lists, folders, segments.
 
-Vocabulaire Brevo : un **contact** porte des `attributes` (colonnes typées,
-déclarées au niveau du compte) ; il appartient à des **listes** ; une liste vit
-dans un **dossier** (`folderId` obligatoire à la création) ; un **segment** est
-une liste dynamique définie par un filtre (lecture seule via l'API).
+Brevo vocabulary: a **contact** carries `attributes` (typed columns, declared
+at account level); it belongs to **lists**; a list lives in a **folder**
+(`folderId` is mandatory at creation); a **segment** is a dynamic list
+defined by a filter (read-only through the API).
 """
 from __future__ import annotations
 
@@ -28,16 +28,16 @@ class ContactsMixin(_BrevoBase):
         ids: Optional[List[int]] = None,
         filter: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Liste les contacts (paginé).
+        """List contacts (paginated).
 
         Args:
-            limit: max 1000 côté Brevo.
+            limit: max 1000 on Brevo's side.
             modified_since / created_since: ISO 8601 UTC (`YYYY-MM-DDTHH:mm:ss.SSSZ`).
-            sort: `asc` | `desc` (défaut `desc`, par date de création).
-            segment_id: filtre par segment. **Exclusif avec `list_ids`.**
-            ids: max 20 ids de contact.
-            filter: filtre sur attributs, opérateur `equals` uniquement
-                (ex. `equals(FIRSTNAME,"Alex")`).
+            sort: `asc` | `desc` (default `desc`, by creation date).
+            segment_id: filter by segment. **Mutually exclusive with `list_ids`.**
+            ids: max 20 contact ids.
+            filter: filter on attributes, `equals` operator only
+                (e.g. `equals(FIRSTNAME,"Alex")`).
         """
         params = self._clean({
             "limit": min(limit, 1000), "offset": offset,
@@ -54,12 +54,12 @@ class ContactsMixin(_BrevoBase):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Récupère un contact.
+        """Fetch a contact.
 
         Args:
-            identifier: email, id numérique, téléphone ou EXT_ID selon `identifier_type`.
+            identifier: email, numeric id, phone or EXT_ID depending on `identifier_type`.
             identifier_type: `email_id` | `contact_id` | `phone_id` | `ext_id` |
-                `whatsapp_id` | `landline_number_id`. Défaut Brevo = email.
+                `whatsapp_id` | `landline_number_id`. Brevo default = email.
         """
         params = self._clean({
             "identifierType": identifier_type,
@@ -77,9 +77,9 @@ class ContactsMixin(_BrevoBase):
         email_blacklisted: Optional[bool] = None,
         sms_blacklisted: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """Crée un contact — ou le met à jour si `update_enabled` (défaut).
+        """Create a contact — or update it if `update_enabled` (default).
 
-        Renvoie `{"id": …}` à la création ; **corps vide (204) sur une mise à jour**.
+        Returns `{"id": …}` on creation; **empty body (204) on an update**.
         """
         body = self._clean({
             "email": email, "attributes": attributes, "listIds": list_ids,
@@ -99,10 +99,10 @@ class ContactsMixin(_BrevoBase):
         sms_blacklisted: Optional[bool] = None,
         ext_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Met à jour un contact existant. `unlink_list_ids` le retire de ces listes.
+        """Update an existing contact. `unlink_list_ids` removes it from those lists.
 
-        À préférer à `upsert_contact` quand on cible par id/ext_id, ou pour
-        désinscrire d'une liste. Renvoie un corps vide (204) en cas de succès.
+        Prefer over `upsert_contact` when targeting by id/ext_id, or to
+        unsubscribe from a list. Returns an empty body (204) on success.
         """
         body = self._clean({
             "attributes": attributes, "listIds": list_ids,
@@ -117,7 +117,7 @@ class ContactsMixin(_BrevoBase):
         self, identifier: str,
         start_date: Optional[str] = None, end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Stats de campagnes d'un contact (ouvertures, clics, bounces…)."""
+        """A contact's campaign stats (opens, clicks, bounces…)."""
         params = self._clean({"startDate": start_date, "endDate": end_date})
         return self._request(
             "GET", f"/contacts/{identifier}/campaignStats", params=params or None)
@@ -134,16 +134,16 @@ class ContactsMixin(_BrevoBase):
         notify_url: Optional[str] = None,
         disable_notification: bool = True,
     ) -> Dict[str, Any]:
-        """Import de masse **asynchrone** — renvoie `{"processId": …}`.
+        """**Asynchronous** bulk import — returns `{"processId": …}`.
 
-        La voie à prendre au-delà de 150 contacts (au lieu de `add_to_list`).
-        Fournir **une** source : `json_body` (liste de `{"email", "attributes", …}`),
-        `file_url` (CSV distant) ou `file_body` (CSV inline, `;` en séparateur).
+        The way to go beyond 150 contacts (instead of `add_to_list`).
+        Provide **one** source: `json_body` (list of `{"email", "attributes", …}`),
+        `file_url` (remote CSV) or `file_body` (inline CSV, `;` as separator).
 
         Args:
-            new_list: `{"listName": …, "folderId": …}` pour créer la liste au vol.
-            empty_contacts_attributes: `True` écrase par du vide les attributs
-                absents du fichier. Destructif — laisser `False`.
+            new_list: `{"listName": …, "folderId": …}` to create the list on the fly.
+            empty_contacts_attributes: `True` overwrites with empty values the
+                attributes missing from the file. Destructive — leave `False`.
         """
         body = self._clean({
             "listIds": list_ids, "jsonBody": json_body, "fileUrl": file_url,
@@ -161,11 +161,11 @@ class ContactsMixin(_BrevoBase):
         notify_url: Optional[str] = None,
         disable_notification: bool = True,
     ) -> Dict[str, Any]:
-        """Export **asynchrone** des contacts — renvoie `{"processId": …}`.
+        """**Asynchronous** contact export — returns `{"processId": …}`.
 
         Args:
             contact_filter: `{"listIds": [1]}` | `{"segmentId": 2}` |
-                `{"emailBlacklisted": true}`. Défaut = tous les contacts.
+                `{"emailBlacklisted": true}`. Default = all contacts.
         """
         body = self._clean({
             "customContactFilter": contact_filter or {"emailBlacklisted": False},
@@ -174,37 +174,37 @@ class ContactsMixin(_BrevoBase):
         })
         return self._request("POST", "/contacts/export", json=body)
 
-    # --- Attributs & segments -----------------------------------------------
+    # --- Attributes & segments ----------------------------------------------
 
     def list_attributes(self) -> Dict[str, Any]:
-        """Liste les attributs de contact du compte (nom, catégorie, type)."""
+        """List the account's contact attributes (name, category, type)."""
         return self._request("GET", "/contacts/attributes")
 
     def list_segments(self, limit: int = 50, offset: int = 0,
                       sort: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les segments (listes dynamiques). Lecture seule via l'API."""
+        """List segments (dynamic lists). Read-only through the API."""
         params = self._clean({"limit": limit, "offset": offset, "sort": sort})
         return self._request("GET", "/contacts/segments", params=params)
 
-    # --- Listes & dossiers ---------------------------------------------------
+    # --- Lists & folders -----------------------------------------------------
 
     def list_lists(self, limit: int = 50, offset: int = 0,
                    sort: Optional[str] = None,
                    folder_id: Optional[int] = None) -> Dict[str, Any]:
-        """Liste les listes de contacts, du compte ou d'un dossier."""
+        """List contact lists, for the account or for one folder."""
         params = self._clean({"limit": limit, "offset": offset, "sort": sort})
         path = f"/contacts/folders/{folder_id}/lists" if folder_id else "/contacts/lists"
         return self._request("GET", path, params=params)
 
     def get_list(self, list_id: int) -> Dict[str, Any]:
-        """Détail d'une liste (nom, dossier, nombre de contacts, blacklistés)."""
+        """A list's details (name, folder, contact count, blacklisted)."""
         return self._request("GET", f"/contacts/lists/{int(list_id)}")
 
     def list_contacts_of_list(
         self, list_id: int, limit: int = 50, offset: int = 0,
         modified_since: Optional[str] = None, sort: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Contacts d'une liste (paginé)."""
+        """Contacts of a list (paginated)."""
         params = self._clean({
             "limit": min(limit, 500), "offset": offset,
             "modifiedSince": modified_since, "sort": sort,
@@ -213,13 +213,13 @@ class ContactsMixin(_BrevoBase):
             "GET", f"/contacts/lists/{int(list_id)}/contacts", params=params)
 
     def create_list(self, name: str, folder_id: int) -> Dict[str, Any]:
-        """Crée une liste. `folder_id` est **obligatoire** côté Brevo (cf. `list_folders`)."""
+        """Create a list. `folder_id` is **mandatory** on Brevo's side (see `list_folders`)."""
         return self._request("POST", "/contacts/lists",
                              json={"name": name, "folderId": int(folder_id)})
 
     def update_list(self, list_id: int, name: Optional[str] = None,
                     folder_id: Optional[int] = None) -> Dict[str, Any]:
-        """Renomme une liste ou la déplace de dossier."""
+        """Rename a list or move it to another folder."""
         body = self._clean({"name": name, "folderId": folder_id})
         return self._request("PUT", f"/contacts/lists/{int(list_id)}", json=body)
 
@@ -227,7 +227,7 @@ class ContactsMixin(_BrevoBase):
         given = [x for x in (emails, ids, ext_ids) if x]
         if len(given) != 1 and not all_:
             raise ValueError(
-                "Fournir exactement UN type d'identifiant (emails, ids ou ext_ids).")
+                "Provide exactly ONE identifier type (emails, ids or ext_ids).")
         body = self._clean({
             "emails": emails, "ids": ids, "extIds": ext_ids, "all": all_ or None})
         return self._request(
@@ -237,10 +237,10 @@ class ContactsMixin(_BrevoBase):
         self, list_id: int, emails: Optional[List[str]] = None,
         ids: Optional[List[int]] = None, ext_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Ajoute des contacts EXISTANTS à une liste.
+        """Add EXISTING contacts to a list.
 
-        **Max 150 contacts par appel**, et un SEUL type d'identifiant à la fois.
-        Au-delà → `import_contacts`. Renvoie `{contacts: {success: [], failure: []}}`.
+        **Max 150 contacts per call**, and a SINGLE identifier type at a time.
+        Beyond that → `import_contacts`. Returns `{contacts: {success: [], failure: []}}`.
         """
         return self._list_membership(list_id, "add", emails, ids, ext_ids, None)
 
@@ -249,16 +249,16 @@ class ContactsMixin(_BrevoBase):
         ids: Optional[List[int]] = None, ext_ids: Optional[List[str]] = None,
         all_contacts: bool = False,
     ) -> Dict[str, Any]:
-        """Retire des contacts d'une liste (ne supprime pas les contacts).
+        """Remove contacts from a list (does not delete the contacts).
 
-        **Max 150 par appel**, un seul type d'identifiant. `all_contacts=True`
-        vide la liste.
+        **Max 150 per call**, a single identifier type. `all_contacts=True`
+        empties the list.
         """
         return self._list_membership(
             list_id, "remove", emails, ids, ext_ids, all_contacts or None)
 
     def list_folders(self, limit: int = 50, offset: int = 0,
                      sort: Optional[str] = None) -> Dict[str, Any]:
-        """Liste les dossiers de listes (leurs `id` servent à `create_list`)."""
+        """List list folders (their `id` is used by `create_list`)."""
         params = self._clean({"limit": limit, "offset": offset, "sort": sort})
         return self._request("GET", "/contacts/folders", params=params)

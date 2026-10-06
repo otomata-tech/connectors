@@ -1,8 +1,8 @@
-"""Produits premium LinkedIn : contrats, InMail, pipeline, offres & candidats.
+"""LinkedIn premium products: contracts, InMail, pipeline, jobs & candidates.
 
-Extrait de `client.py` (découpage par domaine, surface publique figée) :
-les corps sont inchangés. Ce mixin n'est jamais instancié seul — il est
-composé dans `UnipileClient`, qui fournit le transport (`_request`,
+Extracted from `client.py` (split by domain, frozen public surface):
+the bodies are unchanged. This mixin is never instantiated on its own — it is
+composed into `UnipileClient`, which provides the transport (`_request`,
 `_acct`, `_norm`, `_by_shape`, `session`).
 """
 
@@ -15,7 +15,7 @@ from ..errors import UnipileError
 
 
 class _PremiumMixin:
-    """Produits premium LinkedIn : contrats, InMail, pipeline, offres & candidats."""
+    """LinkedIn premium products: contracts, InMail, pipeline, jobs & candidates."""
 
     def list_contracts(self) -> dict:
         return self._request("GET", self._acct("/linkedin/contracts"))
@@ -27,11 +27,11 @@ class _PremiumMixin:
         )
 
     def inmail_balance(self) -> dict:
-        """Solde InMail. v2 : `GET /linkedin/inmail-credits`. Réponse `{object, credits}`."""
+        """InMail balance. v2: `GET /linkedin/inmail-credits`. Response `{object, credits}`."""
         return self._request("GET", self._acct("/linkedin/inmail-credits"))
 
     def endorse_profile(self, profile_id: str, skill_endorsement_id: int) -> dict:
-        """v2 : `POST /linkedin/member/{member_id}/endorse-skill`, corps
+        """v2: `POST /linkedin/member/{member_id}/endorse-skill`, body
         `{skill_id}`."""
         return self._request(
             "POST",
@@ -43,11 +43,11 @@ class _PremiumMixin:
                      hiring_project_id: Optional[str] = None,
                      stage: Optional[str] = None,
                      list_id: Optional[str] = None) -> dict:
-        """Action premium (sauvegarde lead / pipeline recruteur). v2 éclate ces
-        actions par produit ; on mappe les cas courants, sinon erreur claire."""
+        """Premium action (lead save / recruiter pipeline). v2 splits these
+        actions by product; we map the common cases, otherwise a clear error."""
         if api == "sales_navigator" and action == "saveLead":
             if not list_id:
-                raise UnipileError("saveLead : list_id (lead-list) requis.")
+                raise UnipileError("saveLead: list_id (lead-list) required.")
             return self._request(
                 "POST",
                 self._acct(
@@ -60,7 +60,7 @@ class _PremiumMixin:
         ):
             if not hiring_project_id:
                 raise UnipileError(
-                    "pipeline recruiter : hiring_project_id requis."
+                    "recruiter pipeline: hiring_project_id required."
                 )
             body: dict[str, Any] = {"user_id": user_id}
             if stage:
@@ -74,11 +74,11 @@ class _PremiumMixin:
                 json=body,
             )
         raise UnipileError(
-            f"member_action : combinaison api={api!r} action={action!r} "
-            "non mappée."
+            f"member_action: combination api={api!r} action={action!r} "
+            "not mapped."
         )
 
-    # ---- recruiter : offres & candidats ---------------------------------
+    # ---- recruiter: jobs & candidates -----------------------------------
 
     def list_job_postings(self, cursor: Optional[str] = None,
                          limit: Optional[int] = None) -> dict:
@@ -98,7 +98,7 @@ class _PremiumMixin:
 
     def list_job_applicants(self, job_id: str, cursor: Optional[str] = None,
                            limit: Optional[int] = None) -> dict:
-        """v2 : `POST /linkedin/jobs/{job_id}/applicants` (getClassicApplicants)."""
+        """v2: `POST /linkedin/jobs/{job_id}/applicants` (getClassicApplicants)."""
         body: dict[str, Any] = {}
         if cursor:
             body["cursor"] = cursor

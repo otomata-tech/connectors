@@ -65,7 +65,7 @@ class WaalaxyClient:
     def _headers(self) -> Dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
 
-    _HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+    _HTTP_TIMEOUT = (10, 60)  # (connect, read) — never wait indefinitely
 
     def _request(self, method: str, path: str, *, json: Any = None) -> Any:
         resp = requests.request(method, f"{self.BASE_URL}{path}", headers=self._headers(),

@@ -37,15 +37,15 @@ def _markdown_to_html_fragment(text: str) -> str:
 
 
 def _recipients(header: str, exclude: str = "") -> str:
-    """Les adresses d'un en-tête, en liste, moins `exclude`.
+    """The addresses of a header, as a list, minus `exclude`.
 
-    ⚠️ Ne PAS utiliser `parseaddr` ici : il ne lit qu'une adresse et rend
-    `('', '')` sur `To: a@x, b@y` — un fil à plusieurs destinataires devenait
-    alors « Cannot determine reply recipient ».
+    ⚠️ Do NOT use `parseaddr` here: it reads only one address and returns
+    `('', '')` on `To: a@x, b@y` — a thread with several recipients then became
+    "Cannot determine reply recipient".
     """
-    # `if "@" in a` : sur un en-tête sans adresse réelle (« Nom Sans Adresse »),
-    # getaddresses rend [('', 'Nom')] — le laisser passer enverrait vers « Nom »
-    # au lieu de lever le garde-fou d'appel.
+    # `if "@" in a`: on a header with no real address ("Name Without Address"),
+    # getaddresses returns [('', 'Name')] — letting it through would send to "Name"
+    # instead of raising the call guard.
     addrs = [a for _, a in getaddresses([header]) if a and "@" in a]
     if exclude:
         addrs = [a for a in addrs if a.lower() != exclude.lower()]
@@ -107,12 +107,12 @@ class GmailClient:
             userId='me', id=message_id, format='full',
         ).execute()
 
-        # Lookup case-insensitive (cf. `reply`) : l'API rend les noms d'en-tête TELS
-        # QU'ÉCRITS par l'émetteur. Un `To:`/`Cc:`/`Subject:` cherché à la lettre près
-        # revenait vide sur tout message écrit en minuscules — dont les nôtres avant
-        # ce correctif : relire un brouillon ne montrait ni destinataire ni copie,
-        # donc impossible de le vérifier avant envoi (signal #342). Vaut aussi pour
-        # l'existant, que la capitalisation à l'écriture ne rattrape pas.
+        # Case-insensitive lookup (cf. `reply`): the API returns header names AS
+        # WRITTEN by the sender. A `To:`/`Cc:`/`Subject:` looked up to the letter
+        # came back empty on any message written in lowercase — including ours before
+        # this fix: re-reading a draft showed neither recipient nor cc,
+        # so it was impossible to verify before sending (signal #342). Also applies to
+        # existing messages, which capitalizing at write time does not fix.
         headers = {h['name'].lower(): h['value'] for h in msg.get('payload', {}).get('headers', [])}
         body = self._extract_body(msg.get('payload', {}))
         attachments = self._list_attachments(msg.get('payload', {}))
@@ -126,11 +126,11 @@ class GmailClient:
             'cc': headers.get('cc', ''),
             'date': headers.get('date', ''),
             'body': body,
-            # `body` est le text/plain — donc le markdown SOURCE quand le message
-            # porte aussi une partie HTML. Sans ce drapeau, relire un mail bien rendu
-            # donne à voir des `**gras**` et fait conclure « le rendu est cassé »
-            # (signal #341). Booléen plutôt que le HTML lui-même : lever le doute
-            # sans verser une page de balises dans le contexte de l'agent.
+            # `body` is the text/plain — hence the SOURCE markdown when the message
+            # also carries an HTML part. Without this flag, re-reading a well-rendered
+            # mail shows `**bold**` and leads to the conclusion "rendering is broken"
+            # (signal #341). A boolean rather than the HTML itself: dispel the doubt
+            # without dumping a page of tags into the agent's context.
             'has_html': self._find_part(msg.get('payload', {}).get('parts', []), 'text/html') is not None,
             'labelIds': msg.get('labelIds', []),
         }
@@ -247,8 +247,8 @@ class GmailClient:
         original = self.service.users().messages().get(
             userId='me', id=message_id, format='full',
         ).execute()
-        # Lookup case-insensitive : la casse des headers n'est pas normalisée
-        # ("Message-ID" vs "Message-Id" selon l'expéditeur).
+        # Case-insensitive lookup: header casing is not normalized
+        # ("Message-ID" vs "Message-Id" depending on the sender).
         headers = {h['name'].lower(): h['value'] for h in original['payload']['headers']}
         thread_id = original['threadId']
 
@@ -302,10 +302,10 @@ class GmailClient:
         """Create a draft email. Pass thread_id + in_reply_to for threaded replies.
 
         If `html` is not provided and `markdown=True` (default), the body is
-        rendered from markdown to an HTML fragment — **même contrat que `send` et
-        `reply`**, qui le faisaient déjà. Seul le brouillon ne le faisait pas : un
-        agent composant en markdown obtenait un corps texte où `**gras**` et les
-        puces restaient littéraux, visibles tels quels du destinataire (#341/#343).
+        rendered from markdown to an HTML fragment — **same contract as `send` and
+        `reply`**, which already did so. Only the draft did not: an agent
+        composing in markdown got a text body where `**bold**` and the
+        bullets stayed literal, visible as-is to the recipient (#341/#343).
         """
         if html is None and markdown:
             html = _markdown_to_html_fragment(body)
@@ -399,9 +399,9 @@ class GmailClient:
             to=reply_to, subject=subject, body=body, html=html,
             cc=cc, attachments=attachments,
             thread_id=thread_id, in_reply_to=orig_msg_id or None,
-            # Le rendu a déjà eu lieu ci-dessus : `markdown` est propagé pour qu'un
-            # appel `markdown=False` ne se fasse pas re-rendre par le défaut de
-            # `create_draft` (html reste None dans ce cas — c'est voulu).
+            # Rendering already happened above: `markdown` is propagated so that a
+            # `markdown=False` call is not re-rendered by the default of
+            # `create_draft` (html stays None in that case — intentional).
             markdown=markdown,
         )
 
@@ -427,12 +427,12 @@ class GmailClient:
         else:
             message = MIMEText(body)
 
-        # En-têtes en forme CANONIQUE (RFC 5322) : l'API Gmail rend les noms TELS
-        # QU'ÉCRITS — un `cc:` minuscule reste `cc` dans `payload.headers`, quand
-        # ceux que Gmail pose lui-même arrivent capitalisés (`From`, `Date`). Tout
-        # lecteur qui cherche `Cc` (le nôtre compris, cf. `get_message`) voyait donc
-        # nos propres messages sans destinataire ni copie — d'où le diagnostic
-        # « le cc n'est pas appliqué » alors qu'il l'était (signaux #340/#342).
+        # Headers in CANONICAL form (RFC 5322): the Gmail API returns names AS
+        # WRITTEN — a lowercase `cc:` stays `cc` in `payload.headers`, while
+        # the ones Gmail sets itself arrive capitalized (`From`, `Date`). Any
+        # reader looking for `Cc` (ours included, cf. `get_message`) therefore saw
+        # our own messages with no recipient or cc — hence the diagnosis
+        # "the cc is not applied" when it actually was (signals #340/#342).
         message['To'] = to
         message['Subject'] = subject
         if cc:
@@ -483,11 +483,11 @@ class GmailClient:
     def _list_attachments(self, payload: dict) -> list[dict]:
         """List attachment metadata from message payload.
 
-        Renvoie {filename, mimeType, size}. **Pas d'`attachmentId`** : Gmail le
-        régénère à chaque `messages.get` (vérifié — deux lectures successives du
-        même message donnent des ids différents) → ce n'est pas un handle stable
-        entre appels. Le contenu se récupère par `get_attachment(message_id,
-        filename)`, qui résout l'id frais dans un seul `messages.get`.
+        Returns {filename, mimeType, size}. **No `attachmentId`**: Gmail
+        regenerates it on every `messages.get` (verified — two successive reads of
+        the same message give different ids) → it is not a stable handle
+        across calls. The content is fetched via `get_attachment(message_id,
+        filename)`, which resolves the fresh id in a single `messages.get`.
         """
         attachments = []
         for part in self._iter_parts(payload):
@@ -502,15 +502,15 @@ class GmailClient:
         return attachments
 
     def get_attachment(self, message_id: str, filename: str, index: int = 0) -> dict:
-        """Récupère le CONTENU d'une pièce jointe par son NOM de fichier.
+        """Fetch the CONTENT of an attachment by its file NAME.
 
-        Retourne {filename, mimeType, size, data: bytes}. Le **filename** est le
-        handle (stable) — pas l'attachmentId Gmail, volatile entre appels. La
-        résolution nom→id et le téléchargement se font dans le MÊME `messages.get`
-        (l'id est donc toujours frais). `index` (défaut 0) départage si plusieurs
-        PJ portent le même nom (ex. `image.png` inline multiples). Client pur :
-        renvoie les octets, n'écrit rien sur disque (≠ `download_attachments`,
-        réservé à la CLI). Lève `GmailClientError` si introuvable.
+        Returns {filename, mimeType, size, data: bytes}. The **filename** is the
+        (stable) handle — not the Gmail attachmentId, which is volatile across calls. The
+        name→id resolution and the download happen in the SAME `messages.get`
+        (so the id is always fresh). `index` (default 0) disambiguates when several
+        attachments share the same name (e.g. multiple inline `image.png`). Pure client:
+        returns the bytes, writes nothing to disk (≠ `download_attachments`,
+        reserved for the CLI). Raises `GmailClientError` if not found.
         """
         msg = self.service.users().messages().get(
             userId='me', id=message_id, format='full',
@@ -522,11 +522,11 @@ class GmailClient:
                 matches.append((att_id, part.get('mimeType', '')))
         if not matches:
             raise GmailClientError(
-                f"Pièce jointe {filename!r} introuvable dans le message {message_id!r}."
+                f"Attachment {filename!r} not found in message {message_id!r}."
             )
         if index < 0 or index >= len(matches):
             raise GmailClientError(
-                f"index {index} hors bornes ({len(matches)} PJ nommées {filename!r})."
+                f"index {index} out of range ({len(matches)} attachments named {filename!r})."
             )
         att_id, mime = matches[index]
         att = self.service.users().messages().attachments().get(

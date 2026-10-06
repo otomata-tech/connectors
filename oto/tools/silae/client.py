@@ -258,7 +258,7 @@ class SilaeClient:
             numero_dossier=numero_dossier,
         )
 
-    # --- Salariés (employees) ---
+    # --- Employees ---
 
     def list_salaries(self, numero_dossier: str) -> Any:
         """List the employees of a dossier."""
@@ -326,7 +326,7 @@ class SilaeClient:
     def bulletin_entete(
         self, numero_dossier: str, matricule_salarie: str, periode: str
     ) -> Any:
-        """Payslip header (entête) for one employee/period."""
+        """Payslip header for one employee/period."""
         return self.call(
             "v1/Bulletins/SalarieBulletinEntete",
             {
@@ -384,7 +384,7 @@ class SilaeClient:
         **extra,
     ) -> Any:
         """
-        Add a variable payroll element (élément variable) to an employee.
+        Add a variable payroll element to an employee.
 
         Args:
             numero_dossier: Folder number.

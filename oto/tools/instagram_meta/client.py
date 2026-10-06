@@ -1,18 +1,18 @@
-"""Le client de DONNÉES — profil, médias, insights d'un compte professionnel.
+"""The DATA client — profile, media, insights of a professional account.
 
-Il ne connaît que deux choses : un jeton et l'identifiant du compte. Ni App ID,
-ni secret : ils ne servent qu'à obtenir le jeton (`oauth.py`), pas à s'en servir.
+It only knows two things: a token and the account identifier. No App ID,
+no secret: they are only used to obtain the token (`oauth.py`), not to use it.
 
-**Synchrone**, comme le reste de la lib : cette API est en HTTPS simple, et rien
-dans l'amont n'impose une boucle d'événements. L'appelant qui vit dans une boucle
-(un serveur mono-loop, par exemple) fait tourner ces appels au fil d'exécution ;
-c'est son affaire, et ça lui coûte moins qu'un paquet asynchrone de plus.
+**Synchronous**, like the rest of the lib: this API is plain HTTPS, and nothing
+upstream requires an event loop. A caller that lives in a loop
+(a single-loop server, for example) runs these calls in a worker thread;
+that is its business, and it costs less than one more async package.
 
-**Le brut est rendu tel quel.** Ces méthodes ne recomposent pas, ne renomment pas
-et n'inventent pas de champ : ce que Meta rend est ce que l'appelant reçoit. La
-seule mise en forme est l'aplatissement des insights, dont la structure imbriquée
-(`data[].total_value.value` OU `data[].values[0].value`) n'est pas une
-information mais un artefact du format.
+**Raw output is returned as-is.** These methods don't recompose, rename
+or invent fields: what Meta returns is what the caller receives. The
+only shaping is the flattening of insights, whose nested structure
+(`data[].total_value.value` OR `data[].values[0].value`) is not
+information but an artifact of the format.
 """
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ import requests
 from . import _transport
 from .config import GRAPH_API_BASE, HTTP_TIMEOUT
 
-#: Métriques d'insights par `media_product_type`. **Pas de liste de secours** : si
-#: un type n'est pas ici, on le DIT plutôt que de demander un jeu générique — une
-#: métrique refusée fait échouer tout l'appel, et le message parlerait alors de la
-#: métrique au lieu du type de média.
+#: Insight metrics per `media_product_type`. **No fallback list**: if
+#: a type is not here, we SAY so rather than request a generic set — a refused
+#: metric fails the whole call, and the message would then talk about the
+#: metric instead of the media type.
 MEDIA_INSIGHT_METRICS: dict[str, tuple[str, ...]] = {
     "FEED": ("reach", "views", "likes", "comments", "saved", "shares",
              "total_interactions", "follows", "profile_visits"),
@@ -40,16 +40,16 @@ MEDIA_INSIGHT_METRICS: dict[str, tuple[str, ...]] = {
               "follows", "profile_visits"),
 }
 
-#: Métriques de COMPTE, toutes en `metric_type=total_value`, `period=day`.
-#: ⚠️ `profile_views`, `website_clicks` et `impressions` n'existent PLUS dans cette
-#: variante de l'API : demander l'une des trois fait échouer l'appel entier, pas
-#: seulement la métrique. `profile_links_taps` remplace les deux premières.
+#: ACCOUNT metrics, all with `metric_type=total_value`, `period=day`.
+#: ⚠️ `profile_views`, `website_clicks` and `impressions` NO LONGER exist in this
+#: API variant: requesting any of the three fails the entire call, not
+#: just the metric. `profile_links_taps` replaces the first two.
 ACCOUNT_INSIGHT_METRICS: tuple[str, ...] = (
     "reach", "views", "accounts_engaged", "total_interactions",
     "likes", "comments", "saves", "shares", "profile_links_taps",
 )
 
-#: Fenêtre maximale acceptée sur `since`/`until` pour les insights de compte.
+#: Maximum window accepted on `since`/`until` for account insights.
 ACCOUNT_INSIGHTS_MAX_DAYS = 30
 
 PROFILE_FIELDS = ("user_id,username,name,biography,followers_count,follows_count,"
@@ -60,12 +60,12 @@ MEDIA_FIELDS = ("id,caption,timestamp,media_type,media_product_type,"
 
 
 def flatten_insights(payload: dict) -> dict[str, Any]:
-    """`{métrique: valeur}` depuis une réponse d'insights.
+    """`{metric: value}` from an insights response.
 
-    Deux formes selon le `metric_type` demandé : `total_value.value` d'un côté,
-    une liste `values` datée de l'autre, dont on prend la première entrée. Une
-    métrique sans valeur vaut 0 — c'est ce que Meta veut dire par une liste vide,
-    et rendre `None` obligerait chaque lecteur à le retraduire."""
+    Two shapes depending on the requested `metric_type`: `total_value.value` on one
+    side, a dated `values` list on the other, of which we take the first entry. A
+    metric with no value is 0 — that is what Meta means by an empty list,
+    and returning `None` would force every reader to translate it back."""
     out: dict[str, Any] = {}
     for ins in payload.get("data", []) or []:
         nom = ins.get("name")
@@ -81,14 +81,14 @@ def flatten_insights(payload: dict) -> dict[str, Any]:
 
 
 class InstagramClient:
-    """Lecture seule sur un compte Instagram professionnel.
+    """Read-only access to a professional Instagram account.
 
-    `renew` — appelé UNE fois par client si Meta rejette le jeton en cours d'appel
-    (révocation, rotation), et doit rendre un jeton neuf. C'est un rattrapage, pas
-    la politique de renouvellement : celle-ci est préventive et vit chez l'appelant
-    (`tokens.needs_refresh`), qui seul sait où le jeton est rangé. Sans `renew`, un
-    rejet remonte tel quel — ce qui est le bon défaut pour un appelant qui n'a rien
-    à réécrire.
+    `renew` — called ONCE per client if Meta rejects the token mid-call
+    (revocation, rotation), and must return a new token. It is a catch-up, not
+    the renewal policy: that one is preventive and lives with the caller
+    (`tokens.needs_refresh`), which alone knows where the token is stored. Without `renew`, a
+    rejection bubbles up as-is — which is the right default for a caller that has nothing
+    to rewrite.
     """
 
     def __init__(self, access_token: str, user_id: str, *,
@@ -96,8 +96,8 @@ class InstagramClient:
                  session: Optional[requests.Session] = None):
         if not access_token or not user_id:
             raise ValueError(
-                "InstagramClient : jeton et identifiant de compte requis — les deux "
-                "viennent du consentement (`oauth.connect`).")
+                "InstagramClient: token and account identifier required — both "
+                "come from the consent (`oauth.connect`).")
         self.access_token = access_token
         self.user_id = str(user_id)
         self._renew = renew
@@ -105,11 +105,11 @@ class InstagramClient:
         self._http = session or requests
 
     def _get(self, chemin: str, geste: str, **params: Any) -> dict:
-        """Un GET de données, avec un seul rattrapage de jeton.
+        """A data GET, with a single token catch-up.
 
-        « Une seule fois » est le point : sans compteur, un jeton que Meta refuse
-        pour une autre raison que sa mort ferait boucler l'appel entre le refus et
-        le renouvellement."""
+        "Only once" is the point: without a counter, a token that Meta refuses
+        for a reason other than its death would make the call loop between the refusal and
+        the renewal."""
         url = f"{GRAPH_API_BASE}{chemin}"
         r = self._http.get(url, params={**params, "access_token": self.access_token},
                            timeout=HTTP_TIMEOUT)
@@ -122,40 +122,40 @@ class InstagramClient:
         return _transport.lire(r, geste)
 
     def get_profile(self) -> dict:
-        return self._get(f"/{self.user_id}", "la lecture du profil",
+        return self._get(f"/{self.user_id}", "reading the profile",
                          fields=PROFILE_FIELDS)
 
     def get_recent_media(self, limit: int = 10) -> list[dict]:
-        res = self._get(f"/{self.user_id}/media", "la lecture des publications",
+        res = self._get(f"/{self.user_id}/media", "reading the posts",
                         fields=MEDIA_FIELDS, limit=limit)
         return res.get("data", []) or []
 
     def get_media_insights(self, media_id: str) -> dict[str, Any]:
-        """Insights d'une publication — les métriques dépendent de son type.
+        """Insights of a post — the metrics depend on its type.
 
-        Le type se LIT d'abord, il ne se devine pas : demander les métriques d'un
-        post de fil sur un reel fait échouer l'appel entier."""
-        meta = self._get(f"/{media_id}", "la lecture du type de publication",
+        The type is READ first, never guessed: requesting a feed post's metrics
+        on a reel fails the entire call."""
+        meta = self._get(f"/{media_id}", "reading the post type",
                          fields="media_type,media_product_type")
         produit = str(meta.get("media_product_type") or "").upper()
         metriques = MEDIA_INSIGHT_METRICS.get(produit)
         if not metriques:
             raise ValueError(
-                f"Insights non gérés pour cette publication : "
+                f"Insights not supported for this post: "
                 f"media_product_type={produit or '?'}, "
                 f"media_type={meta.get('media_type') or '?'} "
-                f"(types gérés : {', '.join(sorted(MEDIA_INSIGHT_METRICS))}).")
-        res = self._get(f"/{media_id}/insights", "la lecture des insights",
+                f"(supported types: {', '.join(sorted(MEDIA_INSIGHT_METRICS))}).")
+        res = self._get(f"/{media_id}/insights", "reading the insights",
                         metric=",".join(metriques))
         return flatten_insights(res)
 
     def get_account_insights(self, days: int = 30) -> dict[str, Any]:
         if not 1 <= days <= ACCOUNT_INSIGHTS_MAX_DAYS:
             raise ValueError(
-                f"days doit être entre 1 et {ACCOUNT_INSIGHTS_MAX_DAYS} — c'est la "
-                f"fenêtre maximale de l'API sur les insights de compte.")
+                f"days must be between 1 and {ACCOUNT_INSIGHTS_MAX_DAYS} — that is the "
+                f"API's maximum window on account insights.")
         until = int(time.time())
-        res = self._get(f"/{self.user_id}/insights", "la lecture des statistiques du compte",
+        res = self._get(f"/{self.user_id}/insights", "reading the account statistics",
                         metric=",".join(ACCOUNT_INSIGHT_METRICS), period="day",
                         metric_type="total_value",
                         since=until - days * 86_400, until=until)
@@ -163,7 +163,7 @@ class InstagramClient:
 
 
 def _corps(reponse) -> Any:
-    """Le JSON d'une réponse, ou `None` — pour interroger `jeton_mort` sans lever."""
+    """A response's JSON, or `None` — to query `jeton_mort` without raising."""
     try:
         return reponse.json()
     except ValueError:

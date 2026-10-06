@@ -1,13 +1,13 @@
-"""Les refus de ce connecteur — distincts parce qu'ils appellent des gestes distincts.
+"""This connector's refusals — distinct because they call for distinct actions.
 
-- autorisation **morte** (révoquée, mot de passe changé, accès retiré) → refaire le
-  consentement ;
-- consentement **refusé** par Meta (app non publiée, compte non testeur, retour non
-  déclaré) → c'est l'exploitant qui règle ;
-- appel **limité** (quota Marketing API) → attendre, puis réessayer ;
-- tout le reste → l'appel a échoué, réessayer a un sens.
+- **dead** authorization (revoked, password changed, access removed) → redo the
+  consent;
+- consent **refused** by Meta (unpublished app, non-tester account, undeclared
+  redirect) → the operator must sort it out;
+- **throttled** call (Marketing API quota) → wait, then retry;
+- everything else → the call failed, retrying makes sense.
 
-Aucun message d'ici ne nomme d'outil ni d'écran : la lib ne connaît pas sa surface.
+No message from here names a tool or a screen: the lib does not know its surface.
 """
 from __future__ import annotations
 
@@ -15,15 +15,15 @@ from typing import Optional
 
 
 class MetaAdsError(RuntimeError):
-    """Racine — tout ce que ce connecteur lève lui-même."""
+    """Root — everything this connector raises itself."""
 
 
 class MetaAdsAuthExpired(MetaAdsError):
-    """Le jeton ne vaut plus rien (code Graph 190/102, ou 401)."""
+    """The token is worthless (Graph code 190/102, or 401)."""
 
 
 class MetaAdsAuthRefused(MetaAdsError):
-    """Meta a refusé le consentement ou l'échange du code. `reason` = type rendu."""
+    """Meta refused the consent or the code exchange. `reason` = returned type."""
 
     def __init__(self, message: str, reason: str = ""):
         super().__init__(message)
@@ -31,10 +31,10 @@ class MetaAdsAuthRefused(MetaAdsError):
 
 
 class MetaAdsApiError(MetaAdsError):
-    """L'appel a échoué. `status` = HTTP, `code`/`subcode` = ceux de Graph.
+    """The call failed. `status` = HTTP, `code`/`subcode` = Graph's.
 
-    Le corps brut n'y entre jamais : l'écho de la requête peut porter un
-    identifiant, et ce texte finit dans un transcript d'agent."""
+    The raw body never enters here: the request echo can carry an
+    identifier, and this text ends up in an agent transcript."""
 
     def __init__(self, message: str, status: Optional[int] = None,
                  code: Optional[int] = None, subcode: Optional[int] = None):
@@ -45,4 +45,4 @@ class MetaAdsApiError(MetaAdsError):
 
 
 class MetaAdsThrottled(MetaAdsApiError):
-    """Quota Marketing API atteint (codes 4, 17, 613, 80000-80014…) — attendre."""
+    """Marketing API quota reached (codes 4, 17, 613, 80000-80014…) — wait."""

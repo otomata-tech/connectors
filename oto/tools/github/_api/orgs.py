@@ -1,27 +1,27 @@
-"""Organisations GitHub — membres, équipes, collaborateurs de dépôt.
+"""GitHub organizations — members, teams, repository collaborators.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `GitHubClient`, qui
-fournit le transport (`_request`, `_get`, `_check_choice`).
+This mixin is never instantiated on its own: it is composed into `GitHubClient`, which
+provides the transport (`_request`, `_get`, `_check_choice`).
 
-⚠️ **Trois notions d'appartenance se ressemblent et ne sont pas la même chose :**
+⚠️ **Three notions of membership look alike and are not the same thing:**
 
-- **membre d'une ORGANISATION** (`/orgs/{org}/members`) — appartenance globale,
-  qui peut être publique ou privée ;
-- **membre d'une ÉQUIPE** (`/orgs/{org}/teams/{slug}/members`) — sous-ensemble,
-  qui porte des droits sur les dépôts de l'équipe ;
-- **collaborateur d'un DÉPÔT** (`/repos/{owner}/{repo}/collaborators`) — accès à
-  un dépôt précis, sans appartenance à l'organisation.
+- **member of an ORGANIZATION** (`/orgs/{org}/members`) — global membership,
+  which can be public or private;
+- **member of a TEAM** (`/orgs/{org}/teams/{slug}/members`) — a subset,
+  which carries rights on the team's repositories;
+- **collaborator on a REPOSITORY** (`/repos/{owner}/{repo}/collaborators`) — access to
+  a specific repository, without membership in the organization.
 
-Retirer quelqu'un de l'un ne le retire pas des autres, et c'est la source
-d'erreur la plus fréquente ici — d'où trois familles de méthodes nommées d'après
-la portée, jamais un `remove_member` générique.
+Removing someone from one does not remove them from the others, and this is the most
+frequent source of error here — hence three families of methods named after
+their scope, never a generic `remove_member`.
 
-⚠️ **`list_members` ne montre par défaut que ce que le jeton a le droit de
-voir.** Un jeton sans le scope d'organisation ne verra que les membres *publics*
-— une liste plus courte, sans erreur. Elle n'est donc pas un recensement.
+⚠️ **`list_members` only shows by default what the token is allowed to
+see.** A token without the organization scope will only see *public* members
+— a shorter list, with no error. It is therefore not a census.
 
-**Délibérément absent** : la suppression d'une organisation, et la gestion des
-GitHub Apps installées.
+**Deliberately absent**: deleting an organization, and managing installed
+GitHub Apps.
 """
 from __future__ import annotations
 
@@ -33,53 +33,53 @@ from ..const import (COLLABORATOR_PERMISSIONS, MEMBER_FILTERS,
 
 
 class _OrgsMixin:
-    """Organisations, équipes, membres, collaborateurs."""
+    """Organizations, teams, members, collaborators."""
 
-    # --- identité --------------------------------------------------------------
+    # --- identity --------------------------------------------------------------
 
     def me(self) -> Any:
-        """GET /user — le compte porteur du jeton.
+        """GET /user — the account holding the token.
 
-        **Aucun scope particulier requis** : c'est la sonde d'authentification du
-        connecteur. Un 401 dit que le jeton est mauvais ou révoqué ; une réponse
-        dit qui il est, sans rien prouver de ses droits.
+        **No particular scope required**: it is the connector's authentication
+        probe. A 401 says the token is bad or revoked; a response
+        says who it is, proving nothing about its rights.
         """
         return self._request("GET", "/user")
 
     def rate_limit(self) -> Any:
-        """GET /rate_limit — l'état des quotas, **sans les consommer**.
+        """GET /rate_limit — the quota state, **without consuming them**.
 
-        Le seul endpoint qui ne compte pas dans la limite primaire : utile pour
-        expliquer un 403 sans aggraver la situation.
+        The only endpoint that does not count against the primary limit: useful to
+        explain a 403 without making the situation worse.
         """
         return self._request("GET", "/rate_limit")
 
     def list_my_orgs(self, per_page: Optional[int] = None,
                      page: Optional[int] = None) -> Any:
-        """GET /user/orgs — organisations du porteur du jeton.
+        """GET /user/orgs — organizations of the token holder.
 
-        ⚠️ Un jeton classique sans le scope `read:org` rend une liste **vide**
-        plutôt qu'une erreur : l'absence n'y prouve pas la non-appartenance.
+        ⚠️ A classic token without the `read:org` scope returns an **empty** list
+        rather than an error: absence there does not prove non-membership.
         """
         return self._get("/user/orgs", None, per_page, page)
 
-    # --- organisations ----------------------------------------------------------
+    # --- organizations -----------------------------------------------------------
 
     def get_org(self, org: str) -> Any:
-        """GET /orgs/{org} — la fiche d'une organisation."""
+        """GET /orgs/{org} — an organization's profile."""
         return self._request("GET", f"/orgs/{org}")
 
     def list_org_members(self, org: str, filter: Optional[str] = None,
                          role: Optional[str] = None,
                          per_page: Optional[int] = None,
                          page: Optional[int] = None) -> Any:
-        """GET /orgs/{org}/members — membres de l'organisation.
+        """GET /orgs/{org}/members — members of the organization.
 
-        `role` restreint aux `admin` (propriétaires) ou aux `member`.
-        `filter="2fa_disabled"` liste ceux sans double authentification —
-        réservé aux propriétaires.
+        `role` restricts to `admin` (owners) or `member`.
+        `filter="2fa_disabled"` lists those without two-factor authentication —
+        reserved for owners.
 
-        ⚠️ Sans droits suffisants, seuls les membres **publics** sont rendus.
+        ⚠️ Without sufficient rights, only **public** members are returned.
         """
         self._check_choice("filter", filter, MEMBER_FILTERS)
         self._check_choice("role", role, MEMBERSHIP_ROLES)
@@ -88,11 +88,11 @@ class _OrgsMixin:
                          per_page, page)
 
     def check_org_membership(self, org: str, username: str) -> bool:
-        """GET /orgs/{org}/members/{username} — cette personne est-elle membre ?
+        """GET /orgs/{org}/members/{username} — is this person a member?
 
-        ⚠️ Endpoint sans corps : **204 si membre, 404 sinon** (et 302 si le jeton
-        n'a pas le droit de savoir). Le 404 est une RÉPONSE, pas une erreur —
-        d'où ce booléen.
+        ⚠️ Bodyless endpoint: **204 if a member, 404 otherwise** (and 302 if the token
+        is not allowed to know). The 404 is an ANSWER, not an error —
+        hence this boolean.
         """
         resp = self._request("GET", f"/orgs/{org}/members/{username}", raw=True)
         if resp.status_code == 204:
@@ -103,21 +103,21 @@ class _OrgsMixin:
         return False
 
     def get_org_membership(self, org: str, username: str) -> Any:
-        """GET /orgs/{org}/memberships/{username} — l'appartenance détaillée.
+        """GET /orgs/{org}/memberships/{username} — the detailed membership.
 
-        Contrairement à `check_org_membership`, rend le rôle et l'état
-        (`active` / `pending` — une invitation non acceptée).
+        Unlike `check_org_membership`, returns the role and the state
+        (`active` / `pending` — an invitation not yet accepted).
         """
         return self._request("GET", f"/orgs/{org}/memberships/{username}")
 
     def set_org_membership(self, org: str, username: str,
                            role: Optional[str] = None) -> Any:
-        """PUT /orgs/{org}/memberships/{username} — invite ou change un rôle.
+        """PUT /orgs/{org}/memberships/{username} — invite or change a role.
 
-        ⚠️ **Envoie une invitation par email** si la personne n'est pas déjà
-        membre, et son état reste `pending` tant qu'elle n'a pas accepté. Sur un
-        membre existant, change son rôle (`admin` = propriétaire de
-        l'organisation, un droit très large).
+        ⚠️ **Sends an email invitation** if the person is not already a
+        member, and its state stays `pending` until they accept. On an existing
+        member, changes their role (`admin` = organization
+        owner, a very broad right).
         """
         self._check_choice("role", role, MEMBERSHIP_ROLES)
         body = {"role": role} if role else None
@@ -125,26 +125,26 @@ class _OrgsMixin:
                              json=body)
 
     def remove_org_member(self, org: str, username: str) -> Any:
-        """DELETE /orgs/{org}/members/{username} — **retire de l'organisation**.
+        """DELETE /orgs/{org}/members/{username} — **remove from the organization**.
 
-        ⚠️ Retire la personne de l'organisation ET de toutes ses équipes, et lui
-        fait perdre l'accès aux dépôts privés. Ne supprime pas ses contributions.
-        Ceci ne la retire PAS des dépôts où elle est collaboratrice à titre
-        individuel : voir `remove_collaborator`.
+        ⚠️ Removes the person from the organization AND from all its teams, and makes them
+        lose access to private repositories. Does not delete their contributions.
+        This does NOT remove them from repositories where they are an individual
+        collaborator: see `remove_collaborator`.
         """
         return self._request("DELETE", f"/orgs/{org}/members/{username}")
 
-    # --- équipes ------------------------------------------------------------------
+    # --- teams --------------------------------------------------------------------
 
     def list_teams(self, org: str, per_page: Optional[int] = None,
                    page: Optional[int] = None) -> Any:
-        """GET /orgs/{org}/teams — équipes visibles de l'organisation."""
+        """GET /orgs/{org}/teams — visible teams of the organization."""
         return self._get(f"/orgs/{org}/teams", None, per_page, page)
 
     def get_team(self, org: str, team_slug: str) -> Any:
-        """GET /orgs/{org}/teams/{team_slug} — une équipe.
+        """GET /orgs/{org}/teams/{team_slug} — one team.
 
-        ⚠️ La clé est le **slug** (dans l'URL), pas le nom affiché.
+        ⚠️ The key is the **slug** (in the URL), not the display name.
         """
         return self._request("GET", f"/orgs/{org}/teams/{team_slug}")
 
@@ -152,9 +152,9 @@ class _OrgsMixin:
                           role: Optional[str] = None,
                           per_page: Optional[int] = None,
                           page: Optional[int] = None) -> Any:
-        """GET /orgs/{org}/teams/{team_slug}/members — membres d'une équipe.
+        """GET /orgs/{org}/teams/{team_slug}/members — members of a team.
 
-        `role` : `member` ou `maintainer`.
+        `role`: `member` or `maintainer`.
         """
         self._check_choice("role", role, TEAM_ROLES)
         return self._get(f"/orgs/{org}/teams/{team_slug}/members",
@@ -163,16 +163,16 @@ class _OrgsMixin:
     def list_team_repos(self, org: str, team_slug: str,
                         per_page: Optional[int] = None,
                         page: Optional[int] = None) -> Any:
-        """GET /orgs/{org}/teams/{team_slug}/repos — dépôts gérés par l'équipe."""
+        """GET /orgs/{org}/teams/{team_slug}/repos — repositories managed by the team."""
         return self._get(f"/orgs/{org}/teams/{team_slug}/repos", None,
                          per_page, page)
 
     def add_team_member(self, org: str, team_slug: str, username: str,
                         role: Optional[str] = None) -> Any:
-        """PUT /orgs/{org}/teams/{team_slug}/memberships/{username} — ajoute à l'équipe.
+        """PUT /orgs/{org}/teams/{team_slug}/memberships/{username} — add to the team.
 
-        ⚠️ La personne doit **déjà être membre de l'organisation** ; sinon, cet
-        appel lui envoie une invitation à la rejoindre, et l'appartenance reste
+        ⚠️ The person must **already be a member of the organization**; otherwise, this
+        call sends them an invitation to join, and the membership stays
         `pending`.
         """
         self._check_choice("role", role, TEAM_ROLES)
@@ -183,25 +183,25 @@ class _OrgsMixin:
 
     def remove_team_member(self, org: str, team_slug: str,
                            username: str) -> Any:
-        """DELETE /orgs/{org}/teams/{team_slug}/memberships/{username} — retire de l'ÉQUIPE.
+        """DELETE /orgs/{org}/teams/{team_slug}/memberships/{username} — remove from the TEAM.
 
-        ⚠️ Ne retire PAS de l'organisation : la personne garde son appartenance
-        globale et les accès qui en découlent.
+        ⚠️ Does NOT remove from the organization: the person keeps their global
+        membership and the access that follows from it.
         """
         return self._request(
             "DELETE", f"/orgs/{org}/teams/{team_slug}/memberships/{username}")
 
-    # --- collaborateurs de dépôt ---------------------------------------------------
+    # --- repository collaborators ---------------------------------------------------
 
     def list_collaborators(self, owner: str, repo: str,
                            affiliation: Optional[str] = None,
                            permission: Optional[str] = None,
                            per_page: Optional[int] = None,
                            page: Optional[int] = None) -> Any:
-        """GET /repos/{owner}/{repo}/collaborators — qui a accès à ce dépôt.
+        """GET /repos/{owner}/{repo}/collaborators — who has access to this repository.
 
-        `affiliation` : `outside`, `direct` ou `all` (défaut) — « direct » exclut
-        les accès hérités d'une équipe, ce qui est souvent la vraie question.
+        `affiliation`: `outside`, `direct` or `all` (default) — "direct" excludes
+        access inherited from a team, which is often the real question.
         """
         self._check_choice("permission", permission, COLLABORATOR_PERMISSIONS)
         return self._get(f"/repos/{owner}/{repo}/collaborators",
@@ -209,10 +209,10 @@ class _OrgsMixin:
                          per_page, page)
 
     def check_collaborator(self, owner: str, repo: str, username: str) -> bool:
-        """GET /repos/{owner}/{repo}/collaborators/{username} — a-t-elle accès ?
+        """GET /repos/{owner}/{repo}/collaborators/{username} — do they have access?
 
-        ⚠️ Endpoint sans corps : **204 si oui, 404 si non**. Le 404 est une
-        réponse, pas une erreur.
+        ⚠️ Bodyless endpoint: **204 if yes, 404 if no**. The 404 is an
+        answer, not an error.
         """
         resp = self._request(
             "GET", f"/repos/{owner}/{repo}/collaborators/{username}", raw=True)
@@ -225,10 +225,10 @@ class _OrgsMixin:
 
     def get_collaborator_permission(self, owner: str, repo: str,
                                     username: str) -> Any:
-        """GET /repos/{owner}/{repo}/collaborators/{username}/permission — son niveau.
+        """GET /repos/{owner}/{repo}/collaborators/{username}/permission — their level.
 
-        Rend le niveau EFFECTIF, héritages d'équipe compris — ce que
-        `list_collaborators(affiliation="direct")` ne dirait pas.
+        Returns the EFFECTIVE level, team inheritance included — which
+        `list_collaborators(affiliation="direct")` would not say.
         """
         return self._request(
             "GET",
@@ -236,11 +236,11 @@ class _OrgsMixin:
 
     def add_collaborator(self, owner: str, repo: str, username: str,
                          permission: Optional[str] = None) -> Any:
-        """PUT /repos/{owner}/{repo}/collaborators/{username} — invite au dépôt.
+        """PUT /repos/{owner}/{repo}/collaborators/{username} — invite to the repository.
 
-        ⚠️ **Envoie une invitation** : l'accès n'est effectif qu'une fois
-        acceptée (la réponse porte alors l'invitation, pas un accès actif).
-        `permission` : `pull`, `triage`, `push`, `maintain`, `admin`.
+        ⚠️ **Sends an invitation**: access is only effective once
+        accepted (the response then carries the invitation, not an active access).
+        `permission`: `pull`, `triage`, `push`, `maintain`, `admin`.
         """
         self._check_choice("permission", permission, COLLABORATOR_PERMISSIONS)
         body = {"permission": permission} if permission else None
@@ -249,11 +249,11 @@ class _OrgsMixin:
 
     def remove_collaborator(self, owner: str, repo: str,
                             username: str) -> Any:
-        """DELETE /repos/{owner}/{repo}/collaborators/{username} — retire du DÉPÔT.
+        """DELETE /repos/{owner}/{repo}/collaborators/{username} — remove from the REPOSITORY.
 
-        ⚠️ Ne retire pas de l'organisation, et **ne retire pas un accès hérité
-        d'une équipe** : si la personne a le dépôt par son équipe, elle le garde.
-        Vérifier avec `get_collaborator_permission` après coup.
+        ⚠️ Does not remove from the organization, and **does not remove access inherited
+        from a team**: if the person has the repository through their team, they keep it.
+        Check with `get_collaborator_permission` afterwards.
         """
         return self._request(
             "DELETE", f"/repos/{owner}/{repo}/collaborators/{username}")

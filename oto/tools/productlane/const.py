@@ -1,35 +1,35 @@
-"""Constantes du connecteur Productlane — bornes, énumérations, transport.
+"""Productlane connector constants — bounds, enums, transport.
 
-Domicile unique : `client.py` les réexporte via son `__all__`, et les mixins de
-`_api/` les importent d'ici. Le backend épingle oto-core par tag et n'importe que
+Single home: `client.py` re-exports them via its `__all__`, and the `_api/`
+mixins import them from here. The backend pins oto-core by tag and only imports
 `oto.tools.productlane.client`.
 
-⚠️ **Les énumérations sont SCOPÉES À LEUR ENDPOINT**, et c'est délibéré : le
-schéma OpenAPI amont réutilise les mêmes noms de paramètre pour des jeux de
-valeurs différents. `status` vaut `open|snoozed|done` sur un fil et
-`draft|open|accepted|rejected|superseded` sur un brouillon de doc ; `type` vaut
-`EMAIL|DOMAIN` sur un expéditeur bloqué et `email|slack|chat|live_chat|feedback`
-sur un message. Une constante « globale » par nom de paramètre accepterait donc
-des valeurs que l'amont refuse, et refuserait des valeurs qu'il accepte — d'où un
-nom par usage, jamais par paramètre.
+⚠️ **Enums are SCOPED TO THEIR ENDPOINT**, and that is deliberate: the upstream
+OpenAPI schema reuses the same parameter names for different sets of
+values. `status` is `open|snoozed|done` on a thread and
+`draft|open|accepted|rejected|superseded` on a doc draft; `type` is
+`EMAIL|DOMAIN` on a blocked sender and `email|slack|chat|live_chat|feedback`
+on a message. A "global" constant per parameter name would therefore accept
+values that upstream rejects, and reject values it accepts — hence one
+name per usage, never per parameter.
 """
 from __future__ import annotations
 
-# (connexion, lecture) — aucune attente illimitée.
+# (connect, read) — no unbounded wait.
 HTTP_TIMEOUT = (10, 60)
 
-# Pagination par CURSEUR, uniforme sur toutes les listes v2 : ni `page`, ni
-# `offset`, ni `skip` nulle part. Tri figé côté serveur (`created_at DESC, id
-# DESC`), sans paramètre pour en changer.
+# CURSOR pagination, uniform across all v2 lists: no `page`, no
+# `offset`, no `skip` anywhere. Order fixed server-side (`created_at DESC, id
+# DESC`), with no parameter to change it.
 DEFAULT_LIMIT = 50
 MIN_LIMIT, MAX_LIMIT = 1, 200
 
-# Statuts retentés. Limites amont PAR CLÉ : 1000 GET/minute, 60 écritures/minute,
-# avec un burst de 2× sur 10 s. Le 429 porte `Retry-After`.
+# Retried statuses. Upstream limits PER KEY: 1000 GET/minute, 60 writes/minute,
+# with a 2x burst over 10 s. The 429 carries `Retry-After`.
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 MAX_ATTEMPTS = 3
 
-# --- énumérations, par endroit où elles s'appliquent ------------------------
+# --- enums, by where they apply ---------------------------------------------
 
 THREAD_STATUSES = ("open", "snoozed", "done")
 THREAD_TABS = ("open", "new", "needs-response", "my", "snoozed", "done")
@@ -41,10 +41,10 @@ THREAD_ORIGINS = (
     "ai_chat", "calendar", "widget", "teams", "linear", "upvote",
 )
 
-# `expand` sur GET /threads/{id} : liste séparée par des virgules. L'amont
-# IGNORE une valeur inconnue (il ne refuse pas) — donc une faute de frappe se
-# solderait par une réponse sans les données demandées, sans un mot. On refuse
-# localement pour que l'écart se voie.
+# `expand` on GET /threads/{id}: comma-separated list. Upstream
+# IGNORES an unknown value (it does not reject) — so a typo would end
+# in a response without the requested data, silently. We reject
+# locally so the discrepancy is visible.
 THREAD_EXPANDS = ("messages", "comments")
 
 MESSAGE_ORDERS = ("asc", "desc")
@@ -57,8 +57,8 @@ PROJECT_STATES = ("backlog", "planned", "started", "completed", "canceled")
 ROADMAP_SORTS = ("created_at", "total_score")
 
 DOC_VISIBILITIES = ("public", "agent", "internal", "unlisted")
-#: `all` n'existe qu'en FILTRE de liste, jamais en écriture — un article ne peut
-#: pas « être » de visibilité `all`.
+#: `all` only exists as a list FILTER, never on write — an article cannot
+#: "be" of visibility `all`.
 DOC_VISIBILITY_FILTERS = DOC_VISIBILITIES + ("all",)
 DOC_KINDS = ("doc", "link")
 DOC_KIND_FILTERS = DOC_KINDS + ("all",)
@@ -66,8 +66,8 @@ DOC_KIND_FILTERS = DOC_KINDS + ("all",)
 DRAFT_KINDS = ("edit", "create", "delete")
 DRAFT_STATUSES = ("draft", "open", "accepted", "rejected", "superseded")
 
-#: Priorités Linear, telles que Linear les numérote. Ce ne sont PAS des niveaux
-#: croissants d'urgence : `0` = aucune priorité, `1` = la plus haute.
+#: Linear priorities, numbered the way Linear numbers them. They are NOT
+#: increasing urgency levels: `0` = no priority, `1` = the highest.
 ISSUE_PRIORITIES = (0, 1, 2, 3, 4)
 
 __all__ = [

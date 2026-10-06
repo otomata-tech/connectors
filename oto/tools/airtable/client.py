@@ -1,52 +1,52 @@
 """Airtable Web API client — https://airtable.com/developers/web/api/introduction
 
-Airtable = des **bases** (`appXXXX`), chacune faite de **tables** (`tblXXXX`) dont les
-colonnes sont des **champs typés** (`fldXXXX`) et les lignes des **records** (`recXXXX`).
-Ce client couvre toute la section « Base data » de la Web API (records, commentaires,
-pièces jointes, sync CSV) plus le schéma (tables/champs) et la liste des bases, sans
-lesquels un appelant ne peut ni choisir une base ni écrire un champ.
+Airtable = **bases** (`appXXXX`), each made of **tables** (`tblXXXX`) whose
+columns are **typed fields** (`fldXXXX`) and whose rows are **records** (`recXXXX`).
+This client covers the whole "Base data" section of the Web API (records, comments,
+attachments, CSV sync) plus the schema (tables/fields) and the list of bases, without
+which a caller can neither pick a base nor write a field.
 
-Auth : **Personal Access Token** (`Authorization: Bearer pat…`), créé sur
-https://airtable.com/create/tokens. Un PAT porte des **scopes** ET une **liste de bases
-explicitement accordées** — les deux sont nécessaires (cf. `whoami` / `list_bases`).
+Auth: **Personal Access Token** (`Authorization: Bearer pat…`), created at
+https://airtable.com/create/tokens. A PAT carries **scopes** AND a **list of explicitly
+granted bases** — both are needed (see `whoami` / `list_bases`).
 
-Deux hôtes : `https://api.airtable.com/v0` pour tout, SAUF l'upload de pièce jointe qui
-vit sur `https://content.airtable.com/v0`.
+Two hosts: `https://api.airtable.com/v0` for everything, EXCEPT attachment upload, which
+lives on `https://content.airtable.com/v0`.
 
-**Une méthode = un endpoint.** Aucune boucle ici : ni pagination automatique, ni
-découpage en lots, ni délai de courtoisie. C'est délibéré — les trois demandent un
-budget de temps et une reddition de comptes partielle (« 30 records écrits sur 50, puis
-429 ») qui appartiennent à l'appelant, pas au client. Les méthodes de lot **refusent**
-plus de `MAX_RECORDS_PER_REQUEST` records au lieu de découper en douce.
+**One method = one endpoint.** No loops here: no automatic pagination, no
+splitting into batches, no courtesy delay. This is deliberate — all three require a time
+budget and a partial accounting ("30 records written out of 50, then
+429") that belong to the caller, not the client. The batch methods **refuse**
+more than `MAX_RECORDS_PER_REQUEST` records instead of quietly splitting.
 
-Limites de l'API à connaître AVANT d'appeler :
+API limits to know BEFORE calling:
 
-- **10 records maximum par requête** en create / update / delete
-  (`MAX_RECORDS_PER_REQUEST`). Non documenté lisiblement côté Airtable ; c'est la valeur
-  qu'appliquent les clients officiels et pyairtable.
-- **5 requêtes/seconde par base**, 50/s par token. Au-delà : **429**, et Airtable exige
-  **30 secondes** d'attente avant que les requêtes suivantes repassent. Un appelant sous
-  contrainte de temps a donc intérêt à s'arrêter et rendre compte plutôt qu'à attendre.
-- `list_records` rend **100 records par page** au maximum, et un `offset` opaque tant
-  qu'il en reste.
-- `sync_csv` : 10 000 lignes, 500 colonnes, **2 Mo par requête**, et une limite propre de
-  **20 requêtes / 5 minutes / base**.
-- `upload_attachment` : **5 Mo**, contenu en **base64**. Au-delà, passer par une URL
-  publique dans le champ pièce jointe (`{"url": …}` via `update_record`).
-- `cell_format="string"` **exige** `time_zone` ET `user_locale` — sinon 422.
+- **10 records maximum per request** on create / update / delete
+  (`MAX_RECORDS_PER_REQUEST`). Not clearly documented on Airtable's side; it is the value
+  applied by the official clients and pyairtable.
+- **5 requests/second per base**, 50/s per token. Beyond that: **429**, and Airtable requires
+  **30 seconds** of waiting before subsequent requests go through again. A caller under
+  time constraints is therefore better off stopping and reporting than waiting.
+- `list_records` returns **100 records per page** at most, and an opaque `offset` as long
+  as there are more.
+- `sync_csv`: 10,000 rows, 500 columns, **2 MB per request**, and its own limit of
+  **20 requests / 5 minutes / base**.
+- `upload_attachment`: **5 MB**, content in **base64**. Beyond that, go through a public
+  URL in the attachment field (`{"url": …}` via `update_record`).
+- `cell_format="string"` **requires** `time_zone` AND `user_locale` — otherwise 422.
 
-⚠️ **`typecast=True` n'est pas une simple conversion de type : c'est une mutation de
-schéma déclenchée par une écriture de donnée.** Sur un single/multi-select il **crée
-l'option manquante** ; sur un champ *linked record* il **crée un enregistrement dans la
-table liée**. Et il ne demande que le scope `data.records:write`, jamais
-`schema.bases:write`. Le défaut de ce client est donc `typecast` **non transmis**
-(= `false` côté Airtable) : une valeur inattendue échoue franchement au lieu d'élargir en
-silence le schéma d'une base réelle.
+⚠️ **`typecast=True` is not a simple type conversion: it is a schema mutation
+triggered by a data write.** On a single/multi-select it **creates the missing
+option**; on a *linked record* field it **creates a record in the linked
+table**. And it only requires the `data.records:write` scope, never
+`schema.bases:write`. This client's default is therefore `typecast` **not sent**
+(= `false` on Airtable's side): an unexpected value fails outright instead of silently
+widening the schema of a real base.
 
-⚠️ **Noms de champs vs identifiants.** Les tables et les champs s'adressent par nom ou
-par id. Le **nom change** dès qu'un humain renomme une colonne, et casse alors
-l'automatisation en silence — `tbl…`/`fld…` sont le chemin stable. `return_fields_by_field_id`
-demande à l'API de rendre les valeurs keyées par id de champ plutôt que par nom.
+⚠️ **Field names vs identifiers.** Tables and fields are addressed by name or
+by id. The **name changes** as soon as a human renames a column, and then silently breaks
+the automation — `tbl…`/`fld…` are the stable path. `return_fields_by_field_id`
+asks the API to return values keyed by field id rather than by name.
 
 Requires: requests
 """
@@ -60,17 +60,17 @@ import requests
 from ..common.credentials import require
 from ..common import raise_for_upstream
 
-_HTTP_TIMEOUT = (10, 60)  # (connexion, lecture) — jamais d'attente illimitée
+_HTTP_TIMEOUT = (10, 60)  # (connect, read) — never an unbounded wait
 
 
 class AirtableClient:
-    """Client Airtable Web API v0, auth PAT Bearer."""
+    """Airtable Web API v0 client, PAT Bearer auth."""
 
     BASE_URL = "https://api.airtable.com/v0"
-    # L'upload de pièce jointe est le SEUL endpoint servi par un autre hôte.
+    # Attachment upload is the ONLY endpoint served by a different host.
     CONTENT_URL = "https://content.airtable.com/v0"
 
-    #: Plafond DUR de l'API sur create/update/delete multiples.
+    #: HARD API cap on multiple create/update/delete.
     MAX_RECORDS_PER_REQUEST = 10
 
     def __init__(self, api_key: Optional[str] = None):
@@ -81,7 +81,7 @@ class AirtableClient:
         self.api_key = require(api_key, "AIRTABLE_API_KEY")
 
     # ------------------------------------------------------------------
-    # Plomberie
+    # Plumbing
 
     def _headers(self, content_type: str = "application/json") -> Dict[str, str]:
         return {
@@ -101,7 +101,7 @@ class AirtableClient:
         data: Optional[str] = None,
         content_type: str = "application/json",
     ) -> Any:
-        """Un appel HTTP. `data` = corps BRUT (sync CSV), exclusif avec `json`."""
+        """One HTTP call. `data` = RAW body (CSV sync), mutually exclusive with `json`."""
         resp = requests.request(
             method,
             f"{base_url or self.BASE_URL}{path}",
@@ -116,27 +116,27 @@ class AirtableClient:
 
     @staticmethod
     def _clean(params: Dict[str, Any]) -> Dict[str, Any]:
-        """Retire les clés à `None` — un paramètre non fourni ne doit pas partir."""
+        """Drop keys set to `None` — a parameter that was not provided must not be sent."""
         return {k: v for k, v in params.items() if v is not None}
 
     @staticmethod
     def _qbool(value: Optional[bool]) -> Optional[str]:
-        """Booléen destiné à la QUERY STRING — `requests` sérialise `True` en `"True"`,
-        qu'Airtable ne reconnaît pas (les clients de référence coercent en `true`/`1`).
-        Ne concerne que les params GET ; dans un corps JSON le booléen part tel quel."""
+        """Boolean meant for the QUERY STRING — `requests` serializes `True` as `"True"`,
+        which Airtable does not recognize (the reference clients coerce to `true`/`1`).
+        Only concerns GET params; in a JSON body the boolean goes out as-is."""
         return None if value is None else ("true" if value else "false")
 
     @staticmethod
     def _seg(value: str) -> str:
-        """Un segment d'URL. Un NOM de table ou de champ peut contenir espaces et `/`."""
+        """A URL segment. A table or field NAME may contain spaces and `/`."""
         return quote(str(value), safe="")
 
     def _check_batch(self, records: List[Any], verb: str) -> None:
         if len(records) > self.MAX_RECORDS_PER_REQUEST:
             raise ValueError(
-                f"airtable {verb}: {len(records)} records pour un maximum de "
-                f"{self.MAX_RECORDS_PER_REQUEST} par requête. Découper côté appelant "
-                f"(et espacer les requêtes : 5/s par base)."
+                f"airtable {verb}: {len(records)} records for a maximum of "
+                f"{self.MAX_RECORDS_PER_REQUEST} per request. Split on the caller side "
+                f"(and space out the requests: 5/s per base)."
             )
 
     @staticmethod
@@ -153,11 +153,11 @@ class AirtableClient:
     def _cell_format_params(
         cell_format: Optional[str], time_zone: Optional[str], user_locale: Optional[str]
     ) -> Dict[str, Any]:
-        """`cellFormat="string"` exige `timeZone` ET `userLocale` — refusé ici, pas en 422."""
+        """`cellFormat="string"` requires `timeZone` AND `userLocale` — refused here, not as a 422."""
         if cell_format == "string" and not (time_zone and user_locale):
             raise ValueError(
-                "airtable: cell_format='string' exige time_zone (ex. 'Europe/Paris') "
-                "ET user_locale (ex. 'fr'). Sinon utiliser cell_format='json'."
+                "airtable: cell_format='string' requires time_zone (e.g. 'Europe/Paris') "
+                "AND user_locale (e.g. 'fr'). Otherwise use cell_format='json'."
             )
         return {"cellFormat": cell_format, "timeZone": time_zone, "userLocale": user_locale}
 
@@ -183,15 +183,15 @@ class AirtableClient:
         record_metadata: Optional[List[str]] = None,
         offset: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`GET /{baseId}/{table}` — UNE page de records (100 max).
+        """`GET /{baseId}/{table}` — ONE page of records (100 max).
 
-        Rend `{"records": [{id, createdTime, fields}], "offset": …}`. L'`offset` n'est
-        présent que s'il reste des pages ; le repasser tel quel pour la suivante.
+        Returns `{"records": [{id, createdTime, fields}], "offset": …}`. The `offset` is
+        only present if more pages remain; pass it back unchanged for the next one.
 
-        `filter_by_formula` est une formule Airtable évaluée par ligne
-        (ex. `{Status}='Done'`). `record_metadata=["commentCount"]` ajoute le nombre de
-        commentaires. `fields` restreint les colonnes rendues — le premier levier contre
-        une réponse énorme.
+        `filter_by_formula` is an Airtable formula evaluated per row
+        (e.g. `{Status}='Done'`). `record_metadata=["commentCount"]` adds the number of
+        comments. `fields` restricts the columns returned — the first lever against
+        a huge response.
         """
         params = self._clean({
             "filterByFormula": filter_by_formula,
@@ -208,10 +208,10 @@ class AirtableClient:
         return self._request("GET", f"/{base_id}/{self._seg(table)}", params=params)
 
     def list_records_post(self, base_id: str, table: str, body: Dict[str, Any]) -> Dict[str, Any]:
-        """`POST /{baseId}/{table}/listRecords` — même chose, critères dans le CORPS.
+        """`POST /{baseId}/{table}/listRecords` — same thing, criteria in the BODY.
 
-        Échappatoire d'Airtable quand la query string devient trop longue (une grosse
-        `filterByFormula`). `body` reprend les mêmes clés qu'en GET, en camelCase.
+        Airtable's escape hatch when the query string gets too long (a big
+        `filterByFormula`). `body` takes the same keys as in GET, in camelCase.
         """
         return self._request("POST", f"/{base_id}/{self._seg(table)}/listRecords", json=body)
 
@@ -226,7 +226,7 @@ class AirtableClient:
         user_locale: Optional[str] = None,
         return_fields_by_field_id: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """`GET /{baseId}/{table}/{recordId}` — un record avec tous ses champs."""
+        """`GET /{baseId}/{table}/{recordId}` — one record with all its fields."""
         params = self._clean({
             "returnFieldsByFieldId": self._qbool(return_fields_by_field_id),
             **self._cell_format_params(cell_format, time_zone, user_locale),
@@ -244,10 +244,10 @@ class AirtableClient:
         typecast: Optional[bool] = None,
         return_fields_by_field_id: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """`POST /{baseId}/{table}` — crée 1 à 10 records.
+        """`POST /{baseId}/{table}` — creates 1 to 10 records.
 
-        `records` = `[{"fields": {"Name": "Ada"}}, …]`. Rend `{"records": [...]}` avec les
-        `recXXXX` attribués. Au-delà de 10 : `ValueError` (voir `_check_batch`).
+        `records` = `[{"fields": {"Name": "Ada"}}, …]`. Returns `{"records": [...]}` with the
+        assigned `recXXXX`. Beyond 10: `ValueError` (see `_check_batch`).
         """
         self._check_batch(records, "create_records")
         body = self._clean({
@@ -268,10 +268,10 @@ class AirtableClient:
         typecast: Optional[bool] = None,
         return_fields_by_field_id: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """`PATCH` (ou `PUT` si `replace`) `/{baseId}/{table}/{recordId}`.
+        """`PATCH` (or `PUT` if `replace`) `/{baseId}/{table}/{recordId}`.
 
-        ⚠️ `replace=True` → **PUT destructif** : tout champ absent du corps est VIDÉ.
-        `PATCH` (défaut) ne touche que les champs transmis.
+        ⚠️ `replace=True` → **destructive PUT**: any field missing from the body is CLEARED.
+        `PATCH` (default) only touches the fields passed.
         """
         body = self._clean({
             "fields": fields,
@@ -295,16 +295,16 @@ class AirtableClient:
         perform_upsert: Optional[Dict[str, Any]] = None,
         return_fields_by_field_id: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """`PATCH` (ou `PUT` si `replace`) `/{baseId}/{table}` — 1 à 10 records.
+        """`PATCH` (or `PUT` if `replace`) `/{baseId}/{table}` — 1 to 10 records.
 
-        Deux régimes :
-        - **update** : chaque item porte son `id` (`{"id": "rec…", "fields": {…}}`).
-        - **upsert** : `perform_upsert={"fieldsToMergeOn": ["Email"]}` (1 à 3 champs).
-          Les items SANS `id` sont alors rapprochés des lignes existantes sur ces
-          champs — trouvées ⟹ mises à jour, sinon créées. La réponse distingue
-          `createdRecords` et `updatedRecords`.
+        Two modes:
+        - **update**: each item carries its `id` (`{"id": "rec…", "fields": {…}}`).
+        - **upsert**: `perform_upsert={"fieldsToMergeOn": ["Email"]}` (1 to 3 fields).
+          Items WITHOUT an `id` are then matched against existing rows on those
+          fields — found ⟹ updated, otherwise created. The response distinguishes
+          `createdRecords` and `updatedRecords`.
 
-        ⚠️ `replace=True` (PUT) vide les champs non transmis, y compris en upsert.
+        ⚠️ `replace=True` (PUT) clears the fields not passed, including in upsert.
         """
         self._check_batch(records, "update_records")
         body = self._clean({
@@ -318,18 +318,18 @@ class AirtableClient:
         )
 
     def delete_record(self, base_id: str, table: str, record_id: str) -> Dict[str, Any]:
-        """`DELETE /{baseId}/{table}/{recordId}` — suppression DÉFINITIVE d'une ligne."""
+        """`DELETE /{baseId}/{table}/{recordId}` — PERMANENT deletion of a row."""
         return self._request("DELETE", f"/{base_id}/{self._seg(table)}/{record_id}")
 
     def delete_records(self, base_id: str, table: str, record_ids: List[str]) -> Dict[str, Any]:
-        """`DELETE /{baseId}/{table}?records[]=…` — 1 à 10 lignes, DÉFINITIVEMENT."""
+        """`DELETE /{baseId}/{table}?records[]=…` — 1 to 10 rows, PERMANENTLY."""
         self._check_batch(record_ids, "delete_records")
         return self._request(
             "DELETE", f"/{base_id}/{self._seg(table)}", params={"records[]": record_ids}
         )
 
     # ==================================================================
-    # Commentaires — https://airtable.com/developers/web/api/list-comments
+    # Comments — https://airtable.com/developers/web/api/list-comments
     # ==================================================================
 
     def list_comments(
@@ -341,10 +341,10 @@ class AirtableClient:
         page_size: Optional[int] = None,
         offset: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`GET /{baseId}/{table}/{recordId}/comments` — du plus récent au plus ancien.
+        """`GET /{baseId}/{table}/{recordId}/comments` — newest to oldest.
 
-        100 par page maximum. Chaque commentaire porte `author`, `text`,
-        `parentCommentId` (réponse dans un fil), `reactions` et `mentioned`.
+        100 per page maximum. Each comment carries `author`, `text`,
+        `parentCommentId` (reply in a thread), `reactions` and `mentioned`.
         """
         return self._request(
             "GET",
@@ -363,8 +363,8 @@ class AirtableClient:
     ) -> Dict[str, Any]:
         """`POST /{baseId}/{table}/{recordId}/comments`.
 
-        Mentionner quelqu'un s'écrit `@[usrXXXXXXX]` dans `text`. `parent_comment_id`
-        répond dans un fil existant.
+        Mentioning someone is written `@[usrXXXXXXX]` in `text`. `parent_comment_id`
+        replies in an existing thread.
         """
         body = self._clean({"text": text, "parentCommentId": parent_comment_id})
         return self._request(
@@ -374,9 +374,9 @@ class AirtableClient:
     def update_comment(
         self, base_id: str, table: str, record_id: str, comment_id: str, text: str
     ) -> Dict[str, Any]:
-        """`PATCH /{baseId}/{table}/{recordId}/comments/{commentId}` — seul `text` change.
+        """`PATCH /{baseId}/{table}/{recordId}/comments/{commentId}` — only `text` changes.
 
-        Un PAT ne peut éditer que les commentaires de SON propre utilisateur.
+        A PAT can only edit the comments of ITS OWN user.
         """
         return self._request(
             "PATCH",
@@ -389,14 +389,14 @@ class AirtableClient:
     ) -> Dict[str, Any]:
         """`DELETE /{baseId}/{table}/{recordId}/comments/{commentId}`.
 
-        Supprimer le commentaire de tête d'un fil supprime le fil entier.
+        Deleting the top comment of a thread deletes the whole thread.
         """
         return self._request(
             "DELETE", f"/{base_id}/{self._seg(table)}/{record_id}/comments/{comment_id}"
         )
 
     # ==================================================================
-    # Pièces jointes — autre HÔTE (content.airtable.com)
+    # Attachments — different HOST (content.airtable.com)
     # ==================================================================
 
     def upload_attachment(
@@ -411,11 +411,11 @@ class AirtableClient:
     ) -> Dict[str, Any]:
         """`POST content.airtable.com/v0/{baseId}/{recordId}/{field}/uploadAttachment`.
 
-        `file_b64` = le contenu du fichier encodé en **base64** (5 Mo max). AJOUTE une
-        pièce jointe au champ, sans écraser les précédentes. Rend le record mis à jour.
+        `file_b64` = the file content encoded in **base64** (5 MB max). ADDS an
+        attachment to the field, without overwriting the previous ones. Returns the updated record.
 
-        Au-delà de 5 Mo : héberger le fichier et poser `[{"url": …}]` dans le champ via
-        `update_record` — Airtable va le chercher lui-même.
+        Beyond 5 MB: host the file and set `[{"url": …}]` in the field via
+        `update_record` — Airtable fetches it itself.
         """
         return self._request(
             "POST",
@@ -425,18 +425,18 @@ class AirtableClient:
         )
 
     # ==================================================================
-    # Sync CSV — corps BRUT text/csv
+    # CSV sync — RAW text/csv body
     # ==================================================================
 
     def sync_csv(self, base_id: str, table: str, sync_id: str, csv_data: str) -> Any:
-        """`POST /{baseId}/{table}/sync/{apiEndpointSyncId}` — corps `text/csv` brut.
+        """`POST /{baseId}/{table}/sync/{apiEndpointSyncId}` — raw `text/csv` body.
 
-        Alimente une table **« Sync API »** : la table doit avoir été créée dans Airtable
-        via ce mode de synchronisation, ce qui produit le `apiEndpointSyncId` (réglages
-        de la table synchronisée). Ce n'est PAS un import dans une table ordinaire.
+        Feeds a **"Sync API"** table: the table must have been created in Airtable
+        via this sync mode, which produces the `apiEndpointSyncId` (settings
+        of the synced table). This is NOT an import into an ordinary table.
 
-        Chaque envoi REMPLACE le contenu synchronisé (c'est une source, pas un append).
-        Limites : 10 000 lignes, 500 colonnes, 2 Mo, **20 requêtes / 5 min / base**.
+        Each send REPLACES the synced content (it is a source, not an append).
+        Limits: 10,000 rows, 500 columns, 2 MB, **20 requests / 5 min / base**.
         """
         return self._request(
             "POST",
@@ -446,19 +446,19 @@ class AirtableClient:
         )
 
     # ==================================================================
-    # Schéma de base — tables et champs
+    # Base schema — tables and fields
     # ==================================================================
 
     def get_base_schema(
         self, base_id: str, *, include: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """`GET /meta/bases/{baseId}/tables` — TOUTES les tables d'une base.
+        """`GET /meta/bases/{baseId}/tables` — ALL the tables of a base.
 
-        Chaque table rend `id`, `name`, `description`, `primaryFieldId`, ses `fields`
-        (`id`, `name`, `type`, `options`) et ses `views`. C'est la seule lecture du
-        schéma : il n'y a pas d'endpoint « get one table ».
+        Each table returns `id`, `name`, `description`, `primaryFieldId`, its `fields`
+        (`id`, `name`, `type`, `options`) and its `views`. This is the only schema
+        read: there is no "get one table" endpoint.
 
-        `include=["visibleFieldIds"]` ajoute, pour les vues grille, les champs visibles.
+        `include=["visibleFieldIds"]` adds, for grid views, the visible fields.
         Scope `schema.bases:read`.
         """
         return self._request(
@@ -475,11 +475,11 @@ class AirtableClient:
         *,
         description: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`POST /meta/bases/{baseId}/tables` — nouvelle table dans une base existante.
+        """`POST /meta/bases/{baseId}/tables` — new table in an existing base.
 
-        `fields` = `[{"name": …, "type": …, "options": {…}}]`. ⚠️ **Le PREMIER champ
-        devient le champ primaire** et doit être d'un type admis comme tel (texte,
-        nombre, date, formule… pas une pièce jointe ni une case à cocher).
+        `fields` = `[{"name": …, "type": …, "options": {…}}]`. ⚠️ **The FIRST field
+        becomes the primary field** and must be of a type allowed as such (text,
+        number, date, formula… not an attachment or a checkbox).
         Scope `schema.bases:write`.
         """
         body = self._clean({"name": name, "fields": fields, "description": description})
@@ -493,10 +493,10 @@ class AirtableClient:
         name: Optional[str] = None,
         description: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """`PATCH /meta/bases/{baseId}/tables/{tableId}` — renomme / redécrit une table.
+        """`PATCH /meta/bases/{baseId}/tables/{tableId}` — renames / redescribes a table.
 
-        Seuls `name` et `description` sont modifiables ; la structure passe par les
-        champs. Scope `schema.bases:write`.
+        Only `name` and `description` are modifiable; the structure goes through the
+        fields. Scope `schema.bases:write`.
         """
         body = self._clean({"name": name, "description": description})
         return self._request("PATCH", f"/meta/bases/{base_id}/tables/{table_id}", json=body)
@@ -511,12 +511,12 @@ class AirtableClient:
         description: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """`POST /meta/bases/{baseId}/tables/{tableId}/fields` — nouvelle colonne.
+        """`POST /meta/bases/{baseId}/tables/{tableId}/fields` — new column.
 
-        `type` = un type Airtable (`singleLineText`, `number`, `singleSelect`,
-        `multipleRecordLinks`, `checkbox`…). `options` est **exigé par la plupart des
-        types** et sa forme dépend du type (un `singleSelect` veut `{"choices": [{"name":
-        …}]}`, un `number` veut `{"precision": 0}`, un `multipleRecordLinks` veut
+        `type` = an Airtable type (`singleLineText`, `number`, `singleSelect`,
+        `multipleRecordLinks`, `checkbox`…). `options` is **required by most
+        types** and its shape depends on the type (a `singleSelect` wants `{"choices": [{"name":
+        …}]}`, a `number` wants `{"precision": 0}`, a `multipleRecordLinks` wants
         `{"linkedTableId": …}`). Scope `schema.bases:write`.
         """
         body = self._clean({
@@ -537,12 +537,12 @@ class AirtableClient:
     ) -> Dict[str, Any]:
         """`PATCH /meta/bases/{baseId}/tables/{tableId}/fields/{fieldId}`.
 
-        Seuls `name` et `description` sont modifiables : l'API **ne change ni le type ni
-        les `options`** d'un champ existant. Vérifié en live le 2026-08-25 — un PATCH
-        portant `options` rend `422 INVALID_REQUEST_UNKNOWN, "Changing a field's type or
-        number precision is not currently supported."`, et il n'existe **aucun**
-        `DELETE …/fields/{id}` (404). Une option de select ajoutée par erreur (via
-        `typecast`) ne se retire donc QUE dans l'interface Airtable.
+        Only `name` and `description` are modifiable: the API **changes neither the type nor
+        the `options`** of an existing field. Verified live on 2026-08-25 — a PATCH
+        carrying `options` returns `422 INVALID_REQUEST_UNKNOWN, "Changing a field's type or
+        number precision is not currently supported."`, and there is **no**
+        `DELETE …/fields/{id}` (404). A select option added by mistake (via
+        `typecast`) can therefore ONLY be removed in the Airtable interface.
         Scope `schema.bases:write`.
         """
         body = self._clean({"name": name, "description": description})
@@ -551,27 +551,27 @@ class AirtableClient:
         )
 
     # ==================================================================
-    # Bases et identité du token
+    # Bases and token identity
     # ==================================================================
 
     def list_bases(self, *, offset: Optional[str] = None) -> Dict[str, Any]:
-        """`GET /meta/bases` — les bases ACCORDÉES au token (1000 par page).
+        """`GET /meta/bases` — the bases GRANTED to the token (1000 per page).
 
-        Rend `{"bases": [{id, name, permissionLevel}], "offset": …}`.
-        ⚠️ Un PAT parfaitement valide auquel aucune base n'a été accordée rend ici une
-        **liste vide, avec un 200** — pas une erreur. C'est le mode d'échec le plus
-        fréquent d'Airtable. Scope `schema.bases:read`.
+        Returns `{"bases": [{id, name, permissionLevel}], "offset": …}`.
+        ⚠️ A perfectly valid PAT that has been granted no base returns an **empty
+        list here, with a 200** — not an error. This is Airtable's most
+        frequent failure mode. Scope `schema.bases:read`.
         """
         return self._request("GET", "/meta/bases", params=self._clean({"offset": offset}))
 
     def create_base(
         self, name: str, workspace_id: str, tables: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """`POST /meta/bases` — nouvelle base dans un workspace (`wspXXXX`).
+        """`POST /meta/bases` — new base in a workspace (`wspXXXX`).
 
-        `tables` a la même forme que dans `create_table` (au moins une table, dont le
-        premier champ sera le champ primaire). Il n'existe **pas** d'endpoint de
-        suppression de base dans la Web API. Scope `schema.bases:write`.
+        `tables` has the same shape as in `create_table` (at least one table, whose
+        first field will be the primary field). There is **no** base deletion
+        endpoint in the Web API. Scope `schema.bases:write`.
         """
         return self._request(
             "POST", "/meta/bases",
@@ -579,9 +579,9 @@ class AirtableClient:
         )
 
     def whoami(self) -> Dict[str, Any]:
-        """`GET /meta/whoami` — l'utilisateur du token (`id`, `email` si scope, `scopes`).
+        """`GET /meta/whoami` — the token's user (`id`, `email` if scope, `scopes`).
 
-        N'exige aucun scope : c'est la sonde d'authentification pure. Elle ne dit RIEN
-        des bases accessibles — croiser avec `list_bases`.
+        Requires no scope: it is the pure authentication probe. It says NOTHING
+        about accessible bases — cross-check with `list_bases`.
         """
         return self._request("GET", "/meta/whoami")

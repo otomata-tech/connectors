@@ -1,14 +1,14 @@
-"""Identité de la clé, portail public, et import de fichiers.
+"""Key identity, public portal, and file import.
 
-Ce mixin n'est jamais instancié seul : il est composé dans `ProductlaneClient`,
-qui fournit le transport (`_request`).
+This mixin is never instantiated on its own: it is composed into `ProductlaneClient`,
+which provides the transport (`_request`).
 
-`me()` est la sonde du connecteur : **n'importe quelle clé authentifiée peut
-l'appeler**, quels que soient ses scopes. C'est ce qui en fait le bon test de
-connexion — elle distingue « clé invalide » (401) de « clé valide mais sans le
-droit demandé » (403 ailleurs), là où sonder une ressource confondrait les deux.
-Elle rend en prime les scopes accordés et la sélection d'équipe Linear du
-workspace, donc de quoi expliquer un refus AVANT de le provoquer.
+`me()` is the connector's probe: **any authenticated key can
+call it**, whatever its scopes. That is what makes it the right connection
+test — it tells "invalid key" (401) apart from "valid key but without the
+requested right" (403 elsewhere), where probing a resource would conflate the two.
+It also returns the granted scopes and the workspace's Linear team selection,
+so there is enough to explain a refusal BEFORE provoking it.
 """
 from __future__ import annotations
 
@@ -16,72 +16,72 @@ from typing import Any, Dict, Optional
 
 
 class _MetaMixin:
-    """Identité, portail, fichiers."""
+    """Identity, portal, files."""
 
-    # --- identité -----------------------------------------------------------
+    # --- identity -----------------------------------------------------------
 
     def me(self) -> Any:
-        """GET /me — identité de la clé, scopes accordés, équipes Linear du workspace.
+        """GET /me — key identity, granted scopes, workspace Linear teams.
 
-        **Aucun scope requis** : appelable par toute clé authentifiée. C'est la
-        sonde d'authentification du connecteur.
+        **No scope required**: callable by any authenticated key. It is the
+        connector's authentication probe.
         """
         return self._request("GET", "/me")
 
-    # --- portail public ------------------------------------------------------
+    # --- public portal -------------------------------------------------------
 
     def get_roadmap(self, contact_email: Optional[str] = None,
                     language: Optional[str] = None) -> Any:
-        """GET /portal/roadmap — la roadmap publique, telle que le portail la rend.
+        """GET /portal/roadmap — the public roadmap, as the portal renders it.
 
-        Scope `portal:read`. `contact_email` la rend du point de vue d'un contact
-        (ce qu'il a voté, ce qui le concerne).
+        Scope `portal:read`. `contact_email` renders it from a contact's point of view
+        (what they voted for, what concerns them).
         """
         return self._request("GET", "/portal/roadmap",
                              params={"contact_email": contact_email,
                                      "language": language})
 
     def get_customer_portal(self, email: str) -> Any:
-        """GET /portal/customer-portal — ce qu'un contact voit dans son portail.
+        """GET /portal/customer-portal — what a contact sees in their portal.
 
-        Scope `portal:read`, **plan Scale requis**. `email` est obligatoire : la
-        vue est celle d'une personne précise, il n'y a pas de vue « générale ».
+        Scope `portal:read`, **Scale plan required**. `email` is mandatory: the
+        view is that of a specific person, there is no "general" view.
         """
         if not email:
             raise ValueError(
-                "`email` requis : cette vue est celle d'un contact donné.")
+                "`email` is required: this view is that of a given contact.")
         return self._request("GET", "/portal/customer-portal",
                              params={"email": email})
 
     def list_portal_instances(self) -> Any:
-        """GET /portal/instances — instances de portail du workspace. Scope `portal:read`.
+        """GET /portal/instances — workspace portal instances. Scope `portal:read`.
 
-        ⚠️ Le portail **Main (Root) est implicite** : il n'apparaît pas dans cette
-        liste, et se désigne ailleurs par un `portal_instance_id` à `null`. Une
-        liste vide ne veut donc pas dire « pas de portail ».
+        ⚠️ The **Main (Root) portal is implicit**: it does not appear in this
+        list, and is designated elsewhere by a `null` `portal_instance_id`. An
+        empty list therefore does not mean "no portal".
         """
         return self._request("GET", "/portal/instances")
 
-    # --- fichiers ------------------------------------------------------------
+    # --- files ---------------------------------------------------------------
 
     def import_file(self, url: Optional[str] = None,
                     content_base64: Optional[str] = None,
                     file_name: Optional[str] = None,
                     content_type: Optional[str] = None) -> Any:
-        """POST /files/import — stocke un fichier depuis une URL publique ou en base64.
+        """POST /files/import — store a file from a public URL or from base64.
 
-        Rend une URL CDN utilisable dans un changelog, un article de doc ou une
-        pièce jointe. Fournir **soit** `url`, **soit** `content_base64` — pas les
-        deux : l'amont ne dit pas lequel il privilégierait.
+        Returns a CDN URL usable in a changelog, a doc article or an
+        attachment. Provide **either** `url` **or** `content_base64` — not
+        both: upstream does not say which it would favor.
         """
         if not url and not content_base64:
             raise ValueError(
-                "fournir `url` (source publique) ou `content_base64` (contenu "
-                "en ligne).")
+                "provide `url` (public source) or `content_base64` (inline "
+                "content).")
         if url and content_base64:
             raise ValueError(
-                "`url` et `content_base64` sont exclusifs — passer l'un OU "
-                "l'autre.")
+                "`url` and `content_base64` are mutually exclusive — pass one OR "
+                "the other.")
         body: Dict[str, Any] = {}
         for key, value in (("url", url), ("content_base64", content_base64),
                            ("file_name", file_name),

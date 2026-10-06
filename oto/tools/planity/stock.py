@@ -1,18 +1,18 @@
-"""Le stock : lots d'achat, mouvements, sorties de masse.
+"""Stock: purchase lots, movements, mass removals.
 
-Le stock d'un produit n'est pas un nombre — c'est une MAP de lots d'achat
-(`stocks`), chacun avec sa quantité restante et son prix d'achat. Sommer les
-quantités donne le stock ; ignorer les lots fait disparaître le prix d'achat, donc
-la marge.
+A product's stock is not a number — it is a MAP of purchase lots
+(`stocks`), each with its remaining quantity and its purchase price. Summing the
+quantities gives the stock; ignoring the lots makes the purchase price vanish, and
+with it the margin.
 
-Les mouvements vivent sous `business_stock_movements/<salon>/<produit>` : un
-mouvement PAR PRODUIT, des milliers en tout. Il n'y a pas de lecture globale qui
-tienne — on lit produit par produit, sur une plage de `createdAt`.
+Movements live under `business_stock_movements/<salon>/<product>`: one
+movement node PER PRODUCT, thousands in all. No global read holds up —
+we read product by product, over a `createdAt` range.
 
-⚠️ **La liste des produits se prend au CATALOGUE, pas au nœud des mouvements.**
-Ce dernier se lit borné, et une borne y tronque en silence : sur un salon à neuf
-cents produits, les derniers n'ont simplement pas de mouvement — ce qui se lit
-comme « rien vendu » et fausse toute prévision de commande.
+⚠️ **The product list is taken from the CATALOGUE, not from the movements node.**
+The latter is read bounded, and a bound silently truncates there: on a salon with nine
+hundred products, the last ones simply have no movement — which reads
+as "nothing sold" and skews every order forecast.
 """
 from __future__ import annotations
 
@@ -26,19 +26,19 @@ NOEUD_PRODUITS = "business_products"
 
 INDEX_MOUVEMENT = "createdAt"
 
-#: Les types de mouvement du modèle. `sale` porte la consommation,
-#: `saleCancellation` la reprend. Un type hors de cette liste n'est PAS filtré :
-#: elle documente, elle ne décide pas.
+#: The movement types of the model. `sale` carries consumption,
+#: `saleCancellation` takes it back. A type outside this list is NOT filtered:
+#: it documents, it does not decide.
 TYPES_CONNUS = ("creation", "sale", "update", "saleCancellation")
 
 
 def produit(product_id: str, category_id: str, brut: dict) -> dict:
-    """Un produit du catalogue, ses lots et ses seuils.
+    """A catalogue product, its lots and its thresholds.
 
-    `stock_threshold` / `stock_ceiling` / `supplier_id` existent dans le modèle de
-    Planity et peuvent n'être renseignés nulle part : `None` veut dire « le salon
-    ne s'en sert pas », pas « zéro ». Une prévision de commande qui lirait `0` en
-    seuil commanderait tout, tout le temps."""
+    `stock_threshold` / `stock_ceiling` / `supplier_id` exist in Planity's model
+    and may be filled in nowhere: `None` means "the salon does not use it", not
+    "zero". An order forecast that read `0` as a threshold would order everything,
+    all the time."""
     lots_bruts = brut.get("stocks") or {}
     lots = []
     quantite = 0
@@ -76,7 +76,7 @@ def produit(product_id: str, category_id: str, brut: dict) -> dict:
 
 
 def aplatir_produits(catalogue: dict) -> list[dict]:
-    """Le catalogue `{catégorie: {children: {produit}}}` à plat."""
+    """The catalogue `{category: {children: {product}}}` flattened."""
     sortie = []
     for cat_id, cat in (catalogue or {}).items():
         if not isinstance(cat, dict):
@@ -91,14 +91,14 @@ def aplatir_produits(catalogue: dict) -> list[dict]:
 
 
 def mouvement(product_id: str, mov_id: str, brut: dict) -> dict:
-    """Un mouvement nommé.
+    """A named movement.
 
-    ⚠️ **`purchasePrice` n'est pas toujours un nombre** : il vaut aussi la chaîne
-    `"any"` (une sortie qui ne vise aucun lot d'achat en particulier). Le convertir
-    en euros sans regarder lève au premier mouvement de ce genre — au milieu d'une
-    lecture par ailleurs bonne. On sépare donc les deux : `purchase_price_cents`
-    est le montant QUAND c'en est un, `purchase_price_raw` est ce que l'amont a
-    écrit. Un `None` en centimes veut dire « pas un montant », pas « gratuit »."""
+    ⚠️ **`purchasePrice` is not always a number**: it is also the string
+    `"any"` (a removal that targets no purchase lot in particular). Converting it
+    to euros without looking raises at the first movement of this kind — in the middle of
+    an otherwise good read. So we separate the two: `purchase_price_cents`
+    is the amount WHEN it is one, `purchase_price_raw` is what the upstream
+    wrote. A `None` in cents means "not an amount", not "free"."""
     achat = brut.get("purchasePrice")
     montant = achat if isinstance(achat, (int, float)) and not isinstance(achat, bool) else None
     return {
@@ -117,12 +117,12 @@ def mouvement(product_id: str, mov_id: str, brut: dict) -> dict:
 async def lire_mouvements(db: FirebaseRTDB, business_id: str,
                           product_ids: Iterable[str], gte_ms: int,
                           lte_ms: int) -> list[dict]:
-    """Les mouvements de ces produits dans la fenêtre — une lecture bornée par produit.
+    """The movements of these products in the window — one bounded read per product.
 
-    `product_ids` est EXPLICITE et sans défaut : il n'existe pas de lecture globale
-    des mouvements qui tienne (des milliers, sur un nœud sans index de temps au
-    niveau du salon). Un appelant qui veut tout le catalogue le dit en passant tout
-    le catalogue, et il sait alors ce qu'il paie."""
+    `product_ids` is EXPLICIT and has no default: no global read of movements
+    holds up (thousands, on a node with no time index at salon level). A caller
+    who wants the whole catalogue says so by passing the whole catalogue, and then
+    knows what it is paying."""
     sortie: list[dict] = []
     for pid in product_ids:
         brut = await db.get(f"{NOEUD_MOUVEMENTS}/{business_id}/{pid}",
@@ -137,7 +137,7 @@ async def lire_mouvements(db: FirebaseRTDB, business_id: str,
 
 async def lire_sorties_de_masse(db: FirebaseRTDB, business_id: str,
                                 limite: int = 50) -> list[dict]:
-    """Les sorties de stock groupées (inventaire, casse, péremption)."""
+    """Grouped stock removals (inventory, breakage, expiry)."""
     brut = await db.get(f"{NOEUD_SORTIES_DE_MASSE}/{business_id}", limit_last(limite))
     if not isinstance(brut, dict):
         return []
