@@ -5,7 +5,7 @@
 
 ## Résumé
 
-La fabrique lit les [fichiers de description](format-de-description.md) et génère, pour chaque connecteur partagé, des définitions TypeScript structurelles et typées, que le paquet d'oto 2 adapte à son contrat de fonction et exécute ; puis, dans un second temps, un client Python dans la lib. Elle vit dans ce dépôt, à côté des descriptions, écrite en Python (`fabrique/`) ; sa sortie TypeScript est commitée sous `ts/`, et sera publiée en paquet npm. La sortie TypeScript existe ; la sortie Python, pas encore.
+La fabrique lit les [fichiers de description](format-de-description.md) et génère, pour chaque connecteur partagé, des définitions TypeScript structurelles et typées, que le paquet d'oto 2 adapte à son contrat de fonction et exécute ; puis, dans un second temps, un client Python dans la lib. Elle vit dans ce dépôt, à côté des descriptions, écrite en Python (`fabrique/`) ; sa sortie TypeScript est commitée sous `ts/`. L'application hôte (oto-saas) en dépend et déclare au paquet d'oto 2 les connecteurs qu'elle choisit ; le paquet, moteur générique, n'en contient aucun. La sortie TypeScript existe ; la sortie Python, pas encore.
 
 ## Contexte
 
@@ -74,7 +74,7 @@ Le code généré ne lit aucun secret. En Python, le constructeur du client reç
 ### Livraison
 
 - La lib se publie sur PyPI, sur un tag posé à la main (`docs/release.md`).
-- Le paquet npm des connecteurs partagés (`ts/`, nom provisoire `@otomata_tech/connectors`, privé à ce jour) se publiera de même, sur un tag posé à la main avec l'accord du mainteneur. Le paquet d'oto 2 le déclarera en dépendance et adaptera ses définitions ; la source de vérité reste ici.
+- La sortie TypeScript (`ts/`, nom provisoire `@otomata_tech/connectors`, privé) n'est pas publiée : l'application hôte en dépend par un commit de ce dépôt, épinglé. Le paquet d'oto 2 n'en dépend pas ; il accepte des définitions de même forme, que l'hôte lui déclare. Une publication npm, si elle vient, part sur un tag posé à la main avec l'accord du mainteneur.
 
 ### Oto 1, connecteur par connecteur
 
@@ -95,6 +95,7 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - **Partir de zéro, sans la lib** : écarté le 30/09. La lib est gardée pour les connecteurs partagés, au secret fourni par le consommateur.
 - **TypeScript seul, la lib Python gelée jusqu'à l'extinction d'oto 1** : écarté le 06/10. Une seule version des connecteurs passe par la description et la fabrique, pas par l'abandon d'un des deux langages ; la description devient la source du client Python comme du TypeScript, et un client Python écrit à la main à côté d'elle est un doublon à résorber.
 - **Python seul, appelé à distance par oto 2** : écarté de nouveau le 06/10, pour les raisons du service connecteurs abandonné le 29/09.
+- **Le paquet d'oto 2 dépend de la sortie et embarque des connecteurs** : écarté le 07/10. Le paquet est le moteur ; l'application hôte choisit ses connecteurs partagés et propres, et les lui déclare.
 - **Une sortie TypeScript au contrat du paquet** (fonctions `defineFunction` prêtes à inscrire) : écarté le 06/10. Elle dépendrait du paquet, qui dépendrait d'elle ; la sortie porte des définitions structurelles, que le paquet adapte.
 - **Une sortie produite à la publication, non commitée** : écarté le 06/10. Commitée, elle se relit dans une revue et un test prouve qu'elle suit les descriptions.
 - **Traduire le schéma d'entrée en `zod` strict** : écarté le 06/10. Trente-sept fonctions sur 340 ne se traduisaient pas (`minProperties`, `oneOf`, `anyOf` ou `not` à la racine, `dependentRequired`, `not` sur un identifiant, `uniqueItems`) ; un raffinement ne se voit pas dans le schéma servi, et deux langages de schéma devaient rester égaux. Le JSON Schema passe tel quel, validé par l'hôte.
@@ -118,7 +119,6 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 
 ## Questions ouvertes
 
-- Le nom définitif et la portée du paquet npm des connecteurs partagés.
 - Pendant la bascule d'oto 1 vers oto 2, un connecteur utile sans description passe-t-il par un doublage à la main ?
 
 ## Historique
@@ -132,3 +132,4 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 - 2026-10-06 : le backend d'oto 1 bascule connecteur par connecteur sur la description, par un lecteur générique ; ses noms d'outils changent connecteur par connecteur — décidé par le mainteneur.
 - 2026-10-06 : la sortie TypeScript est commitée dans ce dépôt (`ts/`), en définitions structurelles qui ne dépendent pas du paquet ; schéma d'entrée en `zod` strict généré, refus en table, texte du résultat composé par le paquet ; première version du générateur — décidé par le mainteneur.
 - 2026-10-06 : plus de `zod` dans la sortie : le JSON Schema d'entrée est transmis tel quel et validé par l'hôte avec un validateur standard ; la fabrique n'exige qu'une racine stricte, et génère les 340 fonctions ; la sortie porte en-têtes constants, constantes, encodage JSON, arrêt de pagination, rythme, sonde et contrôles — décidé par le mainteneur.
+- 2026-10-07 : l'application hôte dépend de la sortie par un commit épinglé et déclare ses connecteurs au paquet d'oto 2, moteur générique sans connecteur ; pas de publication npm pour l'instant — décidé par le mainteneur.
