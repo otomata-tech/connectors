@@ -168,11 +168,28 @@ def build_auth(mode: str, fields: dict) -> UpstreamAuth:
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
+class RedirectRefused(ValueError):
+    """The target API answered a 3xx. Never followed: the auth this client injects
+    (custom header, query parameter) would leave with it — `requests` only strips
+    `Authorization` on a cross-host redirect — and a 3xx is the classic way around
+    an egress guard. The caller who wants the target calls its path explicitly."""
+
+    def __init__(self, status: int, location: str):
+        self.status = status
+        self.location = location
+        super().__init__(f"redirect refused ({status} to {location or '?'})")
+
+
+def _refuse_redirect(r: requests.Response) -> None:
+    if 300 <= r.status_code < 400:
+        raise RedirectRefused(r.status_code, r.headers.get("Location") or "")
+
+
 class HttpConnectorClient:
     """HTTP node: (base_url, auth_mode, fields) → `.request(method, path, …)`.
 
     Injects the auth, forwards the method (GET/POST/PUT/PATCH/DELETE), single retry
-    after re-auth on 401. `.get()`/`.post()` = shortcuts. Raises `ValueError` on
+    after re-auth on 401. A 3xx is never followed (`RedirectRefused`). `.get()`/`.post()` = shortcuts. Raises `ValueError` on
     invalid config (non-http(s) scheme, invalid mode/field/method).
 
     Like n8n/Make's HTTP node: write methods are carried through;
@@ -214,12 +231,13 @@ class HttpConnectorClient:
         def _send():
             merged = {**(params or {}), **self._auth.query_params()}
             return s.request(method, url, params=merged or None, json=json,
-                             timeout=self._timeout)
+                             timeout=self._timeout, allow_redirects=False)
 
         r = _send()
         if r.status_code == 401:
             self._auth.refresh(s)
             r = _send()
+        _refuse_redirect(r)
         r.raise_for_status()
         return r.json() if r.content else {}
 
@@ -252,9 +270,7 @@ class HttpConnectorClient:
             self._auth.refresh(s)
             r = _send()
         try:
-            if 300 <= r.status_code < 400:
-                raise ValueError(f"redirect refused ({r.status_code} to "
-                                 f"{r.headers.get('Location') or '?'})")
+            _refuse_redirect(r)
             r.raise_for_status()
             declared = r.headers.get("Content-Length")
             if declared and declared.isdigit() and int(declared) > max_bytes:
