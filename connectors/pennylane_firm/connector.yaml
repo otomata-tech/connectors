@@ -14,11 +14,9 @@
 # The DMS has no single-item read, no update, no delete and no move.
 #
 # Not described here: uploading a file into the DMS (multipart POST
-# /companies/{company_id}/dms/files). The format has no multipart body, and
-# the file should travel from the user's machine straight to Pennylane rather
-# than through the host; the API offers no presigned upload URL that would let
-# the host hand that transfer over. It is therefore not a function the host
-# runs.
+# /companies/{company_id}/dms/files). The format has no multipart body. The
+# upload is served by the Python client (PennylaneFirmClient.upload_dms_file)
+# behind a relay of the host's own.
 #
 # list_companies and list_fiscal_years are paged by page number (page,
 # per_page): the response gives current_page and total_pages but no next page,
