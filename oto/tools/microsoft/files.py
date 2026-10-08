@@ -27,21 +27,15 @@ spends it.
   files need an upload session, not covered here.
 - Collections paginate with `@odata.nextLink`; `limit` bounds how many items
   are followed across pages.
-- Throttling (429, `Retry-After`) surfaces as `UpstreamHTTPError` like any
-  other non-2xx — not retried here.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
-import requests
-
-from ..common import raise_for_upstream
 from ..common.credentials import require
+from ._transport import GraphBase
 
-_HTTP_TIMEOUT = (10, 120)  # (connect, read) — downloads can be large
-BASE_URL = "https://graph.microsoft.com/v1.0"
 CONFLICT_BEHAVIORS = ("fail", "replace", "rename")
 
 
@@ -49,7 +43,7 @@ def _encode_path(path: str) -> str:
     """`Contrats/2026/nda v2.docx` → segments percent-encoded, slashes kept."""
     cleaned = (path or "").strip().strip("/")
     if not cleaned:
-        raise ValueError("path est vide")
+        raise ValueError("path is empty")
     return quote(cleaned, safe="/")
 
 
@@ -58,54 +52,9 @@ def _odata_string(value: str) -> str:
     return value.replace("'", "''")
 
 
-class GraphClient:
+class FilesClient(GraphBase):
     """Microsoft Graph v1.0 on behalf of one person, scoped to files (SharePoint,
     OneDrive)."""
-
-    def __init__(self, access_token: Optional[str] = None):
-        """
-        Args:
-            access_token: a delegated access token of the signed-in person (see
-                `auth.exchange_code` / `auth.refresh`).
-
-        A missing token raises `MissingCredential`: the library never reads
-        secrets on its own. An expired one surfaces as a 401 `UpstreamHTTPError`:
-        refreshing is the consumer's job.
-        """
-        self.session = requests.Session()
-        self.session.headers["Accept"] = "application/json"
-        self.session.headers["Authorization"] = (
-            f"Bearer {require(access_token, 'MICROSOFT_ACCESS_TOKEN')}")
-
-    # ------------------------------------------------------------------
-    # transport
-    # ------------------------------------------------------------------
-
-    def _request(self, method: str, path_or_url: str, **kwargs: Any) -> requests.Response:
-        url = path_or_url if path_or_url.startswith("https://") else f"{BASE_URL}{path_or_url}"
-        resp = self.session.request(method, url, timeout=_HTTP_TIMEOUT, **kwargs)
-        raise_for_upstream(resp, service="microsoft")
-        return resp
-
-    def _json(self, method: str, path: str, **kwargs: Any) -> Any:
-        resp = self._request(method, path, **kwargs)
-        if resp.status_code == 204 or not (resp.content or b"").strip():
-            return None
-        return resp.json()
-
-    def _paged(self, path: str, *, limit: int, params: Optional[Dict[str, Any]] = None
-               ) -> List[Dict[str, Any]]:
-        """Follows `@odata.nextLink` until `limit` items are collected."""
-        if limit < 1:
-            raise ValueError("limit must be ≥ 1")
-        items: List[Dict[str, Any]] = []
-        page = self._json("GET", path, params={**(params or {}), "$top": min(limit, 200)})
-        while True:
-            items.extend((page or {}).get("value") or [])
-            next_link = (page or {}).get("@odata.nextLink")
-            if len(items) >= limit or not next_link:
-                return items[:limit]
-            page = self._json("GET", next_link)
 
     @staticmethod
     def _item_path(drive_id: str, item_id: Optional[str], path: Optional[str]) -> str:
@@ -126,7 +75,7 @@ class GraphClient:
     def search_sites(self, query: str, *, limit: int = 50) -> List[Dict[str, Any]]:
         """GET /sites?search= — sites whose name or description match `query`,
         among those the signed-in person can open."""
-        return self._paged("/sites", limit=limit, params={"search": query})
+        return self._paged("/sites", {"search": query}, limit=limit)
 
     def get_site(self, site_id: str) -> Dict[str, Any]:
         """GET /sites/{id} — `site_id` is the composite id
@@ -141,15 +90,6 @@ class GraphClient:
     def list_site_drives(self, site_id: str, *, limit: int = 100) -> List[Dict[str, Any]]:
         """GET /sites/{id}/drives — the site's document libraries."""
         return self._paged(f"/sites/{site_id}/drives", limit=limit)
-
-    # ================================================================
-    # The person
-    # ================================================================
-
-    def get_me(self) -> Dict[str, Any]:
-        """GET /me — the signed-in person (`id`, `displayName`, `mail`,
-        `userPrincipalName`)."""
-        return self._json("GET", "/me")
 
     # ================================================================
     # Drives
@@ -215,7 +155,7 @@ class GraphClient:
                 or `rename`.
         """
         if conflict not in CONFLICT_BEHAVIORS:
-            raise ValueError(f"conflict doit valoir {', '.join(CONFLICT_BEHAVIORS)}")
+            raise ValueError(f"conflict must be one of {', '.join(CONFLICT_BEHAVIORS)}")
         name = (filename or "").strip()
         if not name or "/" in name:
             raise ValueError("filename is a file name, without '/'")
@@ -232,7 +172,7 @@ class GraphClient:
                       ) -> Dict[str, Any]:
         """POST …/children — a new folder `name` in the parent (root when neither)."""
         if conflict not in CONFLICT_BEHAVIORS:
-            raise ValueError(f"conflict doit valoir {', '.join(CONFLICT_BEHAVIORS)}")
+            raise ValueError(f"conflict must be one of {', '.join(CONFLICT_BEHAVIORS)}")
         parent = self._item_path(drive_id, parent_id, parent_path)
         return self._json("POST", f"{parent}/children", json={
             "name": require(name, "name"), "folder": {},
