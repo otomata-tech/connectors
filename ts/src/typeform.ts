@@ -194,12 +194,493 @@ export const listResponses = defineFunction({
   cost: { per: "request" },
 })
 
+export const createForm = defineFunction({
+  name: "typeform.create_form",
+  connector: "typeform",
+  class: "write",
+  description: "Create a Typeform form and return it, with its id and _links.display (the public URL). A form is public as soon as it is created unless settings.is_public is false: pass settings: {is_public: false} to keep a draft private. Each field is at least {title, type}; choices go in properties.choices [{label}], a required answer in validations: {required: true}. Images must already exist in the account. To put the form in a workspace, pass workspace: {href: \"https://api.typeform.com/workspaces/<id>\"}. Needs the forms:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["title"],
+    "properties": {
+      "title": {"type": "string", "minLength": 1, "description": "Form title."},
+      "type": {
+        "enum": ["quiz", "classification", "score", "branching", "classification_branching", "score_branching"],
+        "description": "Form type; quiz upstream by default."
+      },
+      "settings": {
+        "type": "object",
+        "description": "Form settings: is_public (true by default upstream), language, progress_bar, show_progress_bar, autosave_progress, meta {title, description, allow_indexing}..."
+      },
+      "theme": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {"href": {"type": "string", "format": "uri"}},
+        "description": "{href} of an existing theme; without it, a copy of the default theme."
+      },
+      "workspace": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {"href": {"type": "string", "format": "uri"}},
+        "description": "{href} of the workspace that holds the form."
+      },
+      "hidden": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": "Names of hidden fields, filled from the form URL."
+      },
+      "variables": {"type": "object", "description": "Score and price variables: {score: 0, price: 0}."},
+      "welcome_screens": {"type": "array", "items": {"type": "object", "required": ["title"]}},
+      "thankyou_screens": {"type": "array", "items": {"type": "object", "required": ["title"]}},
+      "fields": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["title", "type"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1, "description": "Kept on replace_form for an existing field."},
+            "ref": {"type": "string", "minLength": 1},
+            "title": {"type": "string", "minLength": 1},
+            "type": {
+              "enum": [
+                "calendly",
+                "checkbox",
+                "contact_info",
+                "date",
+                "dropdown",
+                "email",
+                "file_upload",
+                "google_calendar",
+                "group",
+                "legal",
+                "long_text",
+                "matrix",
+                "multi_format",
+                "multiple_choice",
+                "nps",
+                "number",
+                "opinion_scale",
+                "payment",
+                "phone_number",
+                "picture_choice",
+                "ranking",
+                "rating",
+                "short_text",
+                "signature",
+                "statement",
+                "website",
+                "yes_no"
+              ]
+            },
+            "properties": {"type": "object"},
+            "validations": {"type": "object"}
+          }
+        },
+        "description": "Questions, in order."
+      },
+      "logic": {"type": "array", "items": {"type": "object"}, "description": "Logic jumps."}
+    }
+  },
+  examples: [
+    { title: "A private two-question feedback form", input: {"title": "Event feedback", "settings": {"is_public": false}, "fields": [{"title": "How likely are you to recommend us?", "type": "nps", "validations": {"required": true}}, {"title": "Which session did you prefer?", "type": "multiple_choice", "properties": {"choices": [{"label": "Morning"}, {"label": "Afternoon"}]}}]} },
+  ],
+  refusals: [
+    { code: "form_rejected", when: 400, message: "Typeform rejected the form definition; its details name the faulty part (an image not in the account, an unknown field type...)." },
+  ],
+  request: {
+    method: "POST",
+    path: "/forms",
+    pathParams: [],
+    query: {},
+    body: {"title": "title", "type": "type", "settings": "settings", "theme": "theme", "workspace": "workspace", "hidden": "hidden", "variables": "variables", "welcome_screens": "welcome_screens", "thankyou_screens": "thankyou_screens", "fields": "fields", "logic": "logic"},
+    headers: {},
+  },
+  cost: { per: "request" },
+})
+
+export const replaceForm = defineFunction({
+  name: "typeform.replace_form",
+  connector: "typeform",
+  class: "sensitive",
+  description: "Overwrite the whole definition of one Typeform form and return it. Destructive: a field left out is deleted together with its answers in every response, so start from get_form, change what is needed, and send every field back with its id. Without theme, Typeform applies a new copy of the default theme. settings.is_public publishes or unpublishes the form. Needs the forms:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id", "title"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      },
+      "title": {"type": "string", "minLength": 1, "description": "Form title."},
+      "type": {
+        "enum": ["quiz", "classification", "score", "branching", "classification_branching", "score_branching"],
+        "description": "Form type; quiz upstream by default."
+      },
+      "settings": {
+        "type": "object",
+        "description": "Form settings: is_public (true by default upstream), language, progress_bar, show_progress_bar, autosave_progress, meta {title, description, allow_indexing}..."
+      },
+      "theme": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {"href": {"type": "string", "format": "uri"}},
+        "description": "{href} of an existing theme; without it, a copy of the default theme."
+      },
+      "workspace": {
+        "type": "object",
+        "required": ["href"],
+        "properties": {"href": {"type": "string", "format": "uri"}},
+        "description": "{href} of the workspace that holds the form."
+      },
+      "hidden": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": "Names of hidden fields, filled from the form URL."
+      },
+      "variables": {"type": "object", "description": "Score and price variables: {score: 0, price: 0}."},
+      "welcome_screens": {"type": "array", "items": {"type": "object", "required": ["title"]}},
+      "thankyou_screens": {"type": "array", "items": {"type": "object", "required": ["title"]}},
+      "fields": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["title", "type"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1, "description": "Kept on replace_form for an existing field."},
+            "ref": {"type": "string", "minLength": 1},
+            "title": {"type": "string", "minLength": 1},
+            "type": {
+              "enum": [
+                "calendly",
+                "checkbox",
+                "contact_info",
+                "date",
+                "dropdown",
+                "email",
+                "file_upload",
+                "google_calendar",
+                "group",
+                "legal",
+                "long_text",
+                "matrix",
+                "multi_format",
+                "multiple_choice",
+                "nps",
+                "number",
+                "opinion_scale",
+                "payment",
+                "phone_number",
+                "picture_choice",
+                "ranking",
+                "rating",
+                "short_text",
+                "signature",
+                "statement",
+                "website",
+                "yes_no"
+              ]
+            },
+            "properties": {"type": "object"},
+            "validations": {"type": "object"}
+          }
+        },
+        "description": "Questions, in order."
+      },
+      "logic": {"type": "array", "items": {"type": "object"}, "description": "Logic jumps."}
+    }
+  },
+  examples: [
+    { title: "Rename a one-question form, keeping its field", input: {"form_id": "u6nXL7", "title": "Event feedback 2026", "fields": [{"id": "Auxd6Itc4qgK", "title": "How likely are you to recommend us?", "type": "nps"}]} },
+  ],
+  refusals: [
+    { code: "form_not_found", when: 404, message: "No form with this id for this Typeform token." },
+    { code: "form_rejected", when: 400, message: "Typeform rejected the form definition; its details name the faulty part (an image not in the account, an unknown field type...)." },
+  ],
+  request: {
+    method: "PUT",
+    path: "/forms/{form_id}",
+    pathParams: ["form_id"],
+    query: {},
+    body: {"title": "title", "type": "type", "settings": "settings", "theme": "theme", "workspace": "workspace", "hidden": "hidden", "variables": "variables", "welcome_screens": "welcome_screens", "thankyou_screens": "thankyou_screens", "fields": "fields", "logic": "logic"},
+    headers: {},
+  },
+  cost: { per: "request" },
+  confirm: { summary: "Overwrite the whole form {form_id}: every field left out is deleted with its answers, irreversibly." },
+})
+
+export const deleteForm = defineFunction({
+  name: "typeform.delete_form",
+  connector: "typeform",
+  class: "sensitive",
+  description: "Delete one Typeform form and all its responses, irreversibly. Returns nothing. To stop collecting answers but keep them, unpublish the form instead (settings.is_public false). Needs the forms:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      }
+    }
+  },
+  examples: [
+    { title: "Delete a test form", input: {"form_id": "u6nXL7"} },
+  ],
+  refusals: [
+    { code: "form_not_found", when: 404, message: "No form with this id for this Typeform token." },
+  ],
+  request: {
+    method: "DELETE",
+    path: "/forms/{form_id}",
+    pathParams: ["form_id"],
+    query: {},
+    body: {},
+    headers: {},
+  },
+  cost: { per: "request" },
+  confirm: { summary: "Delete form {form_id} and all its responses: irreversible." },
+})
+
+export const deleteResponses = defineFunction({
+  name: "typeform.delete_responses",
+  connector: "typeform",
+  class: "sensitive",
+  description: "Delete responses of one Typeform form by response_id, up to 1000 at a time, irreversibly. The deletion is asynchronous: success means it was registered, not done, and ids that match no response are ignored without error; check with list_responses and included_response_ids. Like list_responses, it must reach the account's data center (see get_form's _links.responses). Needs the responses:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id", "included_response_ids"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      },
+      "included_response_ids": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 1000,
+        "uniqueItems": true,
+        "items": {"type": "string", "minLength": 1},
+        "description": "response_id of each response to delete."
+      }
+    }
+  },
+  examples: [
+    { title: "Delete two test responses", input: {"form_id": "u6nXL7", "included_response_ids": ["a1b2c3d4e5f6", "f6e5d4c3b2a1"]} },
+  ],
+  refusals: [
+    { code: "form_not_found", when: 404, message: "No form with this id for this Typeform token." },
+  ],
+  request: {
+    method: "DELETE",
+    path: "/forms/{form_id}/responses",
+    pathParams: ["form_id"],
+    query: {},
+    body: {"included_response_ids": "included_response_ids"},
+    headers: {},
+  },
+  cost: { per: "request" },
+  confirm: { summary: "Delete responses {included_response_ids} of form {form_id}: irreversible." },
+})
+
+export const listWebhooks = defineFunction({
+  name: "typeform.list_webhooks",
+  connector: "typeform",
+  class: "read",
+  description: "List the webhooks of one Typeform form: each {id, tag, url, enabled, event_types: {form_response, form_response_partial}, verify_ssl, form_id, created_at, updated_at}. The tag names a webhook within its form. The signing secret is never returned. Needs the webhooks:read scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      }
+    }
+  },
+  examples: [
+    { title: "Webhooks of a form", input: {"form_id": "u6nXL7"} },
+  ],
+  refusals: [
+    { code: "form_not_found", when: 404, message: "No form with this id for this Typeform token." },
+  ],
+  request: {
+    method: "GET",
+    path: "/forms/{form_id}/webhooks",
+    pathParams: ["form_id"],
+    query: {},
+    body: {},
+    headers: {},
+  },
+  output: { items: "items", strip: ["secret"] },
+  cost: { per: "request" },
+})
+
+export const getWebhook = defineFunction({
+  name: "typeform.get_webhook",
+  connector: "typeform",
+  class: "read",
+  description: "Get one webhook of a Typeform form by its tag: {id, tag, url, enabled, event_types, verify_ssl, form_id, created_at, updated_at}. The signing secret is never returned. Needs the webhooks:read scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id", "tag"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      },
+      "tag": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "Name of the webhook, unique within its form."
+      }
+    }
+  },
+  examples: [
+    { title: "One webhook", input: {"form_id": "u6nXL7", "tag": "crm-sync"} },
+  ],
+  refusals: [
+    { code: "webhook_not_found", when: 404, message: "No webhook with this tag on this form, or no such form." },
+  ],
+  request: {
+    method: "GET",
+    path: "/forms/{form_id}/webhooks/{tag}",
+    pathParams: ["form_id", "tag"],
+    query: {},
+    body: {},
+    headers: {},
+  },
+  output: { strip: ["secret"] },
+  cost: { per: "request" },
+})
+
+export const upsertWebhook = defineFunction({
+  name: "typeform.upsert_webhook",
+  connector: "typeform",
+  class: "sensitive",
+  description: "Create the webhook named tag on one Typeform form, or replace it if the tag exists, and return it without its secret. Once enabled, every new response of the form, with all its answers, is posted to url: form_response on submission, form_response_partial on a partial submission. Set secret to have the payloads signed with HMAC SHA256. Needs the webhooks:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id", "tag", "url", "enabled"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      },
+      "tag": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "Name of the webhook, unique within its form."
+      },
+      "url": {
+        "type": "string",
+        "format": "uri",
+        "pattern": "^https://",
+        "description": "https endpoint that receives the responses."
+      },
+      "enabled": {"type": "boolean", "description": "true to start sending at once."},
+      "event_types": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {"form_response": {"type": "boolean"}, "form_response_partial": {"type": "boolean"}},
+        "description": "Events sent to the webhook."
+      },
+      "secret": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Key that signs the payloads (HMAC SHA256); never returned."
+      },
+      "verify_ssl": {"type": "boolean", "description": "true to have Typeform check the endpoint's certificate."}
+    }
+  },
+  examples: [
+    { title: "Send submitted responses to an endpoint", input: {"form_id": "u6nXL7", "tag": "crm-sync", "url": "https://hooks.example.com/typeform", "enabled": true, "event_types": {"form_response": true}, "verify_ssl": true} },
+  ],
+  refusals: [
+    { code: "form_not_found", when: 404, message: "No form with this id for this Typeform token." },
+  ],
+  request: {
+    method: "PUT",
+    path: "/forms/{form_id}/webhooks/{tag}",
+    pathParams: ["form_id", "tag"],
+    query: {},
+    body: {"url": "url", "enabled": "enabled", "event_types": "event_types", "secret": "secret", "verify_ssl": "verify_ssl"},
+    headers: {},
+  },
+  output: { strip: ["secret"] },
+  cost: { per: "request" },
+  confirm: { summary: "Send the responses of form {form_id} to {url} (webhook {tag}, enabled: {enabled})." },
+})
+
+export const deleteWebhook = defineFunction({
+  name: "typeform.delete_webhook",
+  connector: "typeform",
+  class: "sensitive",
+  description: "Delete one webhook of a Typeform form: its endpoint stops receiving responses, and the integration behind it with it. To pause it instead, upsert it with enabled false. Returns nothing. Needs the webhooks:write scope.",
+  schema: {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["form_id", "tag"],
+    "properties": {
+      "form_id": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "The form id, last segment of its public URL (u6nXL7 in .../to/u6nXL7)."
+      },
+      "tag": {
+        "type": "string",
+        "minLength": 1,
+        "not": {"enum": [".", ".."]},
+        "description": "Name of the webhook, unique within its form."
+      }
+    }
+  },
+  examples: [
+    { title: "Delete a webhook", input: {"form_id": "u6nXL7", "tag": "crm-sync"} },
+  ],
+  refusals: [
+    { code: "webhook_not_found", when: 404, message: "No webhook with this tag on this form, or no such form." },
+  ],
+  request: {
+    method: "DELETE",
+    path: "/forms/{form_id}/webhooks/{tag}",
+    pathParams: ["form_id", "tag"],
+    query: {},
+    body: {},
+    headers: {},
+  },
+  cost: { per: "request" },
+  confirm: { summary: "Delete webhook {tag} of form {form_id}: its endpoint stops receiving responses." },
+})
+
 export const connector = defineConnector({
   name: "typeform",
   label: "Typeform",
   namespace: "typeform",
-  version: "1.1.0",
-  apiVersion: "Create API and Responses API (unversioned)",
+  version: "1.2.0",
+  apiVersion: "Create API, Responses API and Webhooks API (unversioned)",
   baseUrls: {"setting": "region", "values": {"us": "https://api.typeform.com", "eu": "https://api.eu.typeform.com", "eu2": "https://api.typeform.eu"}},
   auth: {"kind": "bearer", "token": "access_token"},
   credential: [{"name": "access_token", "label": "Personal access token", "secret": true}],
@@ -218,7 +699,7 @@ export const connector = defineConnector({
   errors: [
     { status: 400, code: "invalid_request", message: "Typeform rejected the request as invalid: check the arguments.", retryable: false },
     { status: 401, code: "access_rejected", message: "Typeform rejected the token: unknown, revoked, or issued by another data center.", retryable: false },
-    { status: 403, code: "scope_missing", message: "The Typeform token lacks the read scope this call needs.", retryable: false },
+    { status: 403, code: "scope_missing", message: "The Typeform token lacks the scope this call needs (named in the function description): the token must be reissued with it; retrying unchanged fails the same way.", retryable: false },
     { status: 404, code: "not_found", message: "Typeform object not found: check the id.", retryable: false },
     { status: 429, code: "rate_limited", message: "Typeform rate limit reached: retry later.", retryable: true },
     { status: [500, 502, 503, 504], code: "upstream_unavailable", message: "Typeform is temporarily unavailable: retry later.", retryable: true },
@@ -229,5 +710,13 @@ export const connector = defineConnector({
     listForms,
     getForm,
     listResponses,
+    createForm,
+    replaceForm,
+    deleteForm,
+    deleteResponses,
+    listWebhooks,
+    getWebhook,
+    upsertWebhook,
+    deleteWebhook,
   ],
 })

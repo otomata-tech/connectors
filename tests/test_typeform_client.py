@@ -2,7 +2,7 @@
 
 Mocke `requests.Session.request` : verbe + URL + params, sans réseau ni jeton
 réel. Cible ce qui pourrait dériver en silence : l'en-tête Bearer, l'hôte du
-data center, une méthode par endpoint en lecture seule, le nettoyage des `None`,
+data center, une méthode par endpoint en lecture, le nettoyage des `None`,
 la jonction des paramètres-listes, l'échappement d'un id dans le chemin, et
 l'erreur typée d'un refus amont.
 """
@@ -53,14 +53,15 @@ def client():
     return TypeformClient(access_token="tfp_test")
 
 
-#: Lecture seule : aucune méthode qui crée, modifie ou supprime.
-METHODS = {"list_workspaces", "list_forms", "get_form", "list_responses"}
+#: Les lectures d'origine, dont le comportement ne bouge pas avec les écritures
+#: (surface complète : `test_typeform_surface_frozen.py`).
+READS = {"list_workspaces", "list_forms", "get_form", "list_responses"}
 
 
-def test_surface_lecture_seule(client):
+def test_les_lectures_dorigine_restent(client):
     public = {n for n in dir(TypeformClient)
               if not n.startswith("_") and callable(getattr(TypeformClient, n))}
-    assert public == METHODS
+    assert READS <= public
 
 
 def test_jeton_en_bearer(calls, client):

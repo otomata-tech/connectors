@@ -1,14 +1,31 @@
 # yaml-language-server: $schema=../connector.schema.json
 # Typeform Create API reference: https://www.typeform.com/developers/create/reference/
 # Typeform Responses API reference: https://www.typeform.com/developers/responses/reference/retrieve-responses/
+# Typeform Webhooks API reference: https://www.typeform.com/developers/webhooks/
+# Scopes: https://www.typeform.com/developers/get-started/scopes/
 # One host per data center, chosen per account by the region setting: a token
 # is issued by one data center and refused by the others.
+#
+# Not described here, served by the Python client (oto.tools.typeform):
+# - update_form, PATCH /forms/{form_id}: its body is a JSON Patch array of
+#   {op: replace, path, value} (title, theme, workspace, settings.is_public,
+#   settings.meta, tracking settings); the format has no array body. It is how
+#   a form is published or unpublished without overwriting it.
+# - summarize_responses: reads the form, then up to 50 pages of responses, and
+#   aggregates them locally (answer rate per question, choice distribution,
+#   numeric statistics and NPS, responses per day), bounded by max_pages and
+#   saying when the bound cut the reading. Several calls and a computation: the
+#   format describes one request per function.
+# The public reference has no endpoint that summarizes a form's responses.
+#
+# A webhook's HMAC signing secret is accepted on write and stripped from every
+# webhook returned.
 connector:
   name: typeform
   label: Typeform
   namespace: typeform
-  version: 1.1.0
-  api_version: Create API and Responses API (unversioned)
+  version: 1.2.0
+  api_version: Create API, Responses API and Webhooks API (unversioned)
   base_urls:
     setting: region
     values:
@@ -31,7 +48,7 @@ connector:
     - { status: 401, code: access_rejected, retryable: false,
         message: "Typeform rejected the token: unknown, revoked, or issued by another data center." }
     - { status: 403, code: scope_missing, retryable: false,
-        message: "The Typeform token lacks the read scope this call needs." }
+        message: "The Typeform token lacks the scope this call needs (named in the function description): the token must be reissued with it; retrying unchanged fails the same way." }
     - { status: 404, code: not_found, retryable: false,
         message: "Typeform object not found: check the id." }
     - { status: 429, code: rate_limited, retryable: true,
@@ -193,6 +210,319 @@ functions:
                included_response_ids: included_response_ids,
                excluded_response_ids: excluded_response_ids, response_type: response_type,
                sort: sort, query: query, fields: fields, answered_fields: answered_fields }
+    cost: { per: request }
+
+  # --- Forms: writing (scope forms:write) ---------------------------------
+
+  - name: create_form
+    class: write
+    description: >-
+      Create a Typeform form and return it, with its id and _links.display
+      (the public URL). A form is public as soon as it is created unless
+      settings.is_public is false: pass settings: {is_public: false} to keep
+      a draft private. Each field is at least {title, type}; choices go in
+      properties.choices [{label}], a required answer in validations:
+      {required: true}. Images must already exist in the account. To put the
+      form in a workspace, pass workspace: {href:
+      "https://api.typeform.com/workspaces/<id>"}. Needs the forms:write
+      scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: &form_title { type: string, minLength: 1, description: "Form title." }
+        type: &form_type
+          enum: [quiz, classification, score, branching, classification_branching, score_branching]
+          description: "Form type; quiz upstream by default."
+        settings: &form_settings
+          type: object
+          description: >-
+            Form settings: is_public (true by default upstream), language,
+            progress_bar, show_progress_bar, autosave_progress, meta {title,
+            description, allow_indexing}...
+        theme: &form_theme
+          type: object
+          required: [href]
+          properties: { href: { type: string, format: uri } }
+          description: "{href} of an existing theme; without it, a copy of the default theme."
+        workspace: &form_workspace
+          type: object
+          required: [href]
+          properties: { href: { type: string, format: uri } }
+          description: "{href} of the workspace that holds the form."
+        hidden: &form_hidden
+          type: array
+          items: { type: string, minLength: 1 }
+          description: "Names of hidden fields, filled from the form URL."
+        variables: &form_variables { type: object, description: "Score and price variables: {score: 0, price: 0}." }
+        welcome_screens: &form_welcome { type: array, items: { type: object, required: [title] } }
+        thankyou_screens: &form_thankyou { type: array, items: { type: object, required: [title] } }
+        fields: &form_fields
+          type: array
+          items:
+            type: object
+            required: [title, type]
+            properties:
+              id: { type: string, minLength: 1, description: "Kept on replace_form for an existing field." }
+              ref: { type: string, minLength: 1 }
+              title: { type: string, minLength: 1 }
+              type:
+                enum: [calendly, checkbox, contact_info, date, dropdown, email, file_upload,
+                       google_calendar, group, legal, long_text, matrix, multi_format,
+                       multiple_choice, nps, number, opinion_scale, payment, phone_number,
+                       picture_choice, ranking, rating, short_text, signature, statement,
+                       website, yes_no]
+              properties: { type: object }
+              validations: { type: object }
+          description: "Questions, in order."
+        logic: &form_logic { type: array, items: { type: object }, description: "Logic jumps." }
+    examples:
+      - title: A private two-question feedback form
+        input:
+          title: Event feedback
+          settings: { is_public: false }
+          fields:
+            - { title: "How likely are you to recommend us?", type: nps, validations: { required: true } }
+            - { title: "Which session did you prefer?", type: multiple_choice,
+                properties: { choices: [{ label: Morning }, { label: Afternoon }] } }
+    refusals:
+      - &form_rejected { code: form_rejected, when: 400, message: "Typeform rejected the form definition; its details name the faulty part (an image not in the account, an unknown field type...)." }
+    call:
+      method: POST
+      path: /forms
+      body: &form_body
+        title: title
+        type: type
+        settings: settings
+        theme: theme
+        workspace: workspace
+        hidden: hidden
+        variables: variables
+        welcome_screens: welcome_screens
+        thankyou_screens: thankyou_screens
+        fields: fields
+        logic: logic
+    cost: { per: request }
+
+  - name: replace_form
+    class: sensitive
+    description: >-
+      Overwrite the whole definition of one Typeform form and return it.
+      Destructive: a field left out is deleted together with its answers in
+      every response, so start from get_form, change what is needed, and send
+      every field back with its id. Without theme, Typeform applies a new copy
+      of the default theme. settings.is_public publishes or unpublishes the
+      form. Needs the forms:write scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id, title]
+      properties:
+        form_id: *form_id
+        title: *form_title
+        type: *form_type
+        settings: *form_settings
+        theme: *form_theme
+        workspace: *form_workspace
+        hidden: *form_hidden
+        variables: *form_variables
+        welcome_screens: *form_welcome
+        thankyou_screens: *form_thankyou
+        fields: *form_fields
+        logic: *form_logic
+    examples:
+      - title: Rename a one-question form, keeping its field
+        input:
+          form_id: "u6nXL7"
+          title: Event feedback 2026
+          fields: [{ id: "Auxd6Itc4qgK", title: "How likely are you to recommend us?", type: nps }]
+    refusals:
+      - *form_not_found
+      - *form_rejected
+    call:
+      method: PUT
+      path: "/forms/{form_id}"
+      body: *form_body
+    confirm:
+      summary: "Overwrite the whole form {form_id}: every field left out is deleted with its answers, irreversibly."
+    cost: { per: request }
+
+  - name: delete_form
+    class: sensitive
+    description: >-
+      Delete one Typeform form and all its responses, irreversibly. Returns
+      nothing. To stop collecting answers but keep them, unpublish the form
+      instead (settings.is_public false). Needs the forms:write scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id]
+      properties:
+        form_id: *form_id
+    examples:
+      - title: Delete a test form
+        input: { form_id: "u6nXL7" }
+    refusals:
+      - *form_not_found
+    call: { method: DELETE, path: "/forms/{form_id}" }
+    confirm:
+      summary: "Delete form {form_id} and all its responses: irreversible."
+    cost: { per: request }
+
+  # --- Responses: deleting (scope responses:write) ------------------------
+
+  - name: delete_responses
+    class: sensitive
+    description: >-
+      Delete responses of one Typeform form by response_id, up to 1000 at a
+      time, irreversibly. The deletion is asynchronous: success means it was
+      registered, not done, and ids that match no response are ignored
+      without error; check with list_responses and included_response_ids.
+      Like list_responses, it must reach the account's data center (see
+      get_form's _links.responses). Needs the responses:write scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id, included_response_ids]
+      properties:
+        form_id: *form_id
+        included_response_ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+          description: "response_id of each response to delete."
+    examples:
+      - title: Delete two test responses
+        input: { form_id: "u6nXL7", included_response_ids: ["a1b2c3d4e5f6", "f6e5d4c3b2a1"] }
+    refusals:
+      - *form_not_found
+    call:
+      method: DELETE
+      path: "/forms/{form_id}/responses"
+      body: { included_response_ids: included_response_ids }
+    confirm:
+      summary: "Delete responses {included_response_ids} of form {form_id}: irreversible."
+    cost: { per: request }
+
+  # --- Webhooks (scopes webhooks:read, webhooks:write) --------------------
+
+  - name: list_webhooks
+    class: read
+    description: >-
+      List the webhooks of one Typeform form: each {id, tag, url, enabled,
+      event_types: {form_response, form_response_partial}, verify_ssl,
+      form_id, created_at, updated_at}. The tag names a webhook within its
+      form. The signing secret is never returned. Needs the webhooks:read
+      scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id]
+      properties:
+        form_id: *form_id
+    examples:
+      - title: Webhooks of a form
+        input: { form_id: "u6nXL7" }
+    refusals:
+      - *form_not_found
+    call: { method: GET, path: "/forms/{form_id}/webhooks" }
+    output: { items: items, strip: [secret] }
+    cost: { per: request }
+
+  - name: get_webhook
+    class: read
+    description: >-
+      Get one webhook of a Typeform form by its tag: {id, tag, url, enabled,
+      event_types, verify_ssl, form_id, created_at, updated_at}. The signing
+      secret is never returned. Needs the webhooks:read scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id, tag]
+      properties:
+        form_id: *form_id
+        tag: &tag
+          type: string
+          minLength: 1
+          not: { enum: [".", ".."] }
+          description: "Name of the webhook, unique within its form."
+    examples:
+      - title: One webhook
+        input: { form_id: "u6nXL7", tag: crm-sync }
+    refusals:
+      - &webhook_not_found { code: webhook_not_found, when: 404, message: "No webhook with this tag on this form, or no such form." }
+    call: { method: GET, path: "/forms/{form_id}/webhooks/{tag}" }
+    output: { strip: [secret] }
+    cost: { per: request }
+
+  - name: upsert_webhook
+    class: sensitive
+    description: >-
+      Create the webhook named tag on one Typeform form, or replace it if the
+      tag exists, and return it without its secret. Once enabled, every new
+      response of the form, with all its answers, is posted to url:
+      form_response on submission, form_response_partial on a partial
+      submission. Set secret to have the payloads signed with HMAC SHA256.
+      Needs the webhooks:write scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id, tag, url, enabled]
+      properties:
+        form_id: *form_id
+        tag: *tag
+        url: { type: string, format: uri, pattern: "^https://", description: "https endpoint that receives the responses." }
+        enabled: { type: boolean, description: "true to start sending at once." }
+        event_types:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            form_response: { type: boolean }
+            form_response_partial: { type: boolean }
+          description: "Events sent to the webhook."
+        secret: { type: string, minLength: 1, description: "Key that signs the payloads (HMAC SHA256); never returned." }
+        verify_ssl: { type: boolean, description: "true to have Typeform check the endpoint's certificate." }
+    examples:
+      - title: Send submitted responses to an endpoint
+        input: { form_id: "u6nXL7", tag: crm-sync, url: "https://hooks.example.com/typeform",
+                 enabled: true, event_types: { form_response: true }, verify_ssl: true }
+    refusals:
+      - *form_not_found
+    call:
+      method: PUT
+      path: "/forms/{form_id}/webhooks/{tag}"
+      body: { url: url, enabled: enabled, event_types: event_types, secret: secret, verify_ssl: verify_ssl }
+    output: { strip: [secret] }
+    confirm:
+      summary: "Send the responses of form {form_id} to {url} (webhook {tag}, enabled: {enabled})."
+    cost: { per: request }
+
+  - name: delete_webhook
+    class: sensitive
+    description: >-
+      Delete one webhook of a Typeform form: its endpoint stops receiving
+      responses, and the integration behind it with it. To pause it instead,
+      upsert it with enabled false. Returns nothing. Needs the webhooks:write
+      scope.
+    input:
+      type: object
+      additionalProperties: false
+      required: [form_id, tag]
+      properties:
+        form_id: *form_id
+        tag: *tag
+    examples:
+      - title: Delete a webhook
+        input: { form_id: "u6nXL7", tag: crm-sync }
+    refusals:
+      - *webhook_not_found
+    call: { method: DELETE, path: "/forms/{form_id}/webhooks/{tag}" }
+    confirm:
+      summary: "Delete webhook {tag} of form {form_id}: its endpoint stops receiving responses."
     cost: { per: request }
 
 exposure:

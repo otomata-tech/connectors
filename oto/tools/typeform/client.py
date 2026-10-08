@@ -1,13 +1,16 @@
-"""Typeform API client — READ ONLY: workspaces, forms, form definitions, responses.
+"""Typeform API client — workspaces, forms, responses, webhooks.
 
 Personal access token (`tfp_…`) sent as `Authorization: Bearer <token>`. One
-method = one endpoint; responses are returned as-is, the client invents no
-semantics. Paths, parameters and shapes follow the public reference
-(https://www.typeform.com/developers/create/reference/ and
-https://www.typeform.com/developers/responses/reference/retrieve-responses/).
+method = one endpoint, except `summarize_responses`, which reads a form and
+pages of its responses and aggregates them here, deterministically. Responses
+are returned as-is, except that a webhook's signing `secret` is never
+returned. Paths, parameters and shapes follow the public reference
+(https://www.typeform.com/developers/create/reference/,
+https://www.typeform.com/developers/responses/reference/retrieve-responses/ and
+https://www.typeform.com/developers/webhooks/).
 
-Scope: reading only. Creating, updating or deleting forms, deleting responses,
-webhooks, images, themes and translations are not covered here.
+Not covered: images, themes, workspaces management, translations, custom
+messages, file downloads.
 
 What the caller needs to know, and cannot guess:
 
@@ -19,8 +22,19 @@ What the caller needs to know, and cannot guess:
   error. A form's own `_links.responses` (from `get_form`) carries the right
   host. Tokens of the `eu2` data center are distinct from the other two.
 - **The token's scopes gate each call**: `workspaces:read` for
-  `list_workspaces`, `forms:read` for `list_forms`/`get_form`,
-  `responses:read` for `list_responses`; a token without it is refused.
+  `list_workspaces`; `forms:read` for `list_forms`/`get_form`; `forms:write`
+  for `create_form`/`replace_form`/`update_form`/`delete_form`;
+  `responses:read` for `list_responses`; `responses:write` for
+  `delete_responses`; `webhooks:read` for `list_webhooks`/`get_webhook`;
+  `webhooks:write` for `upsert_webhook`/`delete_webhook`. A token without it
+  is refused.
+- **Destructive calls**: `replace_form` overwrites the whole form (a field left
+  out is deleted with its answers), `delete_form` deletes the form and all its
+  responses, `delete_responses` deletes responses (asynchronously),
+  `delete_webhook` cuts an integration. None can be undone.
+- **A created form is public by default** (`settings.is_public` defaults to
+  true upstream). `update_form` publishes or unpublishes one by JSON Patch on
+  `/settings/is_public`.
 - **Responses: default page 25, maximum 1000.** Paging is by cursor: pass the
   `token` of the last item of a page as `before` (default sort is newest
   first) to get the next one; `after` walks the other way. Both bounds are
@@ -40,13 +54,16 @@ Requires: requests
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional, Union
-from urllib.parse import quote
+from typing import Any, Dict, Optional
 
 import requests
 
 from ..common import raise_for_upstream
 from ..common.credentials import require
+from ._api import _FormsMixin, _ResponsesMixin, _WebhooksMixin
+from .params import ListParam, _clean, _csv, _segment
+
+__all__ = ["REGIONS", "TypeformClient", "ListParam", "_clean", "_csv", "_segment"]
 
 #: (connect, read) — never an unbounded wait.
 _HTTP_TIMEOUT = (10, 60)
@@ -58,49 +75,15 @@ REGIONS: Dict[str, str] = {
     "eu2": "https://api.typeform.eu",
 }
 
-ListParam = Union[str, Iterable[str], None]
 
-
-def _clean(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Drops `None` values — an omitted kwarg must not become the literal
-    string 'None' in the querystring."""
-    return {k: v for k, v in params.items() if v is not None}
-
-
-def _csv(name: str, value: ListParam) -> Optional[str]:
-    """A list parameter as the single comma-separated string Typeform expects.
-    A string is taken as already joined; an item of a list containing a comma
-    is refused (it would be split in two upstream)."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value or None
-    items = list(value)
-    for item in items:
-        if not isinstance(item, str) or not item:
-            raise ValueError(f"`{name}`: every item must be a non-empty string.")
-        if "," in item:
-            raise ValueError(f"`{name}`: item {item!r} contains a comma — it would "
-                             "be split in two.")
-    return ",".join(items) or None
-
-
-def _segment(name: str, value: str) -> str:
-    """An id placed in a path: escaped, and never `.`/`..` (which `quote` leaves
-    intact and which would change the path)."""
-    if not isinstance(value, str) or not value.strip() or value in (".", ".."):
-        raise ValueError(f"`{name}` must be a non-empty identifier.")
-    return quote(value, safe="")
-
-
-class TypeformClient:
-    """Typeform API client, read only, Bearer personal access token."""
+class TypeformClient(_FormsMixin, _ResponsesMixin, _WebhooksMixin):
+    """Typeform API client, Bearer personal access token."""
 
     def __init__(self, access_token: Optional[str] = None, *, region: str = "us"):
         """
         Args:
             access_token: personal access token (Typeform: Account → Personal
-                tokens), with the read scopes the calls need.
+                tokens), with the scopes the calls need.
             region: data center of the account — `us` (default), `eu` or
                 `eu2` (see the module docstring).
         """
@@ -120,122 +103,13 @@ class TypeformClient:
         raise_for_upstream(resp, service="typeform")
         return resp.json()
 
-    # ------------------------------------------------------------------
-    # Workspaces
-    # ------------------------------------------------------------------
-
-    def list_workspaces(self, *, search: Optional[str] = None,
-                        page: Optional[int] = None,
-                        page_size: Optional[int] = None) -> Any:
-        """GET /workspaces — every workspace the token can access, across
-        organizations. `{total_items, page_count, items: [{id, name,
-        account_id, shared, forms: {count, href}, self: {href}}]}`.
-
-        Args:
-            search: only workspaces containing this string.
-            page: 1-based page number (default 1).
-            page_size: default 10, maximum 200.
-        """
-        return self._get("/workspaces", search=search, page=page, page_size=page_size)
-
-    # ------------------------------------------------------------------
-    # Forms
-    # ------------------------------------------------------------------
-
-    def list_forms(self, *, search: Optional[str] = None,
-                   page: Optional[int] = None,
-                   page_size: Optional[int] = None,
-                   workspace_id: Optional[str] = None,
-                   sort_by: Optional[str] = None,
-                   order_by: Optional[str] = None,
-                   is_public: Optional[bool] = None) -> Any:
-        """GET /forms — forms of the account, public and private.
-        `{total_items, page_count, items: [{id, title, created_at,
-        last_updated_at, settings: {is_public}, self, theme, _links: {display,
-        responses}}]}`.
-
-        Args:
-            search: only forms containing this string.
-            page: 1-based page number (default 1).
-            page_size: default 10, maximum 200.
-            workspace_id: only the forms of this workspace.
-            sort_by: `created_at` | `last_updated_at`.
-            order_by: `asc` | `desc`.
-            is_public: filter on `settings.is_public`.
-        """
-        return self._get("/forms", search=search, page=page, page_size=page_size,
-                         workspace_id=workspace_id, sort_by=sort_by,
-                         order_by=order_by,
-                         is_public=None if is_public is None else str(is_public).lower())
-
-    def get_form(self, form_id: str) -> Any:
-        """GET /forms/{form_id} — the full form definition: `title`, `fields`
-        (each `{id, ref, title, type, properties: {description, choices:
-        [{id, ref, label}], fields: […] for group/matrix, …}, validations}`),
-        `hidden`, `variables`, `logic`, screens, `settings`, `_links: {display,
-        responses}`. A response's `answers[].field.id`/`ref` point to these
-        fields.
-
-        Args:
-            form_id: the form id (the last path segment of the form's public
-                URL, e.g. `u6nXL7` in `…typeform.com/to/u6nXL7`).
-        """
-        return self._get(f"/forms/{_segment('form_id', form_id)}")
-
-    # ------------------------------------------------------------------
-    # Responses
-    # ------------------------------------------------------------------
-
-    def list_responses(self, form_id: str, *,
-                       page_size: Optional[int] = None,
-                       since: Optional[Union[str, int]] = None,
-                       until: Optional[Union[str, int]] = None,
-                       after: Optional[str] = None,
-                       before: Optional[str] = None,
-                       included_response_ids: ListParam = None,
-                       excluded_response_ids: ListParam = None,
-                       response_type: ListParam = None,
-                       sort: Optional[str] = None,
-                       query: Optional[str] = None,
-                       fields: ListParam = None,
-                       answered_fields: ListParam = None) -> Any:
-        """GET /forms/{form_id}/responses — `{total_items, page_count, items:
-        [{response_id, token, landing_id, landed_at, submitted_at, metadata,
-        hidden, calculated: {score}, variables, answers: [{field: {id, type,
-        ref}, type, <type>: value}]}]}`. An answer's value sits under the key
-        named by its `type`: `text`, `choice` (`{label}`), `choices`
-        (`{labels}`), `number`, `boolean`, `email`, `url`, `file_url`, `date`,
-        `payment`, `signature` (`{url}`), `multi_format`. `answers` are in no
-        particular order: match them to the form's fields by `field.id`.
-
-        Args:
-            form_id: the form id.
-            page_size: default 25, maximum 1000.
-            since: inclusive lower bound, ISO 8601 UTC or Unix seconds.
-            until: inclusive upper bound, same formats.
-            after: cursor — responses after this response `token` (exclusive).
-            before: cursor — responses before this response `token`
-                (exclusive); with the default newest-first sort, the last
-                item's `token` here gives the next page.
-            included_response_ids: only these `response_id`s.
-            excluded_response_ids: all but these `response_id`s.
-            response_type: `completed` (default upstream) | `partial` |
-                `started`, one or several — also picks the timestamp
-                `since`/`until` filter on.
-            sort: `<field>,<asc|desc>`, e.g. `submitted_at,desc` (default for
-                completed responses).
-            query: exact phrase searched in answers, hidden fields and
-                variables.
-            fields: field ids — only these appear in `answers`.
-            answered_fields: field ids — only responses answering at least one.
-        """
-        return self._get(
-            f"/forms/{_segment('form_id', form_id)}/responses",
-            page_size=page_size, since=since, until=until, after=after,
-            before=before,
-            included_response_ids=_csv("included_response_ids", included_response_ids),
-            excluded_response_ids=_csv("excluded_response_ids", excluded_response_ids),
-            response_type=_csv("response_type", response_type),
-            sort=sort, query=query,
-            fields=_csv("fields", fields),
-            answered_fields=_csv("answered_fields", answered_fields))
+    def _send(self, method: str, path: str, *, json: Any = None) -> Any:
+        """A write: JSON body when given; `None` back for an empty answer
+        (204, or a 200 that only acknowledges)."""
+        body: Dict[str, Any] = {} if json is None else {"json": json}
+        resp = self.session.request(method, f"{self.BASE_URL}{path}",
+                                    timeout=_HTTP_TIMEOUT, **body)
+        raise_for_upstream(resp, service="typeform")
+        if resp.status_code == 204 or not resp.content:
+            return None
+        return resp.json()
