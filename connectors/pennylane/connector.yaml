@@ -4,7 +4,8 @@
 #
 # One API key = one company: every id (customer, journal, ledger account,
 # invoice...) belongs to that company and means nothing in another one. Firm
-# tokens, which pick the company with the header X-Company-Id, are not served.
+# tokens, which pick the company with the header X-Company-Id, are not served;
+# the Firm API, for accounting firms, is described in pennylane_firm.
 # Each key carries its own scopes, chosen by whoever created it; GET /me lists
 # them (field scopes).
 #

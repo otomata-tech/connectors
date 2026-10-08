@@ -119,8 +119,8 @@ Le double ne reste qu'aux connecteurs pas encore basculés, et il s'éteint au p
 
 ## Écart avec le code
 
-- Écrits : le générateur (`fabrique/`), la sortie TypeScript commitée (`ts/src/`, treize connecteurs) et son contrat (`ts/src/types.ts`), leurs tests (`tests/test_fabrique.py`, `ts/test/`) et le contrôle en CI. Les six règles hors schéma JSON sont vérifiées.
-- Les 340 fonctions sont générées.
+- Écrits : le générateur (`fabrique/`), la sortie TypeScript commitée (`ts/src/`, quatorze connecteurs) et son contrat (`ts/src/types.ts`), leurs tests (`tests/test_fabrique.py`, `ts/test/`) et le contrôle en CI. Les six règles hors schéma JSON sont vérifiées.
+- Les 347 fonctions sont générées.
 - Pas de sortie Python, ni de runtime commun, ni de test de contrat entre les deux langages. Le client Python Sellsy reste écrit à la main, sur des verbes génériques.
 - Le paquet d'oto 2 n'adapte pas encore la sortie : son client HTTP ne connaît ni `PUT`, ni la query, ni un autre mode d'authentification que le jeton porteur ; il n'exécute encore ni la validation JSON Schema, ni les constantes, l'encodage, le rythme, la sonde ou les contrôles, ni les réglages, la clé en query, `clientAuth`, le consentement `oauth2_user` et sa rotation, ni les gardes d'une adresse libre.
 - Les gardes d'une adresse libre ne sont écrites nulle part dans ce dépôt : la sortie les déclare, aucun code ne les exécute.

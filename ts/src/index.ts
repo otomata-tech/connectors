@@ -9,6 +9,7 @@ import * as microsoft from "./microsoft"
 import * as nextmotion from "./nextmotion"
 import * as notion from "./notion"
 import * as pennylane from "./pennylane"
+import * as pennylaneFirm from "./pennylane_firm"
 import * as sellsy from "./sellsy"
 import * as typeform from "./typeform"
 import * as wttjAts from "./wttj_ats"
@@ -24,6 +25,7 @@ export { microsoft }
 export { nextmotion }
 export { notion }
 export { pennylane }
+export { pennylaneFirm }
 export { sellsy }
 export { typeform }
 export { wttjAts }
@@ -41,6 +43,7 @@ export const connectors: readonly Connector[] = [
   nextmotion.connector,
   notion.connector,
   pennylane.connector,
+  pennylaneFirm.connector,
   sellsy.connector,
   typeform.connector,
   wttjAts.connector,
