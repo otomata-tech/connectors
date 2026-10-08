@@ -28,11 +28,19 @@ class _Seen(list):
 
 
 class _Resp:
-    def __init__(self, payload=None, status_code=200, headers=None, text=None):
+    def __init__(self, payload=None, status_code=200, headers=None, text=None, lines=None):
         self.status_code = status_code
         self._payload = payload
         self.headers = headers or {"Content-Type": "application/json"}
         self.text = text if text is not None else ("" if payload is None else json.dumps(payload))
+        self._lines = lines  # an iterator: a stream the server may keep open
+        self.closed = False
+
+    def iter_lines(self, decode_unicode=False):
+        return self._lines if self._lines is not None else iter(self.text.splitlines())
+
+    def close(self):
+        self.closed = True
 
     def json(self):
         if self._payload is None:
@@ -128,9 +136,9 @@ def mcp(monkeypatch):
     seen = _Seen()
     script = []
 
-    def fake_post(self, url, json=None, headers=None, timeout=None):
+    def fake_post(self, url, json=None, headers=None, timeout=None, stream=False):
         seen.append({"url": url, "body": json, "headers": dict(headers or {}),
-                     "session_headers": dict(self.headers)})
+                     "session_headers": dict(self.headers), "stream": stream})
         method = json.get("method")
         if method == "initialize":
             return _Resp({"jsonrpc": "2.0", "id": json["id"],
@@ -178,7 +186,10 @@ def test_flux_d_evenements_et_contenu_structure(mcp):
 
 def test_texte_non_json_rendu_tel_quel(mcp):
     mcp.script.append(_ok({"content": [{"type": "text", "text": "Logged in as a@b.c / Tier: free"}]}))
-    assert UbersuggestClient("AT").call("auth_status") == "Logged in as a@b.c / Tier: free"
+    out = UbersuggestClient("AT").call("auth_status")
+    assert out == "Logged in as a@b.c / Tier: free"
+    # typed: the consumer knows it holds third-party prose, not data
+    assert isinstance(out, ub_client.UbersuggestText)
 
 
 def test_is_error_est_un_refus_de_l_outil(mcp):
@@ -199,7 +210,7 @@ def test_session_expiree_reprise_une_fois(mcp):
 
 
 def test_jeton_refuse_remonte_en_401(mcp, monkeypatch):
-    def fake_post(self, url, json=None, headers=None, timeout=None):
+    def fake_post(self, url, json=None, headers=None, timeout=None, stream=False):
         return _Resp({"error": "invalid_token"}, status_code=401)
     monkeypatch.setattr(ub_client.requests.Session, "post", fake_post)
     with pytest.raises(UpstreamHTTPError) as e:
@@ -239,3 +250,57 @@ def test_list_tools_suit_le_curseur(mcp):
 def test_sans_jeton_refuse():
     with pytest.raises(MissingCredential):
         UbersuggestClient("")
+
+
+def _flux(rid, *, avant=(), apres_infini=False):
+    """An event stream: `avant` lines, our answer, then (optionally) pings forever."""
+    def gen():
+        yield from avant
+        msg = {"jsonrpc": "2.0", "id": rid, "result": {"structuredContent": {"ok": 1}}}
+        yield f"data: {json.dumps(msg)}"
+        yield ""
+        while apres_infini:
+            yield ": ping"
+    return gen()
+
+
+def test_flux_garde_ouvert_lu_jusqu_a_notre_reponse_puis_lache(mcp):
+    """Un serveur qui garde le flux ouvert (pings) ne tient pas l'appel : la lecture
+    s'arrête au message qui répond à notre id, et le flux est fermé."""
+    resps = []
+
+    def sse(body):
+        r = _Resp(None, headers={"Content-Type": "text/event-stream"},
+                  lines=_flux(body["id"], avant=(": ping", "data: {\"jsonrpc\":\"2.0\","
+                                                 "\"method\":\"notifications/progress\"}", ""),
+                              apres_infini=True))
+        resps.append(r)
+        return r
+    mcp.script.append(sse)
+    assert UbersuggestClient("AT").call("domain_keywords", {"domain": "x.com"}) == {"ok": 1}
+    assert mcp[-1]["stream"] is True and resps[0].closed
+
+
+def test_echeance_depassee_leve_une_erreur_nommee(mcp, monkeypatch):
+    """Des pings sans fin et jamais notre réponse : l'échéance globale coupe l'appel,
+    même si chaque lecture rend à temps."""
+    def pings(body):
+        def gen():
+            while True:
+                yield ": ping"
+        return _Resp(None, headers={"Content-Type": "text/event-stream"}, lines=gen())
+    mcp.script.append(pings)
+    horloge = iter(range(0, 10_000, 30))
+    monkeypatch.setattr(ub_client.time, "monotonic", lambda: next(horloge))
+    with pytest.raises(ub_client.UbersuggestDeadlineExceeded) as e:
+        UbersuggestClient("AT").call("site_audit", {"domain": "x.com"})
+    assert e.value.status_code == 504
+
+
+def test_session_reprise_sans_poignee_de_main(mcp):
+    """Un client construit avec une session déjà ouverte n'en rouvre pas."""
+    mcp.script.append(_ok({"content": [{"type": "text", "text": "[]"}]}))
+    c = UbersuggestClient("AT", session_id="S0")
+    assert c.call("keyword_lists") == []
+    assert [x["body"].get("method") for x in mcp] == ["tools/call"]
+    assert mcp[0]["headers"]["Mcp-Session-Id"] == "S0" and c.session_id == "S0"
