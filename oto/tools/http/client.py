@@ -176,8 +176,22 @@ class RedirectRefused(ValueError):
 
     def __init__(self, status: int, location: str):
         self.status = status
-        self.location = location
-        super().__init__(f"redirect refused ({status} to {location or '?'})")
+        # Only scheme, host, port and path: a 3xx often keeps the original query, and
+        # the auth this client injects in it (`?api_key=`), or a userinfo, would
+        # otherwise reach the caller's message and every log that prints it.
+        self.location = safe_location(location)
+        super().__init__(f"redirect refused ({status} to {self.location or '?'})")
+
+
+def safe_location(location: str) -> str:
+    """`Location` reduced to scheme://host[:port]/path — no query, fragment or
+    userinfo. A relative target keeps its path alone."""
+    from urllib.parse import urlsplit, urlunsplit
+    p = urlsplit(location or "")
+    host = p.hostname or ""
+    if host and p.port:
+        host = f"{host}:{p.port}"
+    return urlunsplit((p.scheme, host, p.path, "", ""))
 
 
 def _refuse_redirect(r: requests.Response) -> None:

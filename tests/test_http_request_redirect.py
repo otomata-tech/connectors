@@ -106,3 +106,16 @@ def test_get_raw_leve_la_meme_exception():
             c.get_raw("/x", max_bytes=100)
     finally:
         srv.shutdown()
+
+
+def test_la_location_rendue_ne_porte_ni_requete_ni_identifiants():
+    """Un 3xx garde souvent la requête d'origine : la clé injectée en paramètre
+    (`?api_key=…`) ou une userinfo ne doit jamais sortir dans le message ni dans
+    l'attribut que l'appelant affiche."""
+    from oto.tools.http.client import RedirectRefused
+
+    e = RedirectRefused(302, "https://user:pw@other.test:8443/v2/x?api_key=SECRET#frag")
+    assert e.location == "https://other.test:8443/v2/x"
+    assert "SECRET" not in str(e) and "pw" not in str(e)
+    rel = RedirectRefused(301, "/v2/y?api_key=SECRET")
+    assert rel.location == "/v2/y" and "SECRET" not in str(rel)
