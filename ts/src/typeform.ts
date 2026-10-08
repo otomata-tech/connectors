@@ -198,11 +198,20 @@ export const connector = defineConnector({
   name: "typeform",
   label: "Typeform",
   namespace: "typeform",
-  version: "1.0.0",
+  version: "1.1.0",
   apiVersion: "Create API and Responses API (unversioned)",
-  baseUrl: "https://api.typeform.com",
+  baseUrls: {"setting": "region", "values": {"us": "https://api.typeform.com", "eu": "https://api.eu.typeform.com", "eu2": "https://api.typeform.eu"}},
   auth: {"kind": "bearer", "token": "access_token"},
   credential: [{"name": "access_token", "label": "Personal access token", "secret": true}],
+  settings: [
+    {
+      "name": "region",
+      "label": "Data center",
+      "type": "choice",
+      "choices": ["us", "eu", "eu2"],
+      "default": "us"
+    }
+  ],
   modes: ["byo_user", "byo_org"],
   timeoutMs: 60000,
   queryArrays: "comma",

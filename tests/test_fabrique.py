@@ -207,3 +207,106 @@ def test_added_rules_refuse(path, mutate, message):
     mutate(description)
     with pytest.raises(DescriptionError, match=re.escape(message)):
         check(description, path)
+
+
+# --- Comptes : réglages, adresses par réglage, clé en query, consentement ------------
+
+TYPEFORM = CONNECTORS / "typeform" / "connector.yaml"
+MICROSOFT = CONNECTORS / "microsoft" / "connector.yaml"
+
+
+def _lucca_like(d):
+    """Sellsy, l'adresse tirée d'un sous-domaine saisi par l'admin."""
+    d["connector"]["settings"] = [{"name": "domain", "label": "Domain", "type": "text", "pattern": "^[a-z0-9-]+$"}]
+    d["connector"]["base_url"] = "https://{domain}.example.net/api"
+
+
+def _server_like(d):
+    """Sellsy, l'adresse saisie en entier par l'admin, et le jeton demandé à cette adresse."""
+    d["connector"]["settings"] = [{"name": "server", "label": "Server address", "type": "url"}]
+    d["connector"]["base_url"] = "{server}/api"
+    d["connector"]["auth"]["token_url"] = "{server}/connect/token"
+
+
+def _consent(d, **changes):
+    d["connector"]["auth"] = {
+        "kind": "oauth2_user", "authorize_url": "https://login.example/authorize", "token_url": "https://login.example/token",
+        "client_auth": "basic", "refresh": "refresh_token", "rotates": True,
+        "identity": {"function": "list_estimates", "path": "data.0.owner"},
+    } | changes
+    del d["connector"]["credential"]
+
+
+@pytest.mark.parametrize("mutate", [_lucca_like, _server_like], ids=["text_in_host", "url_at_head"])
+def test_templates_over_settings_pass(mutate):
+    description = _load(SELLSY)
+    mutate(description)
+    check(description, SELLSY)
+
+
+def test_instance_url_from_the_token_passes_and_is_carried():
+    description = _load(SELLSY)
+    _consent(description, from_token=["instance_url"])
+    description["connector"]["base_url"] = "{instance_url}/services/data/v62.0"
+    source = connector_module(check(description, SELLSY)).source
+    assert '"fromToken": ["instance_url"]' in source
+    assert 'baseUrl: "{instance_url}/services/data/v62.0",' in source
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (lambda d: d["connector"].update(base_url="https://{domain}.example.net"),
+     "base_url cites {domain}, which is not a declared setting (none declared)"),
+    (lambda d: (_lucca_like(d), d["connector"].update(base_url="{domain}/api")),
+     "base_url starts with {domain}, which is not a url setting"),
+    (lambda d: (_server_like(d), d["connector"].update(base_url="https://api.example.net/{server}")),
+     "base_url cites the url setting {server} elsewhere than at its head"),
+    (lambda d: (_lucca_like(d), d["connector"]["auth"].update(token_url="https://{tenant}.example.net/token")),
+     "auth.token_url cites {tenant}, which is not a declared setting (domain)"),
+    (lambda d: (_lucca_like(d), d["connector"].update(base_url="https://api.example.net")),
+     "setting(s) domain cited by no URL"),
+    (lambda d: (_lucca_like(d), d["connector"]["settings"].append({"name": "client_id", "label": "x", "type": "url"})),
+     "name(s) declared twice among credential, settings and from_token: client_id"),
+    (lambda d: d["connector"].update(settings=[{"name": "region", "label": "Region", "type": "choice", "choices": ["us", "eu"], "default": "fr"}]),
+     "setting 'region': default 'fr' is not one of its choices"),
+    (lambda d: (_lucca_like(d), d["connector"].pop("base_url"), d["connector"].update(base_urls={"setting": "domain", "values": {"a": "https://a.example", "b": "https://b.example"}})),
+     "base_urls.setting names 'domain', which is not a choice setting"),
+    (lambda d: (d["connector"].update(settings=[{"name": "region", "label": "Region", "type": "choice", "choices": ["us", "eu"]}]),
+                d["connector"].pop("base_url"),
+                d["connector"].update(base_urls={"setting": "region", "values": {"us": "https://a.example", "fr": "https://b.example"}})),
+     "base_urls.values must give a URL to each choice of 'region' (us, eu), and to nothing else"),
+    (lambda d: (_consent(d, from_token=["instance_url"]), d["connector"]["auth"].update(token_url="{instance_url}/token")),
+     "auth.token_url cites {instance_url}, which is not a declared setting (none declared)"),
+    (lambda d: _consent(d, identity={"function": "get_estimate", "path": "id"}),
+     "auth.identity 'get_estimate' must be a read function with a call and no required argument"),
+    (lambda d: _consent(d, identity={"function": "nope", "path": "id"}),
+     "auth.identity names 'nope', which is not a function of the connector"),
+    (lambda d: (d["connector"].update(auth={"kind": "api_key", "in": "query", "name": "limit", "key": "client_id"})),
+     "function list_estimates: query 'limit' is set twice (the authentication and the function)"),
+], ids=["undeclared", "text_at_head", "url_not_at_head", "token_url_undeclared", "unused", "name_twice", "bad_default",
+        "urls_on_text", "urls_not_each_choice", "token_from_token", "identity_required_argument", "identity_unknown",
+        "query_key_clash"])
+def test_account_rules_refuse(mutate, message):
+    description = _load(SELLSY)
+    mutate(description)
+    with pytest.raises(DescriptionError, match=re.escape(message)):
+        check(description, SELLSY)
+
+
+def test_oauth2_user_without_credential_is_refused_by_the_schema():
+    description = _load(SELLSY)
+    _consent(description)
+    description["connector"]["credential"] = [{"name": "refresh_token", "label": "Refresh token", "secret": True}]
+    with pytest.raises(DescriptionError, match="does not match the description schema at connector"):
+        check(description, SELLSY)
+
+
+def test_connector_carries_settings_urls_and_consent():
+    typeform = connector_module(check(_load(TYPEFORM), TYPEFORM)).source
+    assert '"setting": "region", "values": {"us": "https://api.typeform.com"' in typeform
+    assert '"choices": ["us", "eu", "eu2"]' in typeform and '"default": "us"' in typeform
+    microsoft = connector_module(check(_load(MICROSOFT), MICROSOFT)).source
+    for fragment in ('"kind": "oauth2_user"', '"clientAuth": "body"', '"refresh": "refresh_token"', '"rotates": true',
+                     '"identity": {"function": "microsoft.get_me", "path": "userPrincipalName"}', "credential: [],"):
+        assert fragment in microsoft
+    sellsy = connector_module(check(_load(SELLSY), SELLSY)).source
+    assert '"clientAuth": "body"' in sellsy and '"tokenRequest": "json"' in sellsy

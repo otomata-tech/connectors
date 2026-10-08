@@ -41,4 +41,21 @@ describe("generated definitions", () => {
     expect(probe?.class).toBe("read")
     expect(ajv.validate(probe?.schema as object, {})).toBe(true)
   })
+
+  const consents = connectors.flatMap((c) => (c.auth.kind === "oauth2_user" ? [[c.name, c, c.auth] as const] : []))
+  it.each(consents)("%s: the identity of a consent is a read function callable with {}, and no credential", (_name, connector, auth) => {
+    const identity = connector.functions.find((fn) => fn.name === auth.identity.function)
+    expect(identity?.class).toBe("read")
+    expect(ajv.validate(identity?.schema as object, {})).toBe(true)
+    expect(connector.credential).toEqual([])
+  })
+
+  it.each(connectors.filter((c) => c.baseUrls).map((c) => [c.name, c] as const))("%s: base URLs give one address per choice", (_name, connector) => {
+    const setting = connector.settings?.find((s) => s.name === connector.baseUrls?.setting)
+    expect(setting?.type).toBe("choice")
+    if (setting?.type !== "choice") return
+    expect(Object.keys(connector.baseUrls?.values ?? {}).sort()).toEqual([...setting.choices].sort())
+    if (setting.default !== undefined) expect(setting.choices).toContain(setting.default)
+    expect(connector.baseUrl).toBeUndefined()
+  })
 })

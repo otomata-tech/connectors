@@ -3,29 +3,39 @@
 # Files surface only (SharePoint sites, document libraries, OneDrive items), on
 # behalf of one signed-in person (delegated access): every call sees exactly what
 # that person sees in Microsoft 365.
-# The access token comes from the person's sign-in (OAuth 2.0 authorization code,
-# delegated scopes offline_access, User.Read, Files.ReadWrite.All,
-# Sites.ReadWrite.All); obtaining and refreshing it belongs to the host, not to
-# this file.
+# The access token comes from the person's consent (OAuth 2.0 authorization
+# code, delegated scopes), with the OAuth application of the host or of the
+# organization; work and school accounts only (organizations endpoint). Entra
+# rotates the refresh token: each refresh returns the one to keep.
 connector:
   name: microsoft
   label: Microsoft 365 (SharePoint, OneDrive)
   namespace: microsoft
-  version: 2.0.0
+  version: 3.0.0
   api_version: v1.0
   base_url: https://graph.microsoft.com/v1.0
   auth:
-    kind: bearer
-    token: access_token
-  credential:
-    - { name: access_token, label: Delegated access token, secret: true }
+    kind: oauth2_user
+    authorize_url: https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize
+    token_url: https://login.microsoftonline.com/organizations/oauth2/v2.0/token
+    client_auth: body
+    scopes:
+      - offline_access
+      - User.Read
+      - https://graph.microsoft.com/Files.ReadWrite.All
+      - https://graph.microsoft.com/Sites.ReadWrite.All
+    authorize_params: { prompt: select_account, response_mode: query }
+    refresh: refresh_token
+    rotates: true
+    expires_in_default: 3600
+    identity: { function: get_me, path: userPrincipalName }
   modes: [byo_user]
   timeout_s: 120
   errors:
     - { status: 400, code: invalid_request, retryable: false,
         message: "Microsoft Graph rejected the request as invalid: check the arguments." }
     - { status: 401, code: authorization_expired, retryable: false,
-        message: "Microsoft no longer accepts this access token (expired or revoked): renew it, or have the person sign in again." }
+        message: "Microsoft no longer accepts this authorization (expired or revoked): the person must sign in again." }
     - { status: 403, code: permission_missing, retryable: false,
         message: "The signed-in person has no access to this resource, or a delegated scope is missing (offline_access, User.Read, Files.ReadWrite.All, Sites.ReadWrite.All). It does not mean the resource is absent." }
     - { status: 404, code: not_found, retryable: false,

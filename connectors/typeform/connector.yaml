@@ -1,21 +1,27 @@
 # yaml-language-server: $schema=../connector.schema.json
 # Typeform Create API reference: https://www.typeform.com/developers/create/reference/
 # Typeform Responses API reference: https://www.typeform.com/developers/responses/reference/retrieve-responses/
-# This file serves the US data center (api.typeform.com) only: the EU hosts
-# (api.eu.typeform.com, api.typeform.eu) need a base URL chosen per account,
-# which the format cannot express yet.
+# One host per data center, chosen per account by the region setting: a token
+# is issued by one data center and refused by the others.
 connector:
   name: typeform
   label: Typeform
   namespace: typeform
-  version: 1.0.0
+  version: 1.1.0
   api_version: Create API and Responses API (unversioned)
-  base_url: https://api.typeform.com
+  base_urls:
+    setting: region
+    values:
+      us: https://api.typeform.com
+      eu: https://api.eu.typeform.com
+      eu2: https://api.typeform.eu
   auth:
     kind: bearer
     token: access_token
   credential:
     - { name: access_token, label: Personal access token, secret: true }
+  settings:
+    - { name: region, label: Data center, type: choice, choices: [us, eu, eu2], default: us }
   modes: [byo_user, byo_org]
   timeout_s: 60
   query_arrays: comma

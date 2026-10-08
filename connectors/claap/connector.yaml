@@ -4,12 +4,13 @@ connector:
   name: claap
   label: Claap
   namespace: claap
-  version: 1.0.0
+  version: 1.0.1
   api_version: v1
   base_url: https://api.claap.io/v1
   auth:
     kind: api_key
-    header: X-Claap-Key
+    in: header
+    name: X-Claap-Key
     key: api_key
   credential:
     - { name: api_key, label: Workspace API key, secret: true }

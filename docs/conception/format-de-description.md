@@ -1,11 +1,11 @@
 # Format de description d'un connecteur
 
-- **Statut** : validé avec Alexis le 29/09/2026
-- **Dernière révision** : 2026-10-06
+- **Statut** : validé par le mainteneur le 29/09/2026
+- **Dernière révision** : 2026-10-08
 
 ## Résumé
 
-Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. La [fabrique](fabrique.md) en tire Python et TypeScript ; treize connecteurs ont leur description, et tout client ajouté à la lib entre au format.
+Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connector.yaml`, validé par `connectors/connector.schema.json` (JSON Schema 2020-12). L'unité du format est la fonction servie avec son appel : ce que l'agent voit (nom, description en anglais, schéma d'entrée strict, classe, exemples, refus nommés) et la requête derrière (méthode, chemin, répartition des arguments, pagination, sortie). Ce qui ne se décrit pas reste du code écrit à la main, référencé depuis le fichier. Le bloc `connector` dit aussi ce qu'est un compte : les champs de son credential, ses réglages non secrets (région, adresse) et son authentification, consentement OAuth d'une personne compris. La [fabrique](fabrique.md) en tire Python et TypeScript ; treize connecteurs ont leur description, et tout client ajouté à la lib entre au format.
 
 ## Contexte
 
@@ -13,7 +13,7 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 - Le paquet d'oto 2 sert des fonctions qui déclarent classe, exemples, refus et résumé de confirmation. Elles ne sont pas des outils MCP : elles se trouvent, se lisent et s'appellent par les six outils figés du paquet (oto-pkg : docs/conception/connecteurs-et-comptes.md).
 - Un connecteur partagé sert deux langages : Python pour la lib, TypeScript pour le paquet. Écrit deux fois à la main, il divergerait ; d'où une description unique.
 - Relevé du 29/09 sur 114 connecteurs de la lib, par lecture du code et à seuil arbitraire : 54 enveloppes d'API REST, 44 REST avec logique, 16 hors format (3 navigateur, 7 données ouvertes ou base embarquée, 3 SDK, 2 traitement local, 1 asynchrone).
-- Se décrit : authentification simple, URL de base, verbe et chemin, répartition des arguments, constantes et en-têtes constants, encodage JSON d'un argument, schéma, table des erreurs et leur caractère rejouable, contrôles simples avant l'appel et sur la réponse, projection de sortie, règle de coût, pagination, rythme maximal du tiers, sonde. Reste à la main : rafraîchissement OAuth d'un utilisateur, fusion de plusieurs appels, refus locaux que les contrôles déclarés ne disent pas, construction d'un mail, identité opérée.
+- Se décrit : authentification (clé, basique, client credentials, consentement d'une personne), réglages d'un compte, URL de base, verbe et chemin, répartition des arguments, constantes et en-têtes constants, encodage JSON d'un argument, schéma, table des erreurs et leur caractère rejouable, contrôles simples avant l'appel et sur la réponse, projection de sortie, règle de coût, pagination, rythme maximal du tiers, sonde. Reste à la main : fusion de plusieurs appels, refus locaux que les contrôles déclarés ne disent pas, construction d'un mail, identité opérée.
 
 ## Objectifs et non-objectifs
 
@@ -23,7 +23,7 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 - Ce qui ne se décrit pas reste possible, par une entrée `handwritten` dont le schéma, la classe et les refus restent déclaratifs.
 - Hors objectif : convertir les connecteurs existants. Ils restent en Python tels quels ; seuls les nouveaux connecteurs partagés et ceux qu'oto 2 demande entrent au format, et un existant réclamé entre comme un nouveau.
 - Hors objectif : décrire un connecteur propre à un hôte, écrit dans l'hôte au contrat du paquet (oto-pkg : docs/conception/connecteurs-et-comptes.md).
-- Hors objectif : porter un secret, un compte ou une activation. Le fichier nomme les champs du credential ; le reste relève de l'hôte.
+- Hors objectif : porter un secret, un compte ou une activation. Le fichier nomme les champs du credential et les réglages, et décrit le consentement ; garder, chiffrer, rafraîchir et résoudre relèvent de l'hôte.
 
 ## Conception
 
@@ -42,9 +42,11 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 | `namespace` | oui | Préfixe des outils exposés, souvent égal à `name`. |
 | `version` | oui | Version du fichier, semver. |
 | `api_version` | oui | Version de l'API tierce, telle que l'éditeur la nomme. |
-| `base_url` | sauf si tout est `handwritten` | Racine `https://` des chemins d'appel, sans `/` final. |
-| `auth` | oui | Mode d'authentification, voir ci-dessous. |
-| `credential` | sauf `auth.kind: none` | Champs fournis par le consommateur : `name`, `label`, `secret` (booléen). |
+| `base_url` | sauf `base_urls` ou tout `handwritten` | Racine `https://` des chemins d'appel, sans `/` final ; gabarit possible sur les réglages. |
+| `base_urls` | non, exclusif de `base_url` | Une racine par valeur d'un réglage `choice` : `{ setting: region, values: { us: …, eu: … } }`. |
+| `auth` | oui | Mode d'authentification, voir « Le compte ». |
+| `credential` | sauf `none` et `oauth2_user` | Champs fournis par le consommateur : `name`, `label`, `secret` (booléen). |
+| `settings` | non | Réglages non secrets d'un compte, voir « Le compte ». |
 | `modes` | oui | Qui peut porter un compte : `platform`, `byo_user`, `byo_org`. |
 | `timeout_s` | non (30) | Délai d'un appel, en secondes. |
 | `quota` | non | Quota par défaut sur une clé de la plateforme ; n'existe que si `modes` contient `platform`. |
@@ -54,7 +56,20 @@ Un connecteur partagé se décrit dans un fichier YAML, `connectors/<nom>/connec
 | `probe` | non | Sonde de la connexion : `{ function: get_company, non_empty: [scopes] }`, une lecture sans argument requis, jamais décomptée d'un quota ; chaque chemin de `non_empty` doit être non vide dans sa réponse. |
 | `errors` | oui | Table commune à toutes les fonctions : `status` (un ou plusieurs codes HTTP), `code` (refus nommé), `message` (anglais), `retryable`. |
 
-`auth.kind` vaut `api_key` (`header`, `prefix` facultatif, `key`), `bearer` (`token`), `basic` (`username`, `password`), `oauth2_client_credentials` (`token_url`, `token_request` `json` ou `form`, `client_id`, `client_secret`, `scope` et `expires_in_default` facultatifs), `oauth2_user` (renvoie à `handwritten`) ou `none`. Chaque valeur qui désigne un secret nomme un champ de `credential`, jamais une valeur.
+### Le compte
+
+Un compte garde tous les champs que déclare `credential` (les secrets chiffrés par l'hôte) et ses réglages, `settings` : `name`, `label`, `type`, et selon le type, `choice` (`choices`, liste fermée, `default` facultatif : `{ name: region, label: Data region, type: choice, choices: [us, eu], default: us }`), `text` (`pattern`, expression ancrée : `{ name: domain, label: Domain, type: text, pattern: "^[a-z0-9-]+$" }`) ou `url` (adresse `https://` libre, saisie par un admin : serveur d'un standard, site).
+
+Un réglage n'est cité que par une adresse. `base_url`, `token_url` et `authorize_url` sont des gabarits : `https://{domain}.example.net` (domaine d'un tenant), `{server}/xapi/v1`. Un réglage `url` (ou une valeur de `from_token`) ne se cite qu'en tête, à la place du schéma et de l'hôte ; un autre réglage, qu'après `https://`. `base_urls` et `token_urls` donnent une adresse à chaque valeur d'un `choice`, quand les hôtes ne se déduisent pas l'un de l'autre. L'exécution garde ces adresses : `https` seul, jamais un hôte qui résout vers une adresse interne, aucune redirection suivie ; une valeur `text` ou `choice` ne porte que lettres, chiffres, `-` et `_`.
+
+`auth.kind`, chaque secret nommant un champ de `credential`, jamais une valeur :
+- `api_key` : `in` (`header` ou `query`), `name` (de l'en-tête ou du paramètre), `key`, `prefix` en en-tête seulement : `{ kind: api_key, in: header, name: X-Claap-Key, key: api_key }` ;
+- `bearer` (`token`) ; `basic` (`username`, `password`, deux champs) ;
+- `oauth2_client_credentials` : `token_url` ou `token_urls`, `token_request` (`json`, `form`), `client_auth` (`body` ou `basic` : où vont l'identifiant et le secret du client), `client_id`, `client_secret`, `scope` et `expires_in_default` facultatifs ;
+- `oauth2_user`, le consentement d'une personne (code d'autorisation) : `authorize_url`, `token_url` ou `token_urls` (corps en formulaire), `client_auth`, `scopes`, `authorize_params` (constantes, jamais un paramètre que pose l'hôte : `client_id`, `redirect_uri`, `state`…), `pkce: S256`, `refresh` (`refresh_token` avec `rotates` booléen, `exchange` avec `exchange: { grant_type, token_param }`, ou `none`), `expires_in_default`, `identity: { function: get_me, path: userPrincipalName }` (qui a consenti, pour nommer le compte : une lecture sans argument requis), `from_token: [instance_url]` (champs de la réponse de jeton gardés avec le compte, citables par `base_url`) ;
+- `none`.
+
+En `oauth2_user`, `credential` est interdit : les jetons du consentement ne sont pas des champs, et `client_id`/`client_secret` appartiennent à l'application OAuth (celle de l'hôte par défaut, celle de l'organisation si elle en pose une), pas au compte ni au fichier.
 
 ### Le bloc `functions`
 
@@ -87,17 +102,9 @@ L'exposition est une projection, pas une propriété de la fonction. `mode` vaut
 functions:
   - name: get_estimate
     class: read
-    description: >-
-      Get the full record of one Sellsy estimate by its id.
-    input:
-      type: object
-      additionalProperties: false
-      required: [id]
-      properties:
-        id: { type: integer }
-    examples:
-      - title: One estimate with its company
-        input: { id: 42, embed: [company] }
+    description: Get the full record of one Sellsy estimate by its id.
+    input: { type: object, additionalProperties: false, required: [id], properties: { id: { type: integer } } }
+    examples: [{ title: One estimate with its company, input: { id: 42, embed: [company] } }]
     refusals:
       - { code: estimate_not_found, when: 404, message: "No estimate with this id in this Sellsy account." }
     call: { method: GET, path: "/estimates/{id}", query: { field: fields, embed: embed } }
@@ -111,11 +118,13 @@ Treize connecteurs ont leur `connector.yaml` (nombre de fonctions) : `affinity` 
 
 `pennylane` (API v2, une clé par société) couvre ce que couvre le client : référentiels, clients, fournisseurs, factures clients et avoirs, devis, factures d'achat (lecture, correction, validation), grand livre et lettrage, transactions, balance, rapprochement ; 26 lectures, 13 écritures, 9 fonctions sensibles. Valeurs vérifiées le 2026-10-06 contre l'OpenAPI publique « Company V2 ». Restent hors du fichier : le téléversement de pièce (multipart) et l'import de facture d'achat qui en dépend, les deux recherches anti-doublon par `external_reference` du client (servies par le `filter` des listes), l'agrégat `fetch_complete_data` (plusieurs appels) et l'option `only_outstanding` des transactions (filtre local). Le `filter` est une liste de clauses `{field, operator, value}` (champs énumérés par fonction, liste exigée pour `in` et `not_in`), sérialisée en JSON dans la query par `encode` ; `draft: true` est une constante de corps ; le rythme (4 requêtes par seconde), l'arrêt sur `has_more`, la sonde (`get_company`, `scopes` non vide), l'équilibre d'une écriture et le lien PDF d'un devis sont déclarés. Un avoir prend des quantités négatives, imposées par le schéma, là où le client inverse le signe.
 
-Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (adresse du standard propre à chaque compte, connexion hors OAuth2 standard, audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK et OAuth utilisateur), `wordpress` (adresse propre à chaque site, fournie par le credential ; racine REST découverte à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire).
+Comptes, au 2026-10-08 : `typeform` (1.1.0 ; `us`, `eu`, `eu2`, comme le client) et `amplitude` (1.1.0 ; `us`, `eu`) choisissent leur hôte par un réglage `region` ; `sellsy` (1.0.1) dit `client_auth: body` ; `microsoft` (3.0.0) passe de `bearer` à `oauth2_user` (accès délégué, refresh token tourné, identité par `get_me`) ; `claap` et `mailpool` (1.0.1) disent `in: header` ; `aircall` (`basic` sur deux champs) ne change pas. `meta_ads` reste en `bearer`, jeton fourni par l'hôte : son dialogue prend un `config_id` propre à l'application et aucun scope, et l'identité se lit par `/me` avec un repli selon le type de jeton ; le format ne dit ni un paramètre d'application autre que l'identifiant et le secret du client, ni ce repli.
+
+Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descriptible : `threecx` (l'adresse du standard se dit, mais la connexion par compte utilisateur est hors OAuth2 standard ; audio binaire), `boondmanager` (jeton signé à chaque requête), `bigquery` (SDK), `wordpress` (l'adresse du site se dit, mais la racine REST se découvre à l'appel, `/wp-json/` ou `?rest_route=` ; téléversement de média en corps binaire).
 
 ### Contrôles
 
-`tests/test_connector_descriptions.py` vérifie que le schéma est un JSON Schema valide, que chaque description le respecte et porte le nom de son dossier, et que chaque exemple respecte l'entrée de sa fonction. Vingt-quatre variantes invalides du fichier Sellsy doivent être refusées : classe absente, clé inconnue, `call` et `handwritten` ensemble ou aucun des deux, fonction sensible sans `confirm`, entrée non stricte, aucun exemple, exemple hors bornes ou à argument inconnu, `embed` non documenté, `token_url` absent, `credential` absent, `quota` sans `platform`, version hors semver, `exposure.mode` inconnu, schéma de sortie ouvert ou sans propriétés, `rate_limit` incomplet, en-tête constant non textuel, encodage inconnu, contrôle d'un genre inconnu, attente sans chemin, sonde à clé inconnue, `more` vide. Les règles hors schéma sont vérifiées par la fabrique ([fabrique](fabrique.md)). `jsonschema` est un outil de test, pas une dépendance de la lib.
+`tests/test_connector_descriptions.py` vérifie que le schéma est un JSON Schema valide, que chaque description le respecte et porte le nom de son dossier, et que chaque exemple respecte l'entrée de sa fonction. Quarante et une variantes invalides du fichier Sellsy doivent être refusées : classe absente, clé inconnue, `call` et `handwritten` ensemble ou aucun des deux, fonction sensible sans `confirm`, entrée non stricte, aucun exemple, exemple hors bornes ou à argument inconnu, `embed` non documenté, `token_url` absent, `credential` absent, `quota` sans `platform`, version hors semver, `exposure.mode` inconnu, schéma de sortie ouvert ou sans propriétés, `rate_limit` incomplet, en-tête constant non textuel, encodage inconnu, contrôle d'un genre inconnu, attente sans chemin, sonde à clé inconnue, `more` vide ; et pour le compte : `client_auth` absent, `token_url` et `token_urls` ensemble, `base_url` et `base_urls` ensemble, liste fermée d'une valeur, `text` sans motif ou à motif non ancré, `url` à liste, gabarit à `/` final, clé en query préfixée, clé sans place, `oauth2_user` avec un credential, avec `client_id`, sans identité, `rotates` hors `refresh_token`, `exchange` sans sa demande, paramètre d'autorisation réservé à l'hôte, PKCE inconnu. Les règles hors schéma sont vérifiées par la fabrique ([fabrique](fabrique.md)). `jsonschema` est un outil de test, pas une dépendance de la lib.
 
 ## Décisions et alternatives écartées
 
@@ -129,10 +138,15 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - **Une seule version** : écarté. La version du fichier (semver) et celle de l'API tierce (en clair) sont deux champs.
 - **Convertir les 713 outils existants, ou leur attribuer une classe** : écarté. La classe s'écrit à l'entrée d'un connecteur dans le format.
 - **Garder les descriptions en français** : écarté. Ce que lit l'agent est en anglais ; une description française se traduit à son entrée.
+- **Un seul secret par compte, l'adresse ou la région dans un champ du credential** : écarté le 2026-10-08. Un compte garde tous ses champs ; une région ou une adresse est un réglage non secret, typé (liste fermée, motif, adresse libre gardée à l'exécution), cité par un gabarit, que l'écran de l'hôte propose et que l'exécution vérifie.
+- **Un connecteur par région** (`typeform_eu`) : écarté le 2026-10-08 ; les fonctions et le contrat ne changent pas avec l'hôte.
+- **`oauth2_user` renvoyé à du code écrit à la main, le jeton passé en `bearer`** : écarté le 2026-10-08. Le consentement (adresses, scopes, PKCE, renouvellement, rotation, identité) se décrit, et l'hôte l'exécute une fois pour tous.
+- **L'identifiant et le secret du client OAuth dans `credential`** : écarté le 2026-10-08. Ils appartiennent à l'application (de l'hôte, ou de l'organisation qui pose la sienne), pas au compte d'une personne.
 
 ## Sécurité et confidentialité
 
-- Le fichier ne porte aucun secret : il nomme les champs du credential (`secret: true`) et `auth` y renvoie par leur nom. Le secret est fourni par le consommateur à chaque appel ; la lib n'en lit aucun (garde `tests/test_no_secret_read_guard.py`).
+- Le fichier ne porte aucun secret : il nomme les champs du credential (`secret: true`) et `auth` y renvoie par leur nom ; un réglage n'est jamais un secret. Une clé passée en query (`in: query`) est admise : le tiers l'a voulue là et la voit de toute façon ; l'exécution la masque dans tout journal, adresse comprise. Le secret est fourni par le consommateur à chaque appel ; la lib n'en lit aucun (garde `tests/test_no_secret_read_guard.py`).
+- Une adresse saisie par un admin (`url`, valeur de `from_token`) n'est suivie qu'en `https`, vers un hôte qui ne résout jamais vers une adresse interne, sans redirection ; le format le déclare, l'exécution le garde.
 - `base_url` nomme la racine documentée de l'API de l'éditeur. Une coordonnée tirée du front d'un tiers (clé d'API publique, identifiant d'application) n'entre jamais dans un fichier (`docs/conventions.md`).
 - Le dépôt est public : un connecteur dont l'accès appartient à un client, son propre back-office, n'a pas de description ici ; c'est un connecteur propre à son hôte.
 - Un message de refus dit le fait, au plus une condition, jamais le nom d'un outil : la lib ne connaît pas les outils de l'appelant.
@@ -147,6 +161,8 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - Le client Python Sellsy de la lib reste écrit à la main, sur des verbes génériques ; rien n'est généré.
 - Les clients Python restent écrits à la main ; leurs descriptions, écrites après eux, n'en sont pas encore la source.
 - `pennylane` s'écarte du client là où le client lit une seule page d'une liste paginée (exercices, catégories, lignes de facture et de devis) : le fichier les décrit paginées, comme l'OpenAPI. Un `DELETE` y porte un corps (délettrage) : la sortie le porte dans la requête, l'hôte l'envoie.
+- Les ajouts du 2026-10-08 (réglages, gabarits, `base_urls`, clé en query, `client_auth`, `oauth2_user` déclaratif) n'ont pas d'exécution : le paquet d'oto 2 ne sait encore ni réglage, ni consentement, ni rotation. `in: query`, `token_urls`, `from_token`, `pkce` et `exchange` ne servent à aucune description.
+- Les clients Python `typeform` et `amplitude` prennent déjà leur région en paramètre ; `microsoft` garde son module de consentement écrit à la main (`oto/tools/microsoft/auth.py`), que la description recopie.
 - Les ajouts du 2026-10-06 (en-têtes constants, constantes, `encode`, `more`, `rate_limit`, `probe`, `checks`, `expect`) ne servent qu'à `notion` et `pennylane` ; les autres descriptions ne s'en servent pas encore.
 
 ## Questions ouvertes
@@ -157,7 +173,6 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - Référencer la spec OpenAPI de l'éditeur quand elle existe ?
 - Le défaut `per_connector` vaut-il pour un hôte d'oto 2, dont les fonctions ne passent que par `call` ?
 - Ce que le format ne sait pas encore dire, relevé en décrivant dix connecteurs le 2026-10-05 :
-  - une adresse propre au compte ou à la région (`threecx`, `typeform` hors des États-Unis, `amplitude` en Europe) ;
   - un corps qui est un tableau (`affinity`, `nextmotion`, `microsoft`), un corps en formulaire (`meta_ads`) ;
   - une réponse autre que JSON (CSV, fichier binaire), une pagination par adresse complète (`@odata.nextLink`) ;
   - une signature par requête (`boondmanager`) ;
@@ -166,6 +181,7 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
   - ce que couvre une sonde au-delà de l'authentification et des champs non vides : le quota restant ?
 - Relevé en décrivant `pennylane` le 2026-10-06 : des clauses de filtre bâties depuis des arguments nommés (bornes de date, statut, `external_reference`), plutôt qu'une liste de clauses écrite par l'agent.
 - Un test doit-il refuser un client sans description, avec une liste nommée d'exceptions ?
+- Relevé le 2026-10-08 : un réglage cité ailleurs que dans une adresse (en-tête qui choisit la société) ; l'identité lue dans la réponse de jeton plutôt que par une fonction ; un paramètre d'application autre que le client (`config_id`) ; des scopes séparés par des virgules.
 
 ## Historique
 
@@ -177,3 +193,4 @@ Quatre clients n'ont pas de fichier, aucune de leurs fonctions n'étant descript
 - 2026-10-06 : description `pennylane`, 48 fonctions, et cinq trous du format relevés — choix du projet.
 - 2026-10-05 : la description microsoft passe à l'accès délégué (jeton d'une personne, fourni par l'hôte), version 2.0.0 — choix du projet (source : refonte du client, v1.155.0).
 - 2026-10-06 : le format dit en-têtes constants, constantes de requête, encodage JSON d'un argument, arrêt de pagination (`more`), rythme maximal, sonde, contrôles avant l'appel (`checks`) et sur la réponse (`expect`) ; `notion` et `pennylane` (2.0.0) s'en servent ; l'entrée est servie en JSON Schema tel quel ; `nextmotion` (1.0.1) corrigé : un `oneOf` aux branches qui se recouvrent devient un `anyOf` de types disjoints (six fonctions), et onze branches `enum: []`, qui n'acceptaient rien, sont retirées — décidé par le mainteneur.
+- 2026-10-08 : un compte garde tous les champs de son credential et des réglages non secrets (liste fermée, motif, adresse libre gardée à l'exécution) ; `base_url` et `token_url` dépendent d'un réglage (`base_urls`, `token_urls` ou gabarit) ; clé admise en query, masquée à l'exécution ; `client_auth` ; `oauth2_user` déclaratif, sans credential, l'application OAuth hors du compte ; `typeform`, `amplitude`, `sellsy`, `microsoft` (3.0.0) passés au format, `meta_ads` non — décidé par le mainteneur.

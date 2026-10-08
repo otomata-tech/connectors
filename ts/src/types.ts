@@ -13,24 +13,97 @@ export type JsonSchema = { readonly [key: string]: unknown }
 /** Valeur JSON, telle qu'une constante la porte. */
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 
-/** Un champ du credential que l'hôte fournit à l'appel. */
+/** Un champ du credential que l'hôte fournit à l'appel ; un compte garde tous les champs que déclare son connecteur. */
 export type CredentialField = { readonly name: string; readonly label: string; readonly secret: boolean }
 
-/** Chaque valeur qui désigne un secret nomme un champ de `credential`, jamais une valeur. */
+/**
+ * Un réglage non secret d'un compte, saisi par qui le connecte. `choice` : une valeur d'une liste fermée (une région),
+ * `default` à défaut. `text` : un texte libre qui satisfait `pattern` (le sous-domaine d'un tenant). `url` : une adresse
+ * `https://` libre, saisie par un admin. Un réglage n'est cité que par une adresse (`baseUrl`, `baseUrls`, `tokenUrl`,
+ * `tokenUrls`, `authorizeUrl`).
+ *
+ * L'hôte garde l'exécution : une adresse libre (réglage `url` ou valeur de `fromToken` en tête d'un gabarit) est en
+ * `https` seulement, son hôte ne résout jamais vers une adresse interne (boucle locale, plages privées, lien-local), à
+ * chaque résolution, et aucune redirection n'est suivie ; un réglage `text` ou `choice` ne se substitue que s'il ne
+ * porte que des lettres, des chiffres, `-` et `_`.
+ */
+export type Setting =
+  | { readonly name: string; readonly label: string; readonly type: "choice"; readonly choices: readonly string[]; readonly default?: string }
+  | { readonly name: string; readonly label: string; readonly type: "text"; readonly pattern: string }
+  | { readonly name: string; readonly label: string; readonly type: "url" }
+
+/** Une adresse par valeur d'un réglage `choice` : chaque valeur a la sienne. */
+export type UrlsBySetting = { readonly setting: string; readonly values: { readonly [choice: string]: string } }
+
+/**
+ * Comment l'identifiant et le secret du client atteignent le point de jeton : dans le corps de la requête, ou en HTTP
+ * Basic.
+ */
+export type ClientAuth = "body" | "basic"
+
+/** Le point de jeton : une adresse (gabarit possible sur les réglages) ou une adresse par valeur d'une liste fermée. */
+export type TokenEndpoint = { readonly tokenUrl: string; readonly tokenUrls?: never } | { readonly tokenUrls: UrlsBySetting; readonly tokenUrl?: never }
+
+/**
+ * Le renouvellement d'un consentement. `refresh_token` : la demande par jeton de rafraîchissement ; si `rotates`, chaque
+ * réponse porte un nouveau jeton de rafraîchissement qui remplace l'ancien, que l'hôte réécrit seulement si le jeton
+ * stocké est encore celui qu'il a lu. `exchange` : le jeton d'accès courant, envoyé dans `exchange.tokenParam` avec
+ * `grant_type` = `exchange.grantType`, contre un nouveau. `none` : le jeton vaut jusqu'à expiration ou révocation, puis
+ * la personne consent de nouveau.
+ */
+export type OAuthRefresh =
+  | { readonly refresh: "refresh_token"; readonly rotates: boolean; readonly exchange?: never }
+  | { readonly refresh: "exchange"; readonly exchange: { readonly grantType: string; readonly tokenParam: string }; readonly rotates?: never }
+  | { readonly refresh: "none"; readonly rotates?: never; readonly exchange?: never }
+
+/**
+ * Le consentement d'une personne (code d'autorisation, OAuth 2.0). L'application OAuth (identifiant et secret du client)
+ * n'est ni dans la description ni dans `credential` : c'est celle de l'hôte, ou celle que pose l'organisation. Les jetons
+ * qu'il rend ne sont pas des champs de `credential`. Le point de jeton reçoit un corps en formulaire ; les `scopes` se
+ * joignent par des espaces ; `authorizeParams` s'ajoutent à l'adresse d'autorisation, jamais un paramètre que l'hôte
+ * pose lui-même (`client_id`, `redirect_uri`, `response_type`, `scope`, `state`, `code_challenge*`).
+ */
+export type OAuthUser = {
+  readonly kind: "oauth2_user"
+  readonly authorizeUrl: string
+  readonly clientAuth: ClientAuth
+  readonly scopes?: readonly string[]
+  readonly authorizeParams?: { readonly [param: string]: string }
+  /** Preuve de possession du code (PKCE), par SHA-256. */
+  readonly pkce?: "S256"
+  /** Durée de vie, en secondes, d'un jeton d'accès dont la réponse n'en donne pas. */
+  readonly expiresInDefault?: number
+  /**
+   * Qui a consenti, lu juste après le consentement pour nommer le compte : `function` (nom qualifié, une lecture sans
+   * argument requis), appelée avec `{}`, et le chemin pointé d'une valeur non vide de sa réponse (l'adresse de la personne).
+   */
+  readonly identity: { readonly function: string; readonly path: string }
+  /**
+   * Champs de la réponse de jeton gardés avec le compte, non secrets, renouvelés à chaque réponse de jeton, cités par
+   * `baseUrl` comme un réglage (une `instance_url` qui devient l'adresse de l'API).
+   */
+  readonly fromToken?: readonly string[]
+} & TokenEndpoint & OAuthRefresh
+
+/**
+ * Chaque valeur qui désigne un secret nomme un champ de `credential`, jamais une valeur. Une clé passée en query
+ * (`in: "query"`) est masquée par l'hôte dans tout journal, adresse comprise.
+ */
 export type Auth =
-  | { readonly kind: "api_key"; readonly header: string; readonly prefix?: string; readonly key: string }
+  | { readonly kind: "api_key"; readonly in: "header"; readonly name: string; readonly prefix?: string; readonly key: string }
+  | { readonly kind: "api_key"; readonly in: "query"; readonly name: string; readonly prefix?: never; readonly key: string }
   | { readonly kind: "bearer"; readonly token: string }
   | { readonly kind: "basic"; readonly username: string; readonly password: string }
-  | {
+  | ({
       readonly kind: "oauth2_client_credentials"
-      readonly tokenUrl: string
       readonly tokenRequest: "json" | "form"
+      readonly clientAuth: ClientAuth
       readonly clientId: string
       readonly clientSecret: string
       readonly scope?: string
       readonly expiresInDefault?: number
-    }
-  | { readonly kind: "oauth2_user"; readonly handwritten: { readonly file: string; readonly export: string } }
+    } & TokenEndpoint)
+  | OAuthUser
   | { readonly kind: "none" }
 
 /** Une ligne de la table d'erreurs du connecteur : un ou plusieurs statuts HTTP du tiers, le refus nommé. */
@@ -148,10 +221,17 @@ export type Connector = {
   readonly version: string
   /** Version de l'API du tiers, telle que l'éditeur la nomme. */
   readonly apiVersion: string
-  /** Absente quand toutes les fonctions sont écrites à la main. */
+  /**
+   * Racine des chemins, gabarit possible sur les réglages (`https://{domain}.example.net`, `{server}`). Absente quand
+   * `baseUrls` la remplace, ou quand toutes les fonctions sont écrites à la main.
+   */
   readonly baseUrl?: string
+  /** Racine des chemins par valeur d'un réglage `choice` (une région). */
+  readonly baseUrls?: UrlsBySetting
   readonly auth: Auth
+  /** Vide pour `oauth2_user` et `none`. */
   readonly credential: readonly CredentialField[]
+  readonly settings?: readonly Setting[]
   readonly modes: readonly ("platform" | "byo_user" | "byo_org")[]
   readonly timeoutMs: number
   readonly queryArrays?: "repeat" | "brackets" | "comma"

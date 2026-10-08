@@ -4,13 +4,14 @@ connector:
   name: sellsy
   label: Sellsy
   namespace: sellsy
-  version: 1.0.0
+  version: 1.0.1
   api_version: v2
   base_url: https://api.sellsy.com/v2
   auth:
     kind: oauth2_client_credentials
     token_url: https://login.sellsy.com/oauth2/access-tokens
     token_request: json
+    client_auth: body
     client_id: client_id
     client_secret: client_secret
     expires_in_default: 3600

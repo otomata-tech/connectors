@@ -193,18 +193,17 @@ def _check(check: dict) -> str:
     return "{ " + ", ".join(f"{key}: {js(value)}" for key, value in check.items()) + " }"
 
 
-def _auth(auth: dict) -> str:
-    renamed = {
-        "token_url": "tokenUrl", "token_request": "tokenRequest", "client_id": "clientId",
-        "client_secret": "clientSecret", "expires_in_default": "expiresInDefault",
-    }
+def _auth(connector: str, auth: dict) -> str:
+    """Les clés du format en camelCase ; les valeurs telles quelles (noms côté API, adresses), sauf l'identité,
+    qualifiée comme la sonde, et les clés de `exchange`."""
     entries = {}
     for key, value in auth.items():
-        if key == "handwritten":
-            entries["handwritten"] = value["typescript"]
-        else:
-            entries[renamed.get(key, key)] = value
-    return js(entries)
+        if key == "identity":
+            value = {"function": f"{connector}.{value['function']}", "path": value["path"]}
+        elif key == "exchange":
+            value = {camel(k): v for k, v in value.items()}
+        entries[camel(key)] = value
+    return js_block(entries, 1)
 
 
 def _errors(errors: list[dict]) -> str:
@@ -245,8 +244,12 @@ def connector_module(description: Description) -> Module:
     ]
     if "base_url" in connector:
         entries.append(("baseUrl", js(connector["base_url"])))
-    entries.append(("auth", _auth(connector["auth"])))
+    if "base_urls" in connector:
+        entries.append(("baseUrls", js(connector["base_urls"])))
+    entries.append(("auth", _auth(name, connector["auth"])))
     entries.append(("credential", js(connector.get("credential", []))))
+    if "settings" in connector:
+        entries.append(("settings", js_block(connector["settings"], 1)))
     entries.append(("modes", js(connector["modes"])))
     entries.append(("timeoutMs", js(connector.get("timeout_s", DEFAULT_TIMEOUT_S) * 1000)))
     if "query_arrays" in connector:

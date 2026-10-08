@@ -4,16 +4,19 @@
 #   https://amplitude.com/docs/apis/analytics/taxonomy
 #   https://amplitude.com/docs/apis/analytics/behavioral-cohorts
 # Read only. One key pair = one project: there is no project argument anywhere.
-# base_url is the US host. EU projects live on https://analytics.eu.amplitude.com,
-# chosen by the client at construction (region); the format has no per-credential
-# base_url, so the EU host is not reachable from this file.
+# One host per region, chosen per account by the region setting: a project lives
+# in one region, and its keys are unknown to the other host.
 connector:
   name: amplitude
   label: Amplitude
   namespace: amplitude
-  version: 1.0.0
+  version: 1.1.0
   api_version: "Dashboard REST and Taxonomy api/2; charts and cohort list api/3; cohort download api/5"
-  base_url: https://amplitude.com
+  base_urls:
+    setting: region
+    values:
+      us: https://amplitude.com
+      eu: https://analytics.eu.amplitude.com
   auth:
     kind: basic
     username: api_key
@@ -21,6 +24,8 @@ connector:
   credential:
     - { name: api_key, label: API key, secret: true }
     - { name: secret_key, label: Secret key, secret: true }
+  settings:
+    - { name: region, label: Data region, type: choice, choices: [us, eu], default: us }
   modes: [byo_user, byo_org]
   timeout_s: 60
   query_arrays: repeat
