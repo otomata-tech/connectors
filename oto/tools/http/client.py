@@ -226,6 +226,48 @@ class HttpConnectorClient:
     def get(self, path: str, params: dict | None = None) -> dict:
         return self.request("GET", path, params=params)
 
+    def get_raw(self, path: str, params: dict | None = None, *,
+                max_bytes: int) -> tuple[bytes, str]:
+        """GET `path` and return the body's BYTES and its content type, read as a
+        stream and bounded by `max_bytes` — for a body that is a file (a CSV, a
+        PDF), not JSON. Same auth and single re-auth on 401 as `request`.
+
+        A redirect is refused, not followed: the auth this client injects would
+        leave with it, and a 3xx is the classic way around an egress guard. A body
+        above `max_bytes` raises before being read whole. An upstream 4xx/5xx raises
+        `requests.HTTPError`, like `request`."""
+        if not path.startswith("/"):
+            raise ValueError("path must start with / (relative to base_url)")
+        s = self._ready()
+        url = self._base_url + path
+
+        def _send():
+            merged = {**(params or {}), **self._auth.query_params()}
+            return s.get(url, params=merged or None, timeout=self._timeout,
+                         stream=True, allow_redirects=False)
+
+        r = _send()
+        if r.status_code == 401:
+            r.close()
+            self._auth.refresh(s)
+            r = _send()
+        try:
+            if 300 <= r.status_code < 400:
+                raise ValueError(f"redirect refused ({r.status_code} to "
+                                 f"{r.headers.get('Location') or '?'})")
+            r.raise_for_status()
+            declared = r.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise ValueError(f"response of {declared} bytes > limit {max_bytes}")
+            data = bytearray()
+            for chunk in r.iter_content(64 * 1024):
+                data += chunk
+                if len(data) > max_bytes:
+                    raise ValueError(f"response > limit {max_bytes} bytes")
+            return bytes(data), r.headers.get("Content-Type") or ""
+        finally:
+            r.close()
+
     def post(self, path: str, json: dict | list | None = None,
              params: dict | None = None) -> dict:
         return self.request("POST", path, params=params, json=json)
