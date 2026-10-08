@@ -54,7 +54,7 @@ def client():
 METHODS = {
     "get_current_user", "get_organization", "list_jobs", "get_job",
     "list_candidates", "get_candidate", "create_candidate", "update_candidate",
-    "create_comment", "list_moves",
+    "create_comment", "list_emails", "list_moves",
 }
 
 
@@ -156,6 +156,18 @@ def test_mouvements(calls, client):
     assert calls[0]["url"] == f"{BASE_URL}/moves"
     assert calls[0]["params"] == {"organization_reference": "org-ref",
                                   "job_reference": "JOB_1"}
+
+
+def test_emails_d_un_candidat_en_lecture(calls, client):
+    client.list_emails("CAND_1", per_page=5)
+    c = calls[0]
+    assert (c["method"], c["url"]) == ("GET", f"{BASE_URL}/emails")
+    assert c["params"] == {"candidate_reference": "CAND_1", "per_page": 5}
+
+
+def test_l_historique_exige_le_job(client):
+    with pytest.raises(TypeError):
+        client.list_moves("org-ref")
 
 
 def test_refus_amont_type(calls, client):

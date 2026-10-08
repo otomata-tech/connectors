@@ -1,5 +1,5 @@
 """Welcome to the Jungle ATS API client (ex-Welcome Kit) — the recruiter side:
-jobs, candidates in a job's pipeline, comments, pipeline moves.
+jobs, candidates in a job's pipeline, comments, emails, pipeline moves.
 
 Bearer token (`Authorization: Bearer <token>`), never in the query string. One
 method = one endpoint of the public reference (https://developers.welcomekit.co);
@@ -7,9 +7,10 @@ responses are returned as-is, the client invents no semantics.
 
 Scope: what an agent needs to run a hiring pipeline — read jobs and their
 stages, list and read candidates, create a candidate, move or archive one,
-comment on one, read the history of moves. Job creation and edition, emails
-(which reach real people), documents, departments, offices and the employer
-branding API are not covered here.
+comment on one, read the emails exchanged with one, read the history of
+moves. Job creation and edition, sending emails (which reach real people),
+documents, departments, offices and the employer branding API are not covered
+here.
 
 What the caller needs to know, and cannot guess:
 
@@ -20,7 +21,8 @@ What the caller needs to know, and cannot guess:
   reach the candidates this token created.
 - **Everything hangs off an organization or a job `reference`** (opaque
   strings). There is no global candidate list: `list_candidates` needs a
-  `job_reference`, `list_jobs` and `list_moves` an `organization_reference`.
+  `job_reference`, `list_jobs` an `organization_reference`, `list_moves` both,
+  `list_emails` a `candidate_reference`.
   `get_current_user(organizations=True)` lists the organizations the token
   can reach.
 - **A job's pipeline stages are read on the job** (`get_job(stages=True)`):
@@ -262,11 +264,25 @@ class WttjAtsClient:
                                    "content": content})
 
     # ------------------------------------------------------------------
+    # Emails
+    # ------------------------------------------------------------------
+
+    def list_emails(self, candidate_reference: str, *,
+                    page: Optional[int] = None,
+                    per_page: Optional[int] = None) -> Any:
+        """GET /emails (scopes `emails_r` + `candidates_r`) — the emails
+        exchanged with one candidate, as an array of `{subject, body,
+        from_email, from_name, to, created_at, origin, candidate_reference,
+        candidate, attachments}`. Reading only: nothing is sent."""
+        return self._get("/emails", candidate_reference=candidate_reference,
+                         page=page, per_page=per_page)
+
+    # ------------------------------------------------------------------
     # Moves (pipeline history)
     # ------------------------------------------------------------------
 
     def list_moves(self, organization_reference: str, *,
-                   job_reference: Optional[str] = None,
+                   job_reference: str,
                    page: Optional[int] = None,
                    per_page: Optional[int] = None) -> Any:
         """GET /moves (scope `moves_r`) — stage changes, as an array of
