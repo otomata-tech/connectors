@@ -2,6 +2,7 @@
 
 import csv
 import io
+import re
 from typing import Optional, List, Any
 
 from googleapiclient.discovery import build
@@ -10,6 +11,10 @@ from oto.tools.common.credentials import require
 
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+
+
+#: A bare A1 range (`A:R`, `B5:D`, `5:9`), as opposed to a bare sheet name.
+_A1 = re.compile(r'[A-Za-z]{0,3}\d*(:[A-Za-z]{0,3}\d*)?')
 
 
 class SheetsClientError(Exception):
@@ -98,17 +103,30 @@ class SheetsClient:
         values: List[List[Any]],
         value_input: str = 'USER_ENTERED',
     ) -> dict:
-        """Append rows after existing data."""
+        """Append rows after existing data, starting at the FIRST column of `range`.
+
+        Google appends after the last "table" it detects inside the range, starting at
+        that table's first column: on `Sheet!A:R`, a block of data starting at column R
+        sends the new row to R…AI. The call is therefore anchored on the first column
+        of the range (`Sheet!A:A`), whose only table starts in that column; the
+        written range is then checked, and a row written elsewhere raises.
+        """
+        anchor, column = _append_anchor(range)
         result = self.sheets.values().append(
             spreadsheetId=spreadsheet_id,
-            range=range,
+            range=anchor,
             valueInputOption=value_input,
             insertDataOption='INSERT_ROWS',
             body={'values': values},
         ).execute()
         updates = result.get('updates', {})
+        written = updates.get('updatedRange')
+        if written and _first_column(written) != column:
+            raise SheetsClientError(
+                f"append landed at {written}, not in column {column} as requested "
+                f"by {range!r}: the row is written there and must be moved or deleted")
         return {
-            'updated_range': updates.get('updatedRange'),
+            'updated_range': written,
             'updated_rows': updates.get('updatedRows'),
             'updated_cells': updates.get('updatedCells'),
         }
@@ -149,3 +167,31 @@ class SheetsClient:
         writer = csv.writer(output)
         writer.writerows(rows)
         return output.getvalue()
+
+
+def _split_range(range: str) -> tuple:
+    """`'Sheet'!A1:B2` → (`'Sheet'!`, `A1:B2`) ; a bare sheet name has no cells."""
+    sheet, bang, cells = range.rpartition('!')
+    if bang:
+        return sheet + '!', cells
+    if _A1.fullmatch(range):
+        return '', range
+    return range + '!', ''
+
+
+def _first_column(range: str) -> str:
+    """First column letter(s) of an A1 range ; `A` when the range names none."""
+    _, cells = _split_range(range)
+    start = cells.split(':')[0]
+    letters = ''.join(c for c in start if c.isalpha()).upper()
+    return letters or 'A'
+
+
+def _append_anchor(range: str) -> tuple:
+    """The single-column range an append is sent to, and its column."""
+    sheet, cells = _split_range(range)
+    start = cells.split(':')[0]
+    column = _first_column(range)
+    row = ''.join(c for c in start if c.isdigit())
+    return f"{sheet}{column}{row}:{column}", column
+
