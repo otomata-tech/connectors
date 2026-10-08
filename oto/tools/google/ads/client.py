@@ -166,9 +166,12 @@ class GoogleAdsClient:
     def search(self, customer: Any, query: str, *, page_token: Optional[str] = None,
                login_customer_id: Optional[str] = None) -> dict:
         """One page (10,000 rows, fixed by Google) of a GAQL query — Google's raw
-        answer: `results`, `fieldMask`, `totalResultsCount`, `nextPageToken`?.
-        Rows as a table: `flatten_rows`. Page tokens expire after ~2 h."""
-        body: dict = {"query": check_select(query), "returnTotalResultsCount": True}
+        answer: `results`, `fieldMask`, `nextPageToken`?. Rows as a table:
+        `flatten_rows`. Page tokens expire after ~2 h.
+
+        The body is the query and the page token, nothing else: v25 refuses an
+        unknown field (`returnTotalResultsCount` included) as an invalid payload."""
+        body: dict = {"query": check_select(query)}
         if page_token:
             body["pageToken"] = page_token
         return self._call("POST", f"customers/{customer_id(customer)}/googleAds:search",

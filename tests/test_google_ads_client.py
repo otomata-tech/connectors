@@ -133,7 +133,7 @@ def test_le_jeton_part_en_entete_sans_developer_token(client, transport):
     assert "login-customer-id" not in req.headers
     assert "ya29" not in req.url
     assert req.url == f"{API}/customers/1234567890/googleAds:search"
-    assert transport.bodies()[0] == {"query": Q, "returnTotalResultsCount": True}
+    assert transport.bodies()[0] == {"query": Q}
 
 
 def test_login_customer_id_part_en_entete_normalise(client, transport):
@@ -143,9 +143,11 @@ def test_login_customer_id_part_en_entete_normalise(client, transport):
 
 
 def test_le_page_token_de_google_est_transmis(client, transport):
+    """Le corps EXACT : v25 refuse tout champ inconnu (`returnTotalResultsCount`,
+    retiré, faisait échouer chaque requête en prod — « Invalid JSON payload »)."""
     transport.replies = [{"results": [], "fieldMask": MASK}]
     client.search("1234567890", Q, page_token="G2")
-    assert transport.bodies()[0]["pageToken"] == "G2"
+    assert transport.bodies()[0] == {"query": Q, "pageToken": "G2"}
 
 
 def test_sans_jeton_le_client_ne_se_construit_pas():
