@@ -3,6 +3,7 @@ import * as affinity from "./affinity"
 import * as aircall from "./aircall"
 import * as amplitude from "./amplitude"
 import * as claap from "./claap"
+import * as klaviyo from "./klaviyo"
 import * as mailpool from "./mailpool"
 import * as metaAds from "./meta_ads"
 import * as microsoft from "./microsoft"
@@ -19,6 +20,7 @@ export { affinity }
 export { aircall }
 export { amplitude }
 export { claap }
+export { klaviyo }
 export { mailpool }
 export { metaAds }
 export { microsoft }
@@ -37,6 +39,7 @@ export const connectors: readonly Connector[] = [
   aircall.connector,
   amplitude.connector,
   claap.connector,
+  klaviyo.connector,
   mailpool.connector,
   metaAds.connector,
   microsoft.connector,
