@@ -207,6 +207,22 @@ def test_jeton_refuse_remonte_en_401(mcp, monkeypatch):
     assert e.value.status_code == 401
 
 
+def test_erreur_json_rpc_de_requete_est_un_400(mcp):
+    mcp.script.append(lambda body: _Resp({"jsonrpc": "2.0", "id": body["id"],
+                                          "error": {"code": -32602, "message": "bad locId"}}))
+    with pytest.raises(UpstreamHTTPError) as e:
+        UbersuggestClient("AT").call("keyword_overview", {"keyword": "crm"})
+    assert e.value.status_code == 400 and "bad locId" in str(e.value)
+
+
+def test_erreur_json_rpc_serveur_est_un_502(mcp):
+    mcp.script.append(lambda body: _Resp({"jsonrpc": "2.0", "id": body["id"],
+                                          "error": {"code": -32603, "message": "boom"}}))
+    with pytest.raises(UpstreamHTTPError) as e:
+        UbersuggestClient("AT").call("keyword_overview", {"keyword": "crm"})
+    assert e.value.status_code == 502
+
+
 def test_outil_inconnu_refuse_sans_requete(mcp):
     with pytest.raises(ValueError, match="unknown Ubersuggest tool"):
         UbersuggestClient("AT").call("drop_database")

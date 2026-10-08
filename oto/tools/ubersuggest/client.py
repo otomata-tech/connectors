@@ -39,6 +39,8 @@ from .auth import MCP_URL
 _HTTP_TIMEOUT = (10, 150)  # (connect, read) — some reports poll up to ~2 min server-side
 PROTOCOL_VERSION = "2025-06-18"
 _SERVICE = "ubersuggest"
+# JSON-RPC codes for a malformed request: invalid request, method not found, invalid params.
+_REQUEST_ERRORS = (-32600, -32601, -32602)
 
 #: The server's tools (2026-10-08), by family.
 TOOLS = frozenset({
@@ -164,8 +166,10 @@ class UbersuggestClient:
                 continue  # a notification or a server request: not ours to answer
             if "error" in msg:
                 err = msg["error"] or {}
-                raise UpstreamHTTPError(502 if resp.status_code < 400 else resp.status_code,
-                                        err.get("message") or err, service=_SERVICE)
+                # Request-shaped JSON-RPC errors (bad params, unknown method) are a
+                # refusal of OUR call, not an upstream outage: 400, not retryable.
+                status = 400 if err.get("code") in _REQUEST_ERRORS else 502
+                raise UpstreamHTTPError(status, err.get("message") or err, service=_SERVICE)
             return msg.get("result") or {}
         raise UpstreamHTTPError(502, f"no JSON-RPC response to `{method}`", service=_SERVICE)
 
