@@ -19,6 +19,10 @@ Namespace package `oto` (PEP 420, **pas d'`oto/__init__.py`**) :
 version git, importe `oto.tools.*` directement et injecte les secrets de son coffre) et, à venir, le **paquet npm
 d'oto 2**, qui recevra les connecteurs partagés par la fabrique.
 
+Un **bridge** (micro-service HTTP interne appelé par le connecteur `http` générique : calcul déterministe,
+garde d'un credential client) n'est pas un client et ne vit pas ici : il part du squelette privé
+`otomata-tech/bridge-boilerplate`.
+
 ## Connecteurs partagés et fabrique
 
 - Un connecteur partagé se décrit dans `connectors/<nom>/connector.yaml`, validé par
