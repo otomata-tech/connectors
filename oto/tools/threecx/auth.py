@@ -23,6 +23,7 @@ from typing import Optional
 import requests
 
 from ..common import UpstreamHTTPError
+from ..common.url_guard import assert_public_https_url, refuse_redirect
 
 _HTTP_TIMEOUT = (10, 30)
 
@@ -58,6 +59,7 @@ def _json(resp) -> Optional[dict]:
 
 
 def _client_token(base_url: str, client_id: str, client_secret: str) -> tuple[str, int]:
+    assert_public_https_url(base_url)
     resp = requests.post(
         f"{base_url}/connect/token",
         data={  # body, never params= — see module docstring
@@ -66,7 +68,9 @@ def _client_token(base_url: str, client_id: str, client_secret: str) -> tuple[st
             "client_secret": client_secret,
         },
         timeout=_HTTP_TIMEOUT,
+        allow_redirects=False,
     )
+    refuse_redirect(resp, service="3cx")
     payload = _json(resp)
     error = payload.get("error") if payload else None
     if resp.status_code >= 400:
@@ -82,11 +86,14 @@ def _client_token(base_url: str, client_id: str, client_secret: str) -> tuple[st
 
 
 def _user_token(base_url: str, username: str, password: str) -> tuple[str, int]:
+    assert_public_https_url(base_url)
     resp = requests.post(
         f"{base_url}/webclient/api/Login/GetAccessToken",
         json={"Username": username, "Password": password, "SecurityCode": ""},
         timeout=_HTTP_TIMEOUT,
+        allow_redirects=False,
     )
+    refuse_redirect(resp, service="3cx")
     payload = _json(resp)
     if resp.status_code >= 400 and resp.status_code not in (401, 403):
         raise UpstreamHTTPError(resp.status_code, {"error": "login endpoint error"},

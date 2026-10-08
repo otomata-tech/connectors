@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 import requests
 
 from ..common import raise_for_upstream
+from ..common.url_guard import assert_public_https_url, refuse_redirect
 from ..common.credentials import require
 from . import auth
 
@@ -46,6 +47,8 @@ def _base_url(value: Optional[str]) -> str:
     if parts.scheme != "https" or not parts.netloc or parts.path.strip("/"):
         raise ValueError(f"base_url must be the https address of the phone system, "
                          f"e.g. https://example.3cx.fr — received {value!r}.")
+    if "@" in parts.netloc:
+        raise ValueError("base_url must not carry credentials (user:pass@).")
     return f"https://{parts.netloc}"
 
 
@@ -112,10 +115,12 @@ class ThreeCXClient:
                  accept: str = "application/json") -> requests.Response:
         renewed = False
         while True:
+            assert_public_https_url(self.base_url)
             resp = self.session.get(
                 f"{self.base_url}/xapi/v1{path}", params=params,
                 headers={"Authorization": f"Bearer {self._token()}", "Accept": accept},
-                timeout=_HTTP_TIMEOUT)
+                timeout=_HTTP_TIMEOUT, allow_redirects=False)
+            refuse_redirect(resp, service="3cx")
             if resp.status_code == 401 and not renewed:
                 # A cached token can be revoked before its expiry: renew once.
                 auth.invalidate(self._key)

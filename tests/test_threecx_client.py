@@ -46,6 +46,16 @@ def _cache_vide():
     threecx_auth._TOKEN_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _dns_public(monkeypatch):
+    """Host resolution stubbed to a public address: no real network."""
+    monkeypatch.setattr("socket.getaddrinfo", lambda host, *a, **k: _addrs("93.184.216.34"))
+
+
+def _addrs(*ips):
+    return [(10 if ":" in ip else 2, 1, 6, "", (ip, 443)) for ip in ips]
+
+
 @pytest.fixture
 def token(monkeypatch):
     """Token endpoints stub: records each call; queue responses in `replies`."""
@@ -248,3 +258,65 @@ def test_enregistrement_introuvable(token, api):
                         status_code=400))
     with pytest.raises(UpstreamHTTPError):
         _user().download_recording(1)
+
+
+# --- SSRF guard ---------------------------------------------------------------
+
+@pytest.mark.parametrize("ip", [
+    "10.0.0.5", "192.168.1.10", "172.16.0.1", "127.0.0.1", "169.254.169.254",
+    "0.0.0.0", "224.0.0.1", "240.0.0.1", "::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1",
+    "fe80::1", "fc00::1", "::"])
+def test_adresse_non_publique_refusee(monkeypatch, token, api, ip):
+    monkeypatch.setattr("socket.getaddrinfo", lambda host, *a, **k: _addrs(ip))
+    with pytest.raises(ValueError, match="non-public"):
+        _user().list_calls("2026-01-01", "2026-01-02")
+    assert not token[0] and not api[0]  # nothing was sent
+
+
+def test_une_adresse_privee_parmi_plusieurs_refuse_tout(monkeypatch, token, api):
+    monkeypatch.setattr("socket.getaddrinfo",
+                        lambda host, *a, **k: _addrs("93.184.216.34", "10.0.0.1"))
+    with pytest.raises(ValueError, match="non-public"):
+        _user().list_calls("2026-01-01", "2026-01-02")
+
+
+def test_verifie_a_chaque_appel(monkeypatch, token, api):
+    client = _user()
+    client.list_calls("2026-01-01", "2026-01-02")
+    monkeypatch.setattr("socket.getaddrinfo", lambda host, *a, **k: _addrs("127.0.0.1"))
+    with pytest.raises(ValueError, match="non-public"):
+        client.list_calls("2026-01-01", "2026-01-02")
+
+
+def test_identifiants_dans_l_url_refuses():
+    with pytest.raises(ValueError, match="credentials"):
+        ThreeCXClient("https://user:pw@pbx.example.test", username="u", password="p")
+
+
+def test_hote_public_accepte(token, api):
+    assert _user().list_calls("2026-01-01", "2026-01-02")["calls"] == []
+
+
+@pytest.mark.parametrize("status", [301, 302, 307])
+def test_redirection_api_refusee(token, api, status):
+    api[1].append(_Resp(status_code=status, headers={"Location": "http://127.0.0.1/"}))
+    with pytest.raises(UpstreamHTTPError, match="redirect"):
+        _user().list_calls("2026-01-01", "2026-01-02")
+
+
+def test_redirection_jeton_refusee(token, api):
+    token[1].append(_Resp(status_code=302, headers={"Location": "http://127.0.0.1/"}))
+    with pytest.raises(UpstreamHTTPError, match="redirect"):
+        _user().list_calls("2026-01-01", "2026-01-02")
+    assert not api[0]
+
+
+def test_redirections_non_suivies(monkeypatch):
+    seen = []
+    monkeypatch.setattr(threecx_auth.requests, "post",
+                        lambda url, **kw: seen.append(kw) or _Resp(
+                            {"Status": "AuthSuccess", "Token": {"access_token": "t"}}))
+    monkeypatch.setattr("requests.Session.get",
+                        lambda self, url, **kw: seen.append(kw) or _Resp({"value": []}))
+    _user().list_calls("2026-01-01", "2026-01-02")
+    assert len(seen) == 2 and all(kw["allow_redirects"] is False for kw in seen)
