@@ -13,7 +13,9 @@ Auth is OAuth2 client-credentials (Azure AD B2C, `auth.py`). Three secrets:
 Every function is a POST to `/v1/<Family>/<Function>` with a JSON body (the status
 functions of asynchronous tasks are a GET with `guidTache` in the query string). The
 dossier a call targets also goes in the `dossiers` header: without it Silae answers
-error 1011 ("la valeur de la liste de dossiers est nulle ou vide").
+error 1011 ("la valeur de la liste de dossiers est nulle ou vide"). A call that targets
+no dossier still sends the header, empty: the API gateway refuses any call without it
+(403 "Le header 'dossiers' est obligatoire").
 
 Errors RAISE: an HTTP refusal is an `UpstreamHTTPError` carrying Silae's body
 (`{"errors": [{"code", "message"}], "recoverable", "source"}`), a refused credential a
@@ -108,7 +110,7 @@ class SilaeClient(
         Args:
             path: function path under the base URL, e.g. "v1/SalarieEmplois/ListeSalarieEmplois".
             body: JSON body (POST functions).
-            numero_dossier: sent as the `dossiers` header.
+            numero_dossier: sent as the `dossiers` header (empty when None).
             method: "POST", or "GET" for the status of an asynchronous task.
             params: query string — only the task id of a status call, never a secret.
             retries: attempts on a 401 (token refreshed once) and on a 429 (backoff).
@@ -125,9 +127,8 @@ class SilaeClient(
                 "Authorization": f"Bearer {token}",
                 "Ocp-Apim-Subscription-Key": self.subscription_key,
                 "Accept": "application/json",
+                "dossiers": "" if numero_dossier is None else str(numero_dossier),
             }
-            if numero_dossier is not None:
-                headers["dossiers"] = str(numero_dossier)
             resp = self.session.request(method, url, json=body, params=params,
                                         headers=headers, timeout=timeout)
             last = attempt == retries - 1

@@ -129,6 +129,13 @@ def test_headers_carry_bearer_subscription_key_and_dossier():
     assert body == {"numeroDossier": "001"}
 
 
+def test_a_call_without_dossier_still_sends_an_empty_dossiers_header():
+    c = _client()
+    c.list_dossiers()
+    _, _, headers = _dernier(c)
+    assert headers["dossiers"] == ""
+
+
 def test_a_refused_credential_raises_a_401_without_echoing_the_description():
     c = _client(token=_Resp({"error": "invalid_client",
                               "error_description": "The client id 'cid' …"}, 400))
