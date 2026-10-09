@@ -29,6 +29,10 @@ pins oto-core by tag and only imports `oto.tools.luma.client`.
   event (notifies every guest, may refund, deletes the event). Cancellation
   is a two-step flow on Luma's side: `request_event_cancellation` returns a
   token valid 15 minutes, `cancel_event` spends it.
+- **Redirects are refused, never followed**: the key travels in a custom
+  header, and `requests` only strips `Authorization` on a cross-host redirect
+  — a followed 3xx would hand `x-luma-api-key` to whatever host it names. A
+  3xx raises `RedirectRefused` (target reduced to scheme, host and path).
 - **Rate limit**: 200 requests/minute per calendar (calendar keys), 500 per
   organization (organization keys). A 429 blocks for one minute and carries
   `Retry-After`; reads are retried once when the wait is short. Writes are
@@ -43,6 +47,7 @@ import requests
 
 from ..common import raise_for_upstream
 from ..common.credentials import require
+from ..http.client import RedirectRefused
 from ._api import (_BlastsMixin, _CalendarMixin, _ContactsMixin, _EventsMixin,
                    _GuestsMixin, _MembershipsMixin, _MetaMixin,
                    _OrganizationMixin, _TicketsMixin, _WebhooksMixin)
@@ -175,7 +180,10 @@ class LumaClient(
         for attempt in range(MAX_ATTEMPTS):
             last = self.session.request(
                 method, f"{self.BASE_URL}{path}", params=encoded or None,
-                json=json, timeout=HTTP_TIMEOUT)
+                json=json, timeout=HTTP_TIMEOUT, allow_redirects=False)
+            if 300 <= last.status_code < 400:
+                raise RedirectRefused(last.status_code,
+                                      last.headers.get("Location") or "")
             if (last.status_code not in RETRY_STATUSES or not retryable
                     or attempt == MAX_ATTEMPTS - 1):
                 break

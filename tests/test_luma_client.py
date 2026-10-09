@@ -72,6 +72,50 @@ def test_cle_d_organisation_vise_un_calendrier(capture):
     assert capture["headers"]["x-luma-calendar-id"] == "cal-123"
 
 
+def test_une_redirection_est_refusee_jamais_suivie(cli, capture):
+    capture["replies"].append(_Resp(302, headers={
+        "Location": "https://ailleurs.test/v1/x?api_key=SECRET#f"}))
+    with pytest.raises(lc.RedirectRefused) as e:
+        cli.list_events()
+    assert capture["kwargs"]["allow_redirects"] is False
+    assert e.value.location == "https://ailleurs.test/v1/x"
+    assert "SECRET" not in str(e.value)
+    assert len(capture["calls"]) == 1          # ni suivie, ni retentée
+
+
+def test_une_302_vers_un_autre_hote_n_emporte_pas_la_cle():
+    """Par le VRAI transport de `requests` (adaptateur monté sur la session) : une
+    redirection suivie partirait vers l'autre hôte avec `x-luma-api-key`, que
+    `requests` ne retire pas (il ne retire qu'`Authorization`)."""
+    import requests
+    from requests.adapters import BaseAdapter
+
+    vus = []
+
+    class _Transport(BaseAdapter):
+        def send(self, request, **kwargs):
+            vus.append((request.url, dict(request.headers)))
+            r = requests.Response()
+            r.request, r.url, r._content = request, request.url, b"{}"
+            if request.url.startswith(lc.BASE_URL):
+                r.status_code = 302
+                r.headers["Location"] = "https://ailleurs.test/vole"
+            else:
+                r.status_code = 200
+            return r
+
+        def close(self):
+            pass
+
+    c = lc.LumaClient(api_key="luma_secret")
+    c.session.mount("https://", _Transport())
+    with pytest.raises(lc.RedirectRefused):
+        c.list_events()
+    assert [u for u, _h in vus if not u.startswith(lc.BASE_URL)] == []
+    assert all("luma_secret" not in str(h) for u, h in vus
+               if not u.startswith(lc.BASE_URL))
+
+
 def test_cle_absente_refusee():
     from oto.tools.common.credentials import MissingCredential
     with pytest.raises(MissingCredential):
