@@ -11,6 +11,7 @@ import * as googleSheets from "./google_sheets"
 import * as klaviyo from "./klaviyo"
 import * as linkedinUnipile from "./linkedin_unipile"
 import * as mailpool from "./mailpool"
+import * as malibou from "./malibou"
 import * as metaAds from "./meta_ads"
 import * as microsoft from "./microsoft"
 import * as microsoftApp from "./microsoft_app"
@@ -39,6 +40,7 @@ export { googleSheets }
 export { klaviyo }
 export { linkedinUnipile }
 export { mailpool }
+export { malibou }
 export { metaAds }
 export { microsoft }
 export { microsoftApp }
@@ -70,6 +72,7 @@ export const connectors: readonly Connector[] = [
   klaviyo.connector,
   linkedinUnipile.connector,
   mailpool.connector,
+  malibou.connector,
   metaAds.connector,
   microsoft.connector,
   microsoftApp.connector,
