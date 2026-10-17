@@ -683,3 +683,88 @@ def test_request_sends_connect_read_timeout(c, monkeypatch):
     monkeypatch.setattr(folk_client.requests, "request", fake)
     c._request("GET", "people")
     assert seen["timeout"] == (10, 60)
+
+
+# --- Batch (people, companies, deals) ------------------------------------
+
+@pytest.fixture
+def batch_calls(monkeypatch):
+    captured = []
+
+    def fake_request(method, url, headers=None, **kwargs):
+        captured.append({"method": method, "url": url, "headers": headers, **kwargs})
+        results = [{"status": "succeeded", "data": {"id": f"id_{i}"}}
+                   for i, _ in enumerate(kwargs.get("json", {}).get("records", []))]
+        return _Resp({"data": {"results": results}})
+
+    monkeypatch.setattr(folk_client.requests, "request", fake_request)
+    return captured
+
+
+@pytest.mark.parametrize("method, args, path", [
+    ("create_people_batch", (), "people/batch/create"),
+    ("update_people_batch", (), "people/batch/update"),
+    ("create_companies_batch", (), "companies/batch/create"),
+    ("update_companies_batch", (), "companies/batch/update"),
+    ("create_deals_batch", ("grp_1",), "groups/grp_1/deals/batch/create"),
+    ("update_deals_batch", ("grp_1",), "groups/grp_1/deals/batch/update"),
+])
+def test_batch_endpoints(c, batch_calls, method, args, path):
+    records = [{"id": "a", "name": "A"}, {"id": "b", "name": "B"}]
+    results = getattr(c, method)(*args, records)
+    call = batch_calls[-1]
+    assert call["method"] == "POST"
+    assert call["url"] == f"{BASE}/{path}"
+    assert call["json"] == {"records": records}
+    # The results list itself, one per record, in order — not `data`.
+    assert [r["data"]["id"] for r in results] == ["id_0", "id_1"]
+
+
+def test_batch_custom_object_type(c, batch_calls):
+    c.create_deals_batch("grp_1", [{"name": "X"}], object_type="projects")
+    assert batch_calls[-1]["url"] == f"{BASE}/groups/grp_1/projects/batch/create"
+
+
+def test_batch_sends_one_idempotency_key_reused_on_429(c, monkeypatch):
+    seen = []
+    replies = iter([429, 200])
+
+    class _R(_Resp):
+        pass
+
+    def fake_request(method, url, headers=None, **kwargs):
+        seen.append(dict(headers))
+        status = next(replies)
+        r = _R({"data": {"results": []}})
+        r.status_code = status
+        if status == 429:
+            r.headers = {"Retry-After": "0"}
+        return r
+
+    monkeypatch.setattr(folk_client.requests, "request", fake_request)
+    c.create_people_batch([{"firstName": "A"}])
+    assert len(seen) == 2
+    key = seen[0]["Idempotency-Key"]
+    assert key and seen[1]["Idempotency-Key"] == key
+    assert seen[0]["Authorization"] == "Bearer test-key"
+
+
+def test_batch_refuses_more_than_100_records_before_the_network(c, batch_calls):
+    with pytest.raises(ValueError, match="at most 100"):
+        c.create_people_batch([{"firstName": "x"}] * 101)
+    assert batch_calls == []
+
+
+def test_solo_and_batch_share_the_record_builders(c, calls):
+    c.create_person("Ada", last_name="L", job_title="CTO", company_name="Acme",
+                    group_ids=["grp_1"])
+    assert calls[-1]["json"] == FolkClient.person_body(
+        "Ada", last_name="L", job_title="CTO", company_name="Acme",
+        group_ids=["grp_1"]) == {
+        "firstName": "Ada", "lastName": "L", "jobTitle": "CTO",
+        "companies": [{"name": "Acme"}], "groups": [{"id": "grp_1"}]}
+    c.create_company("Acme", industry="SaaS")
+    assert calls[-1]["json"] == FolkClient.company_body("Acme", industry="SaaS")
+    c.create_deal("grp_1", "Deal", people_ids=["p1"])
+    assert calls[-1]["json"] == {"name": "Deal", "people": [{"id": "p1"}]}
+    assert FolkClient.deal_body("Deal", people_ids=["p1"]) == calls[-1]["json"]

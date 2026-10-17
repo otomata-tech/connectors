@@ -1,6 +1,7 @@
 """Folk CRM API Client — https://developer.folk.app/api-reference"""
 
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, parse_qs, quote
@@ -198,11 +199,14 @@ class FolkClient:
         # Defaults to the `field_filters.folk` policy in ~/.otomata/config.yaml.
         self.field_filter = field_filter or FieldFilter.from_config("folk")
 
-    def _request(self, method: str, endpoint: str, **kwargs) -> Any:
+    def _request(self, method: str, endpoint: str,
+                 extra_headers: Optional[Dict[str, str]] = None, **kwargs) -> Any:
         url = f"{self.BASE_URL}/{endpoint}" if not endpoint.startswith("http") else endpoint
         headers = {"Authorization": f"Bearer {self.api_key}"}
         if method.upper() != "DELETE":
             headers["Content-Type"] = "application/json"
+        if extra_headers:
+            headers.update(extra_headers)
         for attempt in range(3):
             # (connect, read) — repo convention: an unreachable host must not
             # block indefinitely (the transport had NO timeout).
@@ -344,13 +348,19 @@ class FolkClient:
     def get_person(self, person_id: str) -> Dict:
         return self._request("GET", f"people/{person_id}").get("data", {})
 
-    def create_person(self, first_name: str, last_name: str = None,
-                      emails: List[str] = None, phones: List[str] = None,
-                      job_title: str = None, company_name: str = None,
-                      company_id: str = None, group_ids: List[str] = None,
-                      urls: List[str] = None, description: str = None,
-                      **kwargs) -> Dict:
-        body: Dict[str, Any] = {"firstName": first_name}
+    @staticmethod
+    def person_body(first_name: str = None, last_name: str = None,
+                    emails: List[str] = None, phones: List[str] = None,
+                    job_title: str = None, company_name: str = None,
+                    company_id: str = None, group_ids: List[str] = None,
+                    urls: List[str] = None, description: str = None,
+                    **kwargs) -> Dict:
+        """The Folk record (camelCase) for ONE person, from the snake_case
+        vocabulary of `create_person`. Shared by `create_person` and
+        `create_people_batch` so the solo and batch paths cannot drift."""
+        body: Dict[str, Any] = {}
+        if first_name is not None:
+            body["firstName"] = first_name
         if last_name:
             body["lastName"] = last_name
         if emails:
@@ -373,6 +383,19 @@ class FolkClient:
         if group_ids:
             body["groups"] = [{"id": gid} for gid in group_ids]
         body.update(kwargs)
+        return body
+
+    def create_person(self, first_name: str, last_name: str = None,
+                      emails: List[str] = None, phones: List[str] = None,
+                      job_title: str = None, company_name: str = None,
+                      company_id: str = None, group_ids: List[str] = None,
+                      urls: List[str] = None, description: str = None,
+                      **kwargs) -> Dict:
+        body = self.person_body(
+            first_name, last_name=last_name, emails=emails, phones=phones,
+            job_title=job_title, company_name=company_name,
+            company_id=company_id, group_ids=group_ids, urls=urls,
+            description=description, **kwargs)
         return self._request("POST", "people", json=body).get("data", {})
 
     def update_person(self, person_id: str, **fields) -> Dict:
@@ -389,14 +412,24 @@ class FolkClient:
     def get_company(self, company_id: str) -> Dict:
         return self._request("GET", f"companies/{company_id}").get("data", {})
 
-    def create_company(self, name: str, emails: List[str] = None,
-                       industry: str = None, **kwargs) -> Dict:
-        body: Dict[str, Any] = {"name": name}
+    @staticmethod
+    def company_body(name: str = None, emails: List[str] = None,
+                     industry: str = None, **kwargs) -> Dict:
+        """The Folk record for ONE company — shared by `create_company` and
+        `create_companies_batch`."""
+        body: Dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
         if emails:
             body["emails"] = emails
         if industry:
             body["industry"] = industry
         body.update(kwargs)
+        return body
+
+    def create_company(self, name: str, emails: List[str] = None,
+                       industry: str = None, **kwargs) -> Dict:
+        body = self.company_body(name, emails=emails, industry=industry, **kwargs)
         return self._request("POST", "companies", json=body).get("data", {})
 
     def update_company(self, company_id: str, **fields) -> Dict:
@@ -415,16 +448,28 @@ class FolkClient:
             "GET", f"groups/{group_id}/{object_type}/{deal_id}"
         ).get("data", {})
 
-    def create_deal(self, group_id: str, name: str, object_type: str = "deals",
-                    people_ids: List[str] = None, company_ids: List[str] = None,
-                    custom_fields: Dict = None) -> Dict:
-        body: Dict[str, Any] = {"name": name}
+    @staticmethod
+    def deal_body(name: str = None, people_ids: List[str] = None,
+                  company_ids: List[str] = None,
+                  custom_fields: Dict = None) -> Dict:
+        """The Folk record for ONE deal — shared by `create_deal` and
+        `create_deals_batch`."""
+        body: Dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
         if people_ids:
             body["people"] = [{"id": pid} for pid in people_ids]
         if company_ids:
             body["companies"] = [{"id": cid} for cid in company_ids]
         if custom_fields:
             body["customFieldValues"] = custom_fields
+        return body
+
+    def create_deal(self, group_id: str, name: str, object_type: str = "deals",
+                    people_ids: List[str] = None, company_ids: List[str] = None,
+                    custom_fields: Dict = None) -> Dict:
+        body = self.deal_body(name, people_ids=people_ids,
+                              company_ids=company_ids, custom_fields=custom_fields)
         return self._request("POST", f"groups/{group_id}/{object_type}", json=body).get("data", {})
 
     def update_deal(self, group_id: str, deal_id: str, object_type: str = "deals",
@@ -433,6 +478,70 @@ class FolkClient:
 
     def delete_deal(self, group_id: str, deal_id: str, object_type: str = "deals") -> Dict:
         return self._request("DELETE", f"groups/{group_id}/{object_type}/{deal_id}")
+
+    # --- Batch (people, companies, deals) ---
+    # developer.folk.app/api-reference/batch-requests (endpoints shipped
+    # 2026-10-01 → 10-07). Body `{"records": [...]}`, ≤ 100 records; the
+    # request answers 200 as soon as it is valid and carries ONE result per
+    # record, in request order: `{"status": "succeeded", "data": {...},
+    # "warnings"?, "operation"?, "removedGroups"?}` or `{"status": "failed",
+    # "error": {"code", "message", ...}}`. A whole-request rejection (401,
+    # 422 malformed / > 100 records, 429) raises like any other call.
+    #
+    # Every batch call sends an `Idempotency-Key` minted ONCE per call, so
+    # the 429 retry of `_request` replays instead of re-executing — Folk's
+    # deals page is explicit: a batch retried without a key creates every
+    # record a second time.
+
+    BATCH_MAX_RECORDS = 100
+
+    def _batch(self, endpoint: str, records: List[Dict]) -> List[Dict]:
+        records = list(records)
+        if len(records) > self.BATCH_MAX_RECORDS:
+            raise ValueError(f"Folk batch endpoints take at most "
+                             f"{self.BATCH_MAX_RECORDS} records "
+                             f"({len(records)} given) — split the batch.")
+        data = self._request(
+            "POST", endpoint, json={"records": records},
+            extra_headers={"Idempotency-Key": str(uuid.uuid4())})
+        return (data.get("data") or {}).get("results", [])
+
+    def create_people_batch(self, records: List[Dict]) -> List[Dict]:
+        """`POST /people/batch/create`. `records` = raw Folk person records
+        (camelCase, as built by `person_body`). Folk merges a detected
+        duplicate in the background, as `POST /people` does."""
+        return self._batch("people/batch/create", records)
+
+    def update_people_batch(self, records: List[Dict]) -> List[Dict]:
+        """`POST /people/batch/update`. Each record = `{"id": ..., <fields of
+        PATCH /people/{id}>}`. `groups` REPLACES (removing a group deletes its
+        custom field values, listed in `removedGroups`); several records for
+        the same person are merged in request order, last value wins."""
+        return self._batch("people/batch/update", records)
+
+    def create_companies_batch(self, records: List[Dict]) -> List[Dict]:
+        """`POST /companies/batch/create`. A record naming an existing company
+        (exact, case-sensitive name) UPDATES it, as `POST /companies` does —
+        its result says so in `operation` ("created" | "updated")."""
+        return self._batch("companies/batch/create", records)
+
+    def update_companies_batch(self, records: List[Dict]) -> List[Dict]:
+        """`POST /companies/batch/update`. Each record = `{"id": ..., <fields
+        of PATCH /companies/{id}>}`; list fields and `groups` REPLACE."""
+        return self._batch("companies/batch/update", records)
+
+    def create_deals_batch(self, group_id: str, records: List[Dict],
+                           object_type: str = "deals") -> List[Dict]:
+        """`POST /groups/{groupId}/{objectType}/batch/create`. Never matched
+        with existing deals: two records with the same name make two deals."""
+        return self._batch(f"groups/{group_id}/{object_type}/batch/create", records)
+
+    def update_deals_batch(self, group_id: str, records: List[Dict],
+                           object_type: str = "deals") -> List[Dict]:
+        """`POST /groups/{groupId}/{objectType}/batch/update`. Records of one
+        deal are merged (last value wins, `customFieldValues` field by field)
+        and validated as a whole."""
+        return self._batch(f"groups/{group_id}/{object_type}/batch/update", records)
 
     # --- Notes ---
 
