@@ -47,6 +47,12 @@ say both.
 the person signed up to Slack with, not necessarily their work email: a perfectly valid work address
 returns `users_not_found`. Lookup fails ⇒ check the target's sign-up email.
 
+⚠️ **User groups (`_api/usergroups.py`)**: `set_usergroup_users` **replaces** the whole member list
+(Slack has no add/remove) and an empty list is refused — a group is emptied by `disable_usergroup`. A
+**bot** token can only write when the workspace lets everyone manage user groups, otherwise
+`permission_denied`; a free plan answers `plan_upgrade_required` on every call. Verified by
+`tests/test_slack_usergroups.py`.
+
 ⚠️ **No `whoami` method.** To know which workspace and under which identity we act, you have to call the
 `auth.test` API directly.
 
@@ -70,7 +76,8 @@ The text goes through `text.py` BEFORE leaving:
 1. Create an app at https://api.slack.com/apps (or install a shared app) on the target workspace.
 2. **Scopes** (OAuth & Permissions): bot read / post = `chat:write`, `channels:read`,
    `users:read.email`, `im:write`; **joining a public channel** = `channels:join`; search =
-   `search:read` (⚠️ **user token** scope only); post "as user" = an additional `xoxp-` user token.
+   `search:read` (⚠️ **user token** scope only); user groups = `usergroups:read` / `usergroups:write`
+   (same names on both tokens); post "as user" = an additional `xoxp-` user token.
    ⚠️ **Reading history AND threads requires a `<surface>:history` scope PER surface** —
    `channels:history` (public), `groups:history` (private), `im:history` (DM), `mpim:history` (group
    DM); `conversations.replies` requires the same as `conversations.history`.

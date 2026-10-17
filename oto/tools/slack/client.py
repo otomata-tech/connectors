@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List
 import requests
 
 from ..common.credentials import MissingCredential
+from ._api import _UsergroupsMixin
 from .text import MAX_TEXT_LEN as _MAX_TEXT_LEN
 from .text import chunk_text as _chunk_text
 from .text import escape_false_emoji_shortcodes as _escape_false_emoji_shortcodes
@@ -32,9 +33,13 @@ _SLACK_ERROR_STATUS = {
     "missing_scope": 403, "not_allowed_token_type": 403, "ekm_access_denied": 403,
     "not_in_channel": 403, "is_archived": 403, "restricted_action": 403,
     "cant_post_message": 403, "no_permission": 403,
+    "permission_denied": 403, "plan_upgrade_required": 403, "paid_teams_only": 403,
     # 404 — target missing
     "channel_not_found": 404, "user_not_found": 404, "users_not_found": 404,
     "message_not_found": 404, "thread_not_found": 404, "file_not_found": 404,
+    "no_such_subteam": 404,
+    # 409 — uniqueness conflict
+    "name_already_exists": 409, "handle_already_exists": 409,
     # 429 — quota
     "ratelimited": 429, "rate_limited": 429,
     # 5xx — incident on Slack's side (to report, real upstream bug)
@@ -94,7 +99,7 @@ def verify_slack_signature(
     return hmac.compare_digest(my_signature, signature)
 
 
-class SlackClient:
+class SlackClient(_UsergroupsMixin):
     """
     Slack API client. Multi-workspace.
 
@@ -115,6 +120,8 @@ class SlackClient:
     Writes (`post_message`, `update_message`, `add_reaction`) accept
     `as_user=True/False`; omitted → `default_as_user` (construction, default
     False = bot-style). Every read also accepts an explicit `as_user` override.
+
+    User groups (`usergroups.*`) live in the `_api/usergroups.py` mixin.
     """
 
     BASE_URL = "https://slack.com/api"
