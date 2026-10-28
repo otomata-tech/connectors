@@ -18,6 +18,7 @@ import * as googleCalendar from "./google_calendar"
 import * as googleDrive from "./google_drive"
 import * as googleSheets from "./google_sheets"
 import * as granola from "./granola"
+import * as higgsfield from "./higgsfield"
 import * as hubspot from "./hubspot"
 import * as hunter from "./hunter"
 import * as jefacture from "./jefacture"
@@ -70,6 +71,7 @@ export { googleCalendar }
 export { googleDrive }
 export { googleSheets }
 export { granola }
+export { higgsfield }
 export { hubspot }
 export { hunter }
 export { jefacture }
@@ -125,6 +127,7 @@ export const connectors: readonly Connector[] = [
   googleDrive.connector,
   googleSheets.connector,
   granola.connector,
+  higgsfield.connector,
   hubspot.connector,
   hunter.connector,
   jefacture.connector,
