@@ -58,6 +58,7 @@ without_description:
   boondmanager: { category: not_describable, reason: "jeton signé à chaque requête" }
   collective: { category: not_describable, reason: "pas d'API publique : piloté par un navigateur" }
   dataforseo: { category: not_describable, reason: "corps en liste de tâches au premier niveau ; erreur lue dans le corps d'un 200 ; audit en file, relu par identifiant" }
+  search_console: { category: not_describable, reason: "assertion signée par un compte de service, échangée contre un jeton dont la portée change selon l'appel" }
   ubersuggest: { category: not_describable, reason: "transport MCP en JSON-RPC sur un seul point d'entrée ; client OAuth public obtenu par enregistrement dynamique" }
   wordpress: { category: not_describable, reason: "la racine REST se découvre à l'appel (/wp-json/ ou ?rest_route=) ; téléversement de média en corps binaire" }
   zeendoc: { category: not_describable, reason: "session ouverte par le login d'un compte utilisateur, portée par un cookie ; texte et fichiers servis par des pages de l'application, document absent signalé par une redirection" }
